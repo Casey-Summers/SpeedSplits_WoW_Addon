@@ -1,13 +1,33 @@
 -- Debugging message to ensure Addon loaded
-print("MyAddon successfully loaded!")
+print("SpeedSplits successfully loaded!")
 
--- Ensures Database exists and creates it if not
-if not MyAddonDB then
-    MyAddonDB = {}
+-- === Database ===
+-- List of default values for variables
+local DefaultDB = {
+    bossKills = 0, -- tracks total boss kills
+    bossKillHistory = {} -- {{id, name, split}}
+}
+
+local function ActivateDB()
+    -- Ensures Database exists and creates it if not
+    if not SpeedSplitsDB then
+        SpeedSplitsDB = {}
+    end
+
+    -- Initialises DB variables to avoid NULL errors on first loaded
+    for key, defaultValue in pairs(DefaultDB) do
+        if SpeedSplitsDB[key] == nil then
+            SpeedSplitsDB[key] = defaultValue
+        end
+    end
+    return SpeedSplitsDB
 end
 
+local DB = ActivateDB()
+
+-- === Main Frame ===
 -- Creates the mainFrame
-local mainFrame = CreateFrame("Frame", "MyAddonMainFrame", UIParent, "BasicFrameTemplateWithInset")
+local mainFrame = CreateFrame("Frame", "SpeedSplitsMainFrame", UIParent, "BasicFrameTemplateWithInset")
 mainFrame:SetSize(500, 350)
 mainFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 
@@ -15,7 +35,7 @@ mainFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
 mainFrame.TitleBg:SetHeight(30)
 mainFrame.title = mainFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 mainFrame.title:SetPoint("TOPLEFT", mainFrame.TitleBg, "TOPLEFT", 5, -3)
-mainFrame.title:SetText("TestAddon")
+mainFrame.title:SetText("SpeedSplits")
 mainFrame:Show() -- Important !!!
 
 -- Allows the frame to be dragged
@@ -34,38 +54,35 @@ mainFrame.playerName = mainFrame:CreateFontString(nil, "OVERLAY", "GameFontNorma
 mainFrame.playerName:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 15, -35)
 mainFrame.playerName:SetText("Character: " .. UnitName("player") .. " (Level: " .. UnitLevel("player") .. ")")
 
-
 mainFrame.totalBossKills = mainFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 mainFrame.totalBossKills:SetPoint("TOPLEFT", mainFrame.playerName, "BOTTOMLEFT", 0, -50)
-
--- Initialise bossKills at first read
-mainFrame.totalBossKills:SetText("Total boss kills: " .. (MyAddonDB.bossKills))
-
--- Allows addon to be exited with ESC
-table.insert(UISpecialFrames, "MyAddonMainFrame")
+mainFrame.totalBossKills:SetText("Total boss kills: " .. (DB.bossKills))
 
 -- Creates an invisible event listener frame
-local eventListenerFrame = CreateFrame("Frame", "TestAddonEventListenerFrame", UIParent)
+local eventListenerFrame = CreateFrame("Frame", "SpeedSplitsEventListenerFrame", UIParent)
 
--- Store the most recently killed boss name
-local lastKilledBossName
-
--- Stores every boss kill line we add (so we can stack them)
+-- === Boss Kill Logic ===
+-- Stores every boss kill line added (so they can be stacked)
 local bossKillLines = {}
 local nextLineNumber = 1
+local lastKilledBossName -- Store the most recently killed boss name
 
 local function addBossKill(encounterID, encounterName)
+    DB.bossKills = DB.bossKills + 1
+    mainFrame.totalBossKills:SetText("Total boss kills: " .. (DB.bossKills)) -- Initialise bossKills at first read
+
+    table.insert(DB.bossKillHistory, {
+        id = encounterID,
+        name = encounterName,
+        when = time()
+    })
+
     -- Defines a template and stackable new line 
     local newLine = mainFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 
-    if not MyAddonDB.bossKills then
-        MyAddonDB.bossKills = 1
-    else
-        MyAddonDB.bossKills = MyAddonDB.bossKills + 1
-    end
-
     -- Sets the point for the new line dynamically based on -35 pixels below the top, and -14 pixesl from the previous entry
-    newLine:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 15, -35 - ((nextLineNumber - 1) * 14))
+    local yOffset = -10 - ((nextLineNumber - 1) * 14)
+    newLine:SetPoint("TOPLEFT", mainFrame.totalBossKills, "BOTTOMLEFT", 0, yOffset)
 
     -- Defines the text to add as a new entry
     newLine:SetText("BOSS_KILL: " .. encounterName .. " (ID: " .. encounterID .. ")")
@@ -75,8 +92,9 @@ local function addBossKill(encounterID, encounterName)
     nextLineNumber = nextLineNumber + 1
 end
 
+-- === Events ===
 -- when event condition is met, call this funciton
-local function eventHandler(self, event, ...)
+local function eventHandler(_, event, ...)
     if event == "BOSS_KILL" then
         -- BOSS_KILL args come from ... 
         local encounterID, encounterName = ...
@@ -97,10 +115,11 @@ end
 eventListenerFrame:SetScript("OnEvent", eventHandler)
 eventListenerFrame:RegisterEvent("BOSS_KILL")
 
+-- === Slash Commands ===
 -- Commands to show addon
-SLASH_TESTADDON1 = "/testaddon"
-SLASH_TESTADDON2 = "/ta"
-SlashCmdList["TESTADDON"] = function()
+SLASH_SPEEDSPLITS1 = "/speedsplits"
+SLASH_SPEEDSPLITS2 = "/ss"
+SlashCmdList["SPEEDSPLITS"] = function()
     if mainFrame:IsShown() then
         mainFrame:Hide()
     else
@@ -108,7 +127,5 @@ SlashCmdList["TESTADDON"] = function()
     end
 end
 
-mainFrame:SetScript("OnShow", function()
-    PlaySound(808)
-    mainFrame.totalBossKills:SetText("Total boss kills: " .. (MyAddonDB.bossKills))
-end)
+-- Allows addon to be exited with ESC
+table.insert(UISpecialFrames, "SpeedSplitsMainFrame")

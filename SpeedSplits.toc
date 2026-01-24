@@ -1,0 +1,10 @@
+## Interface: 110207, 120000, 120001
+## Title: SpeedSplits
+## Notes: Aceman's addon for tracking speedrun splits in World of Warcraft.
+## Author: Aceman
+## Version: 0.0.3
+## X-Curse-Project-ID: 999999
+## SavedVariables: 
+## SavedVariablesPerCharacter: SpeedSplitsDB
+
+SpeedSplits.lua

@@ -447,7 +447,7 @@ local UI = {
 
     _rightInset = RIGHT_INSET_DEFAULT,
     _topInset = RIGHT_INSET_DEFAULT,
-    _bottomInset = RIGHT_INSET_DEFAULT,
+    _bottomInset = 34, -- Increased for Totals spacing
 
     _colGrips = nil, -- separator grips
     _colDrag = nil, -- active drag state
@@ -791,7 +791,6 @@ local function MakeCellUpdater(opts)
         end
     end
 end
-
 local Boss_DoCellUpdate = function(rowFrame, cellFrame, data, cols, row, realrow, column, fShow, stable)
     if not fShow or not realrow then
         if cellFrame and cellFrame.text then cellFrame.text:SetText("") end
@@ -801,14 +800,37 @@ local Boss_DoCellUpdate = function(rowFrame, cellFrame, data, cols, row, realrow
     local cell = e and e.cols and e.cols[column]
     if not cell then return end
     cellFrame.text:SetText(cell.value or "")
-    -- Different font for Boss Name
     cellFrame.text:SetFontObject(GameFontHighlight)
     cellFrame.text:SetJustifyH("LEFT")
     cellFrame.text:SetJustifyV("MIDDLE")
     cellFrame.text:SetWordWrap(false)
+    cellFrame.text:ClearAllPoints()
+    cellFrame.text:SetPoint("LEFT", cellFrame, "LEFT", 0, 0)
+    cellFrame.text:SetPoint("RIGHT", cellFrame, "RIGHT", 0, 0)
 end
 
-local Num_DoCellUpdate = MakeCellUpdater { justifyH = "CENTER", useColColor = true }
+local Num_DoCellUpdate = function(rowFrame, cellFrame, data, cols, row, realrow, column, fShow, stable)
+    if not fShow or not realrow then
+        if cellFrame and cellFrame.text then cellFrame.text:SetText("") end
+        return
+    end
+    local e = data[realrow]
+    local cell = e and e.cols and e.cols[column]
+    if not cell then return end
+    cellFrame.text:SetText(cell.value or "")
+    cellFrame.text:SetFontObject(GameFontHighlightSmall)
+    cellFrame.text:SetJustifyH("CENTER")
+    cellFrame.text:SetJustifyV("MIDDLE")
+    cellFrame.text:ClearAllPoints()
+    cellFrame.text:SetPoint("LEFT", cellFrame, "LEFT", 0, 0)
+    cellFrame.text:SetPoint("RIGHT", cellFrame, "RIGHT", 0, 0)
+    local c = (cols[column].color) and cols[column].color(data, cols, realrow, column, stable) or cell.color
+    if c then
+        cellFrame.text:SetTextColor(c.r or 1, c.g or 1, c.b or 1, c.a or 1)
+    else
+        cellFrame.text:SetTextColor(1, 1, 1, 1)
+    end
+end
 
 local function DeltaColor(data, cols, realrow, column)
     local e = data[realrow]
@@ -1600,13 +1622,15 @@ local function RenderBossTable(entries, pbSegments)
     local data = UI.data
     local map = UI.rowByBossKey
 
+    local cumulativePB = 0
     for _, entry in ipairs(entries) do
-        local pb = pbSegments[entry.key]
+        local pbSegment = pbSegments[entry.key] or 0
+        cumulativePB = cumulativePB + pbSegment
         data[#data + 1] = {
             key = entry.key,
             cols = {
                 { value = entry.name or "Unknown" },
-                { value = FormatTime(pb) },
+                { value = (cumulativePB > 0) and FormatTime(cumulativePB) or "--:--.---" },
                 { value = "" },
                 { value = "", color = nil }
             }
@@ -1639,15 +1663,17 @@ local function GetPreviousKilledCumulativeInTableOrder(run, bossKey)
     return previous
 end
 
-local function SetRowKilled(bossKey, splitSegment, pbSegment, deltaSeconds, deltaR, deltaG, deltaB)
+local function SetRowKilled(bossKey, splitCumulative, cumulativePB, deltaSeconds, deltaR, deltaG, deltaB)
     local realrow = UI.rowByBossKey and UI.rowByBossKey[bossKey]
     local row = realrow and UI.data and UI.data[realrow]
     if not row then
         return
     end
 
-    row.cols[2].value = FormatTime(pbSegment)
-    row.cols[3].value = FormatTime(splitSegment)
+    row.cols[2].value = FormatTime(cumulativePB)
+    row.cols[3].value = FormatTime(splitCumulative)
+    row.cols[4].value = FormatDelta(deltaSeconds)
+    row.cols[4].color = { r = deltaR or 1, g = deltaG or 1, b = deltaB or 1, a = 1 }
 
     if deltaSeconds == nil then
         row.cols[4].value = ""
@@ -1911,20 +1937,28 @@ local function RecordBossKill(encounterID, encounterName)
         splitSegment = 0
     end
 
-    local pbTable = GetPBTableForDungeon(Run.dungeonKey) -- PB stored as segment time
-    local oldPB = pbTable[bossKey]
-    local isNewPB = (oldPB == nil) or (splitSegment < oldPB)
+    local pbTable = GetPBTableForDungeon(Run.dungeonKey)
+    local oldSegmentPB = pbTable[bossKey]
+    local isNewSegmentPB = (oldSegmentPB == nil) or (splitSegment < oldSegmentPB)
 
-    local deltaSeconds = oldPB and (splitSegment - oldPB) or 0
-
-    if isNewPB then
+    if isNewSegmentPB then
         pbTable[bossKey] = splitSegment
     end
 
-    local pbSegment = pbTable[bossKey]
-    local r, g, b = DeltaToRGB(deltaSeconds, isNewPB and oldPB ~= nil)
+    -- Cumulative calculations for display
+    local cumulativePB = 0
+    for _, entry in ipairs(Run.entries) do
+        local seg = pbTable[entry.key] or 0
+        cumulativePB = cumulativePB + seg
+        if entry.key == bossKey then
+            break
+        end
+    end
 
-    SetRowKilled(bossKey, splitSegment, pbSegment, deltaSeconds, r or Colors.gold.r, g or Colors.gold.g, b or Colors.gold.b)
+    local deltaSeconds = splitCumulative - cumulativePB
+    local r, g, b = DeltaToRGB(deltaSeconds, deltaSeconds < 0)
+
+    SetRowKilled(bossKey, splitCumulative, cumulativePB, deltaSeconds, r, g, b)
 
     SetKillCount(Run.killedCount, #Run.entries)
     RefreshTotals(false)

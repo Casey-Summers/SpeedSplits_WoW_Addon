@@ -1,22 +1,38 @@
 -- SpeedSplits.lua
--- Retail WoW addon: instance splits with objective-first boss discovery + EJ fallback
---
--- Key behaviour:
---  - Boss list: Objectives tracker first (with short retry until criteria strings are ready);
---    if still unavailable, fall back to Encounter Journal.
---  - Run starts on first player movement inside the instance.
---  - Each boss kill records a split time, updates per-boss PB segment, and shows delta (Split - PB).
---  - Run stops when all detected bosses are killed (any order).
---  - Bottom Totals row:
---      PB    = Sum of Best (sum of PB segments in table order)
---      Split = final overall time (only shown once the last boss is killed; otherwise --:--.---)
---      Δ     = Split - PB total (only when run completes)
---
--- SavedVariables:
---   ## SavedVariables: SpeedSplitsDB
--- (Will auto-migrate from MyAddonDB if present.)
+-- Retail WoW addon: instance splits with objective-first boss discovery + EJ fallback.
+-- Run starts on first movement; boss kills record splits, PB segments, and deltas.
+-- SavedVariables: SpeedSplitsDB (auto-migrates from MyAddonDB if present).
 local ADDON_NAME = ...
 local App = CreateFrame("Frame")
+
+-- Constants
+local COL_MIN_NUM = 54
+local COL_MAX_PB_SPLIT = 260
+local COL_MAX_DELTA = 200
+local COL_MIN_BOSS = 160
+local GRIP_HALFWIDTH = 5
+local HEADER_H = 18
+local RIGHT_INSET_DEFAULT = 26
+local TOP_BAR_H = 28
+local TOP_BAR_GAP = 4
+local LOGO_COLOR = "|cff33ff99"
+local BOSS_LOAD_MAX_TRIES = 40
+local BOSS_LOAD_RETRY_DELAY = 0.25
+local DELTA_GREEN_THRESH = 3
+local DELTA_ORANGE_THRESH = 5
+local RUNS_MAX = 200
+local EJ_INSTANCE_INDEX_MAX = 600
+local EJ_ENCOUNTER_INDEX_MAX = 80
+local CRITERIA_MAX = 80
+
+local Colors = {
+    green = { r = 0.20, g = 1.00, b = 0.20, a = 1 },
+    red = { r = 1.00, g = 0.25, b = 0.25, a = 1 },
+    gold = { r = 1.00, g = 0.82, b = 0.00, a = 1 },
+    goldLight = { r = 1.00, g = 0.92, b = 0.25, a = 1 },
+    orange = { r = 1.00, g = 0.65, b = 0.00, a = 1 },
+    white = { r = 1, g = 1, b = 1, a = 1 },
+}
 
 -- =========================================================
 -- SavedVariables
@@ -42,20 +58,15 @@ local function ResolveScrollingTable()
     if ScrollingTable and type(ScrollingTable.CreateST) == "function" then
         return ScrollingTable
     end
-
-    local candidates = {_G.ScrollingTable, _G.LibScrollingTable, _G.LibST, _G.libst, _G["lib-st"], _G["lib-st-v4"],
-                        _G["lib-st-v4.1.3"]}
-
+    local candidates = { _G["lib-st-v4.1.3"], _G["lib-st"], _G.LibST, _G.libst, _G.LibScrollingTable, _G.ScrollingTable }
     for _, lib in ipairs(candidates) do
         if lib and type(lib.CreateST) == "function" then
             ScrollingTable = lib
             return lib
         end
     end
-
     if LibStub then
-        local ids = {"ScrollingTable", "LibScrollingTable", "LibScrollingTable-1.0", "LibScrollingTable-1.1", "lib-st"}
-        for _, id in ipairs(ids) do
+        for _, id in ipairs({ "lib-st", "LibScrollingTable-1.1", "LibScrollingTable-1.0", "LibScrollingTable", "ScrollingTable" }) do
             local ok, lib = pcall(LibStub, id, true)
             if ok and lib and type(lib.CreateST) == "function" then
                 ScrollingTable = lib
@@ -63,15 +74,6 @@ local function ResolveScrollingTable()
             end
         end
     end
-
-    -- Heuristic: find any global table that looks like lib-st
-    for _, v in pairs(_G) do
-        if type(v) == "table" and type(v.CreateST) == "function" then
-            ScrollingTable = v
-            return v
-        end
-    end
-
     return nil
 end
 
@@ -89,27 +91,17 @@ local function Clamp(value, minValue, maxValue)
 end
 
 local function ApplyResizeBounds(frame, minW, minH, maxW, maxH)
-    if not frame then
-        return
-    end
-    if frame.SetResizable then
-        frame:SetResizable(true)
-    end
+    if not frame then return end
+    if frame.SetResizable then frame:SetResizable(true) end
     if frame.SetResizeBounds then
         frame:SetResizeBounds(minW, minH, maxW or minW, maxH or minH)
         return
     end
-    if frame.SetMinResize then
-        frame:SetMinResize(minW, minH)
-    end
+    if frame.SetMinResize then frame:SetMinResize(minW, minH) end
 end
 
-local function NowEpoch()
-    return time()
-end
-local function NowGameTime()
-    return GetTime()
-end
+local NowEpoch = time
+local NowGameTime = GetTime
 
 local function NormalizeName(text)
     if text == nil then
@@ -166,69 +158,67 @@ local function FormatDelta(deltaSeconds)
 end
 
 local function GetDungeonKey(mapID, difficultyID)
-    mapID = tonumber(mapID) or 0
-    difficultyID = tonumber(difficultyID) or 0
-    return string.format("%d:%d", mapID, difficultyID)
+    return ("%d:%d"):format(tonumber(mapID) or 0, tonumber(difficultyID) or 0)
+end
+
+local function HistoryFilterDefaults()
+    return {
+        tier = 0,
+        mapID = 0,
+        dateMode = "any",
+        sort = "recent",
+        successOnly = false,
+        pbOnly = false,
+        search = "",
+    }
+end
+
+--- Delta (seconds) -> r,g,b for display. nil-safe.
+local function DeltaToRGB(delta, isImprovement)
+    if delta == nil then return nil, nil, nil end
+    if isImprovement then return Colors.gold.r, Colors.gold.g, Colors.gold.b end
+    local a = math.abs(delta)
+    if a <= DELTA_GREEN_THRESH then return Colors.green.r, Colors.green.g, Colors.green.b end
+    if a <= DELTA_ORANGE_THRESH then return Colors.orange.r, Colors.orange.g, Colors.orange.b end
+    return Colors.red.r, Colors.red.g, Colors.red.b
 end
 
 -- =========================================================
--- Encounter Journal helpers
+-- Encounter Journal
 -- =========================================================
-local function FindJournalTierForInstanceID(targetInstanceID)
-    targetInstanceID = tonumber(targetInstanceID)
-    if not targetInstanceID or not EJ_GetNumTiers or not EJ_SelectTier or not EJ_GetInstanceByIndex then
-        return nil
-    end
-
+local function ForEachEJInstance(callback)
+    if not EJ_GetNumTiers or not EJ_SelectTier or not EJ_GetInstanceByIndex then return end
     local tierCount = EJ_GetNumTiers() or 0
-    for tierIndex = 1, tierCount do
-        EJ_SelectTier(tierIndex)
+    for ti = 1, tierCount do
+        EJ_SelectTier(ti)
         for isRaid = 0, 1 do
-            for instanceIndex = 1, 600 do
-                local instanceID = EJ_GetInstanceByIndex(instanceIndex, isRaid == 1)
-                if not instanceID then
-                    break
-                end
-                if tonumber(instanceID) == targetInstanceID then
-                    return tierIndex
-                end
+            for ii = 1, EJ_INSTANCE_INDEX_MAX do
+                local instanceID, name = EJ_GetInstanceByIndex(ii, isRaid == 1)
+                if not instanceID then break end
+                if callback(ti, instanceID, name) then return end
             end
         end
     end
+end
 
-    return nil
+local function FindJournalTierForInstanceID(targetID)
+    targetID = tonumber(targetID)
+    if not targetID then return nil end
+    local found
+    ForEachEJInstance(function(ti, instanceID)
+        if tonumber(instanceID) == targetID then found = ti; return true end
+    end)
+    return found
 end
 
 local function FindJournalTierAndInstanceIDByName(instanceName)
-    if not instanceName or instanceName == "" then
-        return nil, nil
-    end
-    if not EJ_GetNumTiers or not EJ_SelectTier or not EJ_GetInstanceByIndex then
-        return nil, nil
-    end
-
     local wanted = NormalizeName(instanceName)
-    if wanted == "" then
-        return nil, nil
-    end
-
-    local tierCount = EJ_GetNumTiers() or 0
-    for tierIndex = 1, tierCount do
-        EJ_SelectTier(tierIndex)
-        for isRaid = 0, 1 do
-            for instanceIndex = 1, 600 do
-                local instanceID, name = EJ_GetInstanceByIndex(instanceIndex, isRaid == 1)
-                if not instanceID then
-                    break
-                end
-                if NormalizeName(name) == wanted then
-                    return tierIndex, instanceID
-                end
-            end
-        end
-    end
-
-    return nil, nil
+    if wanted == "" then return nil, nil end
+    local foundTier, foundID
+    ForEachEJInstance(function(ti, instanceID, name)
+        if NormalizeName(name) == wanted then foundTier, foundID = ti, instanceID; return true end
+    end)
+    return foundTier, foundID
 end
 
 local function GetJournalTierAndInstanceIDForCurrentInstance()
@@ -319,7 +309,7 @@ local function GetBossNamesFromObjectives()
     local sawCriteria = false
     local sawStringDescription = false
 
-    local maxCriteria = criteriaCount or 80
+    local maxCriteria = criteriaCount or CRITERIA_MAX
     for criteriaIndex = 1, maxCriteria do
         local criteria = C_ScenarioInfo.GetCriteriaInfo(criteriaIndex)
         if not criteria then
@@ -378,7 +368,7 @@ local function GetEJBossesForInstance(journalInstanceID)
         return bosses
     end
 
-    for encounterIndex = 1, 80 do
+    for encounterIndex = 1, EJ_ENCOUNTER_INDEX_MAX do
         local name, _, encounterID = EJ_GetEncounterInfoByIndex(encounterIndex, journalInstanceID)
         if not name then
             break
@@ -392,26 +382,26 @@ local function GetEJBossesForInstance(journalInstanceID)
     return bosses
 end
 
-local function BuildBossEntriesOld()
-    -- Returns: entries, source, tier, journalID, ready
+local function EJBossesToEntries(ejBosses)
     local entries = {}
-
-    local tier, journalID = GetJournalTierAndInstanceIDForCurrentInstance()
-
-    local objectiveNames, ready = GetBossNamesFromObjectives()
-    if not ready then
-        return {}, "none", tier, journalID, false
+    for _, boss in ipairs(ejBosses or {}) do
+        local encounterID = tonumber(boss.encounterID)
+        local key = encounterID and ("E:" .. encounterID) or ("N:" .. NormalizeName(boss.name))
+        entries[#entries + 1] = { key = key, name = boss.name, encounterID = encounterID }
     end
+    return entries
+end
+
+local function BuildBossEntries()
+    local tier, journalID = GetJournalTierAndInstanceIDForCurrentInstance()
+    local objectiveNames, ready = GetBossNamesFromObjectives()
+    if not ready then return {}, "none", tier, journalID, false end
 
     if #objectiveNames > 0 then
+        local entries = {}
         for _, bossName in ipairs(objectiveNames) do
-            local normalized = NormalizeName(bossName)
-            if normalized ~= "" then
-                entries[#entries + 1] = {
-                    key = "N:" .. normalized,
-                    name = bossName
-                }
-            end
+            local n = NormalizeName(bossName)
+            if n ~= "" then entries[#entries + 1] = { key = "N:" .. n, name = bossName } end
         end
         return entries, "objectives", tier, journalID, true
     end
@@ -419,19 +409,9 @@ local function BuildBossEntriesOld()
     if journalID then
         local ejBosses = GetEJBossesForInstance(journalID)
         if #ejBosses > 0 then
-            for _, boss in ipairs(ejBosses) do
-                local encounterID = tonumber(boss.encounterID)
-                local key = encounterID and ("E:" .. encounterID) or ("N:" .. NormalizeName(boss.name))
-                entries[#entries + 1] = {
-                    key = key,
-                    name = boss.name,
-                    encounterID = encounterID
-                }
-            end
-            return entries, "encounter_journal", tier, journalID, true
+            return EJBossesToEntries(ejBosses), "encounter_journal", tier, journalID, true
         end
     end
-
     return {}, "none", tier, journalID, true
 end
 
@@ -464,9 +444,9 @@ local UI = {
     _splitWidth = 80,
     _deltaWidth = 60,
 
-    _rightInset = 26, -- space for scrollbar/padding
-    _topInset = 26, -- space for kill count line
-    _bottomInset = 26, -- totals row height/padding
+    _rightInset = RIGHT_INSET_DEFAULT,
+    _topInset = RIGHT_INSET_DEFAULT,
+    _bottomInset = RIGHT_INSET_DEFAULT,
 
     _colGrips = nil, -- separator grips
     _colDrag = nil, -- active drag state
@@ -482,13 +462,9 @@ local UI = {
 
     history = {
         frame = nil,
-        mode = "recent",
         searchBox = nil,
         tierDropDown = nil,
         dateDropDown = nil,
-        listScroll = nil,
-        listChild = nil,
-        listRows = {}
     }
 }
 
@@ -498,7 +474,7 @@ local function ApplyThinSeparator(grip)
     end
     local line = grip:CreateTexture(nil, "ARTWORK")
     line:SetPoint("CENTER", grip, "CENTER", 0, 0)
-    line:SetSize(1, 18)
+    line:SetSize(1, HEADER_H)
     line:SetColorTexture(1, 1, 1, 0.18)
     grip._line = line
 end
@@ -574,9 +550,7 @@ local function RestoreColWidths()
 end
 
 local function GetScrollBarInset(st)
-    if not st or not st.frame then
-        return UI._rightInset
-    end
+    if not st or not st.frame then return UI._rightInset end
     local sb = (st.scrollframe and st.scrollframe.ScrollBar) or (st.frame.ScrollBar) or (st.scrollbar)
     local w = (sb and sb.GetWidth and sb:GetWidth()) or UI._rightInset
     return math.max(16, math.floor(w + 8))
@@ -592,14 +566,10 @@ local function ApplyTableLayout()
     local w = UI.st.frame:GetWidth() or 1
     local available = math.max(w - UI._rightInset, 1)
 
-    local minBoss, minNum = 160, 54
-    UI._pbWidth = Clamp(UI._pbWidth, minNum, math.max(available - (minBoss + UI._splitWidth + UI._deltaWidth), minNum))
-    UI._splitWidth = Clamp(UI._splitWidth, minNum,
-        math.max(available - (minBoss + UI._pbWidth + UI._deltaWidth), minNum))
-    UI._deltaWidth = Clamp(UI._deltaWidth, minNum,
-        math.max(available - (minBoss + UI._pbWidth + UI._splitWidth), minNum))
-
-    local bossWidth = math.max(available - (UI._pbWidth + UI._splitWidth + UI._deltaWidth), minBoss)
+    UI._pbWidth = Clamp(UI._pbWidth, COL_MIN_NUM, math.max(available - (COL_MIN_BOSS + UI._splitWidth + UI._deltaWidth), COL_MIN_NUM))
+    UI._splitWidth = Clamp(UI._splitWidth, COL_MIN_NUM, math.max(available - (COL_MIN_BOSS + UI._pbWidth + UI._deltaWidth), COL_MIN_NUM))
+    UI._deltaWidth = Clamp(UI._deltaWidth, COL_MIN_NUM, math.max(available - (COL_MIN_BOSS + UI._pbWidth + UI._splitWidth), COL_MIN_NUM))
+    local bossWidth = math.max(available - (UI._pbWidth + UI._splitWidth + UI._deltaWidth), COL_MIN_BOSS)
 
     UI.cols[1].width = bossWidth
     UI.cols[2].width = UI._pbWidth
@@ -644,18 +614,16 @@ local function ApplyTableLayout()
         local xPBRight = bossWidth + UI._pbWidth
         local xSplitRight = bossWidth + UI._pbWidth + UI._splitWidth
 
-        -- grips use table-local coordinates, so we anchor them to the st.frame
+        local gv = -HEADER_H
         UI._colGrips[1]:ClearAllPoints()
-        UI._colGrips[1]:SetPoint("TOPLEFT", UI.st.frame, "TOPLEFT", xBossRight - 5, 0)
-        UI._colGrips[1]:SetPoint("BOTTOMRIGHT", UI.st.frame, "TOPLEFT", xBossRight + 5, -18)
-
+        UI._colGrips[1]:SetPoint("TOPLEFT", UI.st.frame, "TOPLEFT", xBossRight - GRIP_HALFWIDTH, 0)
+        UI._colGrips[1]:SetPoint("BOTTOMRIGHT", UI.st.frame, "TOPLEFT", xBossRight + GRIP_HALFWIDTH, gv)
         UI._colGrips[2]:ClearAllPoints()
-        UI._colGrips[2]:SetPoint("TOPLEFT", UI.st.frame, "TOPLEFT", xPBRight - 5, 0)
-        UI._colGrips[2]:SetPoint("BOTTOMRIGHT", UI.st.frame, "TOPLEFT", xPBRight + 5, -18)
-
+        UI._colGrips[2]:SetPoint("TOPLEFT", UI.st.frame, "TOPLEFT", xPBRight - GRIP_HALFWIDTH, 0)
+        UI._colGrips[2]:SetPoint("BOTTOMRIGHT", UI.st.frame, "TOPLEFT", xPBRight + GRIP_HALFWIDTH, gv)
         UI._colGrips[3]:ClearAllPoints()
-        UI._colGrips[3]:SetPoint("TOPLEFT", UI.st.frame, "TOPLEFT", xSplitRight - 5, 0)
-        UI._colGrips[3]:SetPoint("BOTTOMRIGHT", UI.st.frame, "TOPLEFT", xSplitRight + 5, -18)
+        UI._colGrips[3]:SetPoint("TOPLEFT", UI.st.frame, "TOPLEFT", xSplitRight - GRIP_HALFWIDTH, 0)
+        UI._colGrips[3]:SetPoint("BOTTOMRIGHT", UI.st.frame, "TOPLEFT", xSplitRight + GRIP_HALFWIDTH, gv)
     end
 end
 
@@ -718,19 +686,14 @@ local function UpdateColDrag()
     curX = curX / scale
 
     local dx = curX - UI._colDrag.startX
-    local minNum = 54
-
     if UI._colDrag.which == 1 then
-        -- Boss|PB: adjust PB (boss fills remainder)
-        UI._pbWidth = Clamp(UI._colDrag.pb - dx, minNum, 260)
+        UI._pbWidth = Clamp(UI._colDrag.pb - dx, COL_MIN_NUM, COL_MAX_PB_SPLIT)
     elseif UI._colDrag.which == 2 then
-        -- PB|Split: adjust PB + Split
-        UI._pbWidth = Clamp(UI._colDrag.pb + dx, minNum, 260)
-        UI._splitWidth = Clamp(UI._colDrag.split - dx, minNum, 260)
+        UI._pbWidth = Clamp(UI._colDrag.pb + dx, COL_MIN_NUM, COL_MAX_PB_SPLIT)
+        UI._splitWidth = Clamp(UI._colDrag.split - dx, COL_MIN_NUM, COL_MAX_PB_SPLIT)
     elseif UI._colDrag.which == 3 then
-        -- Split|Delta: adjust Split + Delta
-        UI._splitWidth = Clamp(UI._colDrag.split + dx, minNum, 260)
-        UI._deltaWidth = Clamp(UI._colDrag.delta - dx, minNum, 200)
+        UI._splitWidth = Clamp(UI._colDrag.split + dx, COL_MIN_NUM, COL_MAX_PB_SPLIT)
+        UI._deltaWidth = Clamp(UI._colDrag.delta - dx, COL_MIN_NUM, COL_MAX_DELTA)
     end
 
     ApplyTableLayout()
@@ -777,68 +740,42 @@ local function EnsureColGrips()
 end
 
 local function StyleHeaderCell(cellFrame, align)
-    if not cellFrame or not cellFrame.text then
-        return
-    end
-    cellFrame.text:SetJustifyH(align or "LEFT")
-    cellFrame.text:SetJustifyV("MIDDLE")
+    if not cellFrame or not cellFrame.text then return end
+    cellFrame.text:SetJustifyH(align or "CENTER")
+    cellFrame.text:SetJustifyV("TOP")
     cellFrame.text:SetFontObject(GameFontNormalSmall)
     cellFrame.text:SetTextColor(1, 1, 1, 0.90)
 end
 
-local function Boss_DoCellUpdate(rowFrame, cellFrame, data, cols, row, realrow, column, fShow, stable)
-    if not fShow or not realrow then
-        if cellFrame and cellFrame.text then
-            cellFrame.text:SetText("")
+local function MakeCellUpdater(opts)
+    opts = opts or {}
+    return function(rowFrame, cellFrame, data, cols, row, realrow, column, fShow, stable)
+        if not fShow or not realrow then
+            if cellFrame and cellFrame.text then cellFrame.text:SetText("") end
+            return
         end
-        return
-    end
-
-    local e = data[realrow]
-    local cell = e and e.cols and e.cols[column]
-    if not cell then
-        return
-    end
-
-    cellFrame.text:SetText(cell.value or "")
-    cellFrame.text:SetFontObject(GameFontHighlightSmall)
-    cellFrame.text:SetJustifyH("LEFT")
-    cellFrame.text:SetJustifyV("TOP")
-    cellFrame.text:SetWordWrap(true)
-    if cellFrame.text.SetMaxLines then
-        cellFrame.text:SetMaxLines(2)
-    end
-    cellFrame.text:SetTextColor(1, 1, 1, 1)
-end
-
-local function Num_DoCellUpdate(rowFrame, cellFrame, data, cols, row, realrow, column, fShow, stable)
-    if not fShow or not realrow then
-        if cellFrame and cellFrame.text then
-            cellFrame.text:SetText("")
+        local e = data[realrow]
+        local cell = e and e.cols and e.cols[column]
+        if not cell then return end
+        cellFrame.text:SetText(cell.value or "")
+        cellFrame.text:SetFontObject(GameFontHighlightSmall)
+        cellFrame.text:SetJustifyH(opts.justifyH or cols[column].align or "LEFT")
+        cellFrame.text:SetJustifyV(opts.justifyV or "MIDDLE")
+        if opts.wordWrap then cellFrame.text:SetWordWrap(true) end
+        if opts.maxLines and cellFrame.text.SetMaxLines then cellFrame.text:SetMaxLines(opts.maxLines) end
+        local c = (opts.useColColor and cols[column].color) and cols[column].color(data, cols, realrow, column, stable) or cell.color
+        if c then
+            cellFrame.text:SetTextColor(c.r or 1, c.g or 1, c.b or 1, c.a or 1)
+        else
+            cellFrame.text:SetTextColor(1, 1, 1, 1)
         end
-        return
-    end
-
-    local e = data[realrow]
-    local cell = e and e.cols and e.cols[column]
-    if not cell then
-        return
-    end
-
-    cellFrame.text:SetText(cell.value or "")
-    cellFrame.text:SetFontObject(GameFontHighlightSmall)
-    cellFrame.text:SetJustifyH("RIGHT")
-    cellFrame.text:SetJustifyV("MIDDLE")
-
-    local color = cols[column].color and cols[column].color(data, cols, realrow, column, stable)
-    if color then
-        cellFrame.text:SetTextColor(color.r, color.g, color.b, color.a or 1)
-    else
-        cellFrame.text:SetTextColor(1, 1, 1, 1)
     end
 end
 
-local function DeltaColor(data, cols, realrow, column, stable)
+local Boss_DoCellUpdate = MakeCellUpdater { justifyH = "LEFT", justifyV = "TOP", wordWrap = true, maxLines = 2 }
+local Num_DoCellUpdate = MakeCellUpdater { justifyH = "RIGHT", useColColor = true }
+
+local function DeltaColor(data, cols, realrow, column)
     local e = data[realrow]
     local cell = e and e.cols and e.cols[column]
     return cell and cell.color or nil
@@ -950,47 +887,14 @@ local function DateRangeToMinEpoch(mode)
     return nil
 end
 
-local function History_Text_DoCellUpdate(rowFrame, cellFrame, data, cols, row, realrow, column, fShow, stable)
-    if not fShow or not realrow then
-        if cellFrame and cellFrame.text then
-            cellFrame.text:SetText("")
-        end
-        return
-    end
-    local e = data[realrow]
-    local cell = e and e.cols and e.cols[column]
-    if not cell then
-        return
-    end
-
-    cellFrame.text:SetText(cell.value or "")
-    cellFrame.text:SetFontObject(GameFontHighlightSmall)
-    cellFrame.text:SetJustifyH(cols[column].align or "LEFT")
-    cellFrame.text:SetJustifyV("MIDDLE")
-
-    local c = cell.color
-    if c then
-        cellFrame.text:SetTextColor(c.r or 1, c.g or 1, c.b or 1, c.a or 1)
-    else
-        cellFrame.text:SetTextColor(1, 1, 1, 1)
-    end
-end
+local History_DoCellUpdate = MakeCellUpdater {} -- uses cols[column].align, cell.color
 
 local function RefreshHistoryTable()
     if not UI or not UI.history or not UI.history.st then
         return
     end
 
-    UI.history.filters = UI.history.filters or {
-        tier = 0,
-        mapID = 0,
-        dateMode = "any",
-        sort = "recent",
-        successOnly = false,
-        pbOnly = false,
-        search = ""
-    }
-
+    UI.history.filters = UI.history.filters or HistoryFilterDefaults()
     local f = UI.history.filters
     local search = NormalizeName(f.search or "")
     local minEpoch = DateRangeToMinEpoch(f.dateMode)
@@ -1043,36 +947,11 @@ local function RefreshHistoryTable()
         local pb = DB.pbRun and r.dungeonKey and DB.pbRun[r.dungeonKey]
         local deltaPB = (pb and pb.duration and r.duration) and (r.duration - pb.duration) or nil
 
-        local resultColor = r.success and {
-            r = 0.20,
-            g = 1.00,
-            b = 0.20,
-            a = 1
-        } or {
-            r = 1.00,
-            g = 0.25,
-            b = 0.25,
-            a = 1
-        }
+        local resultColor = r.success and Colors.green or Colors.red
         local pbMark = IsRunPB(r) and "★" or ""
-        local pbMarkColor = pbMark ~= "" and {
-            r = 1.00,
-            g = 0.92,
-            b = 0.25,
-            a = 1
-        } or nil
+        local pbMarkColor = pbMark ~= "" and Colors.goldLight or nil
         local deltaText = deltaPB and FormatDelta(deltaPB) or "—"
-        local deltaColor = deltaPB and (deltaPB <= 0 and {
-            r = 0.20,
-            g = 1.00,
-            b = 0.20,
-            a = 1
-        } or {
-            r = 1.00,
-            g = 0.25,
-            b = 0.25,
-            a = 1
-        }) or nil
+        local deltaColor = deltaPB and (deltaPB <= 0 and Colors.green or Colors.red) or nil
 
         data[i] = {
             record = r,
@@ -1217,16 +1096,7 @@ local function EnsureHistoryUI()
         return cb
     end
 
-    UI.history.filters = UI.history.filters or {
-        tier = 0,
-        mapID = 0,
-        dateMode = "any",
-        sort = "recent",
-        successOnly = false,
-        pbOnly = false,
-        search = ""
-    }
-
+    UI.history.filters = UI.history.filters or HistoryFilterDefaults()
     AddSearchBox()
 
     UI.history.tierDropDown = AddDropDown("Expansion", filterW - 26, BuildHistoryTierItems, function()
@@ -1302,15 +1172,7 @@ local function EnsureHistoryUI()
     clearBtn:SetPoint("BOTTOMLEFT", filterFrame, "BOTTOMLEFT", 10, 10)
     clearBtn:SetText("Clear filters")
     clearBtn:SetScript("OnClick", function()
-        UI.history.filters = {
-            tier = 0,
-            mapID = 0,
-            dateMode = "any",
-            sort = "recent",
-            successOnly = false,
-            pbOnly = false,
-            search = ""
-        }
+        UI.history.filters = HistoryFilterDefaults()
         if UI.history.searchBox then
             UI.history.searchBox:SetText("")
         end
@@ -1337,37 +1199,37 @@ local function EnsureHistoryUI()
             name = "Date",
             width = 130,
             align = "LEFT",
-            DoCellUpdate = History_Text_DoCellUpdate
+            DoCellUpdate = History_DoCellUpdate
         }, {
             name = "Dungeon",
             width = 260,
             align = "LEFT",
-            DoCellUpdate = History_Text_DoCellUpdate
+            DoCellUpdate = History_DoCellUpdate
         }, {
             name = "Diff",
             width = 70,
             align = "LEFT",
-            DoCellUpdate = History_Text_DoCellUpdate
+            DoCellUpdate = History_DoCellUpdate
         }, {
             name = "Time",
             width = 90,
             align = "RIGHT",
-            DoCellUpdate = History_Text_DoCellUpdate
+            DoCellUpdate = History_DoCellUpdate
         }, {
             name = "Result",
             width = 60,
             align = "LEFT",
-            DoCellUpdate = History_Text_DoCellUpdate
+            DoCellUpdate = History_DoCellUpdate
         }, {
             name = "PB",
             width = 40,
             align = "CENTER",
-            DoCellUpdate = History_Text_DoCellUpdate
+            DoCellUpdate = History_DoCellUpdate
         }, {
             name = "ΔPB",
             width = 80,
             align = "RIGHT",
-            DoCellUpdate = History_Text_DoCellUpdate
+            DoCellUpdate = History_DoCellUpdate
         }}
 
         local st = ST:CreateST(cols, 18, 18, nil, listFrame)
@@ -1451,7 +1313,6 @@ local function EnsureUI()
     bossFrame:SetClampedToScreen(true)
     bossFrame:SetMovable(true)
     bossFrame:EnableMouse(true)
-    bossFrame:RegisterForDrag("LeftButton")
     ApplyResizeBounds(bossFrame, 360, 180, 1400, 1000)
     SetHoverBackdrop(bossFrame, 0.80)
 
@@ -1460,18 +1321,35 @@ local function EnsureUI()
         bossFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     end
 
-    bossFrame:SetScript("OnDragStart", function(self)
-        self:StartMoving()
+    -- Title bar: drag handle only (avoids interfering with column resizers)
+    UI._topInset = TOP_BAR_H + TOP_BAR_GAP
+    local titleBar = CreateFrame("Frame", nil, bossFrame)
+    titleBar:SetHeight(TOP_BAR_H)
+    titleBar:SetPoint("TOPLEFT", bossFrame, "TOPLEFT", 0, 0)
+    titleBar:SetPoint("TOPRIGHT", bossFrame, "TOPRIGHT", 0, 0)
+    titleBar:EnableMouse(true)
+    titleBar:RegisterForDrag("LeftButton")
+    titleBar:SetScript("OnDragStart", function()
+        bossFrame:StartMoving()
     end)
-    bossFrame:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        SaveFrameGeom("boss", self)
+    titleBar:SetScript("OnDragStop", function()
+        bossFrame:StopMovingOrSizing()
+        SaveFrameGeom("boss", bossFrame)
     end)
 
-    -- Kill count
-    local killCountText = bossFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    killCountText:SetPoint("TOPLEFT", bossFrame, "TOPLEFT", 8, -8)
+    local killCountText = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    killCountText:SetPoint("LEFT", titleBar, "LEFT", 10, 0)
+    killCountText:SetPoint("RIGHT", titleBar, "CENTER", -10, 0)
+    killCountText:SetJustifyH("LEFT")
+    killCountText:SetJustifyV("MIDDLE")
     killCountText:SetText("Bosses: 0/0")
+
+    local logoText = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    logoText:SetPoint("RIGHT", titleBar, "RIGHT", -10, 0)
+    logoText:SetPoint("LEFT", titleBar, "CENTER", 10, 0)
+    logoText:SetJustifyH("RIGHT")
+    logoText:SetJustifyV("MIDDLE")
+    logoText:SetText(LOGO_COLOR .. "SpeedSplits|r")
 
     -- Scrolling table (lib-st)
     local ST = ResolveScrollingTable()
@@ -1482,22 +1360,22 @@ local function EnsureUI()
     local cols = {{
         name = "Boss",
         width = 220,
-        align = "LEFT",
+        align = "CENTER",
         DoCellUpdate = Boss_DoCellUpdate
     }, {
         name = "PB",
         width = UI._pbWidth,
-        align = "RIGHT",
+        align = "CENTER",
         DoCellUpdate = Num_DoCellUpdate
     }, {
         name = "Split",
         width = UI._splitWidth,
-        align = "RIGHT",
+        align = "CENTER",
         DoCellUpdate = Num_DoCellUpdate
     }, {
-        name = "Δ",
+        name = "Difference",
         width = UI._deltaWidth,
-        align = "RIGHT",
+        align = "CENTER",
         DoCellUpdate = Num_DoCellUpdate,
         color = DeltaColor
     }}
@@ -1606,15 +1484,10 @@ local function EnsureUI()
 end
 
 local function SetTimerText(seconds, finished)
-    if not UI.timerText then
-        return
-    end
+    if not UI.timerText then return end
     UI.timerText:SetText(FormatTime(seconds))
-    if finished then
-        UI.timerText:SetTextColor(0.35, 1.00, 0.35, 1)
-    else
-        UI.timerText:SetTextColor(1, 1, 1, 1)
-    end
+    local c = finished and Colors.green or Colors.white
+    UI.timerText:SetTextColor(c.r, c.g, c.b, c.a or 1)
 end
 
 
@@ -1773,27 +1646,43 @@ local Run = {
     _bossLoaded = false
 }
 
+-- =========================================================
+-- Timer update (every frame, no throttling)
+-- =========================================================
+local TimerUpdater = CreateFrame("Frame")
+local function CancelTimerTicker()
+    TimerUpdater:SetScript("OnUpdate", nil)
+end
+
+local function StartTimerTicker()
+    CancelTimerTicker()
+    TimerUpdater:SetScript("OnUpdate", function()
+        if Run.active and Run.startGameTime > 0 then
+            SetTimerText(NowGameTime() - Run.startGameTime, false)
+        end
+    end)
+end
+
+-- =========================================================
+-- Run state + PB update logic
+-- =========================================================
 local function ResetRun()
     Run.active = false
     Run.waitingForMove = false
-
+    CancelTimerTicker()
     Run.entries = {}
     Run.remaining = {}
     Run.remainingCount = 0
     Run.killedCount = 0
     Run.kills = {}
-
     Run.startGameTime = 0
     Run.endGameTime = 0
     Run.startedAt = 0
     Run.endedAt = 0
-
     Run.bossSource = "none"
     Run.dungeonKey = ""
-
     Run._bossLoadTries = 0
     Run._bossLoaded = false
-
     SetTimerText(0, false)
     SetKillCount(0, 0)
     ClearBossRows()
@@ -1832,22 +1721,7 @@ local function RefreshTotals(isFinal)
 
     local duration = (Run.endGameTime > 0 and Run.startGameTime > 0) and (Run.endGameTime - Run.startGameTime) or nil
     local deltaTotal = (duration and pbTotal) and (duration - pbTotal) or nil
-
-    local r, g, b = nil, nil, nil
-    if deltaTotal ~= nil then
-        if deltaTotal < 0 then
-            r, g, b = 1.00, 0.82, 0.00
-        else
-            local absDelta = math.abs(deltaTotal)
-            if absDelta <= 3 then
-                r, g, b = 0.35, 1.00, 0.35
-            elseif absDelta <= 5 then
-                r, g, b = 1.00, 0.65, 0.00
-            else
-                r, g, b = 1.00, 0.20, 0.20
-            end
-        end
-    end
+    local r, g, b = DeltaToRGB(deltaTotal, deltaTotal and deltaTotal < 0)
 
     SetTotals(pbTotal, duration, deltaTotal, r, g, b)
 end
@@ -1901,9 +1775,7 @@ local function SaveRunRecord(success)
     }
 
     table.insert(DB.runs, 1, record)
-    while #DB.runs > 200 do
-        table.remove(DB.runs)
-    end
+    while #DB.runs > RUNS_MAX do table.remove(DB.runs) end
 
     if success and duration then
         UpdateBestRunIfNeeded(duration)
@@ -1911,37 +1783,27 @@ local function SaveRunRecord(success)
 end
 
 local function StopRun(success)
-    if not Run.active then
-        return
-    end
-
+    if not Run.active then return end
     Run.active = false
+    CancelTimerTicker()
     Run.endGameTime = NowGameTime()
     Run.endedAt = NowEpoch()
-
     local duration = Run.endGameTime - Run.startGameTime
     SetTimerText(duration, true)
-
     SaveRunRecord(success)
-
-    if success then
-        RefreshTotals(true)
-    end
+    if success then RefreshTotals(true) end
 end
 
 local function StartRunTimer()
-    if Run.active then
-        return
-    end
-
+    if Run.active then return end
     Run.active = true
     Run.waitingForMove = false
     Run.startedAt = NowEpoch()
     Run.startGameTime = NowGameTime()
     Run.endGameTime = 0
     Run.endedAt = 0
-
     SetTimerText(0, false)
+    StartTimerTicker()
 end
 
 local function ResolveBossKey(encounterID, encounterName)
@@ -2005,22 +1867,9 @@ local function RecordBossKill(encounterID, encounterName)
     end
 
     local pbSegment = pbTable[bossKey]
+    local r, g, b = DeltaToRGB(deltaSeconds, isNewPB and oldPB ~= nil)
 
-    local r, g, b
-    if isNewPB and oldPB ~= nil then
-        r, g, b = 1.00, 0.82, 0.00 -- gold improvement
-    else
-        local absDelta = math.abs(deltaSeconds or 0)
-        if absDelta <= 3 then
-            r, g, b = 0.35, 1.00, 0.35
-        elseif absDelta <= 5 then
-            r, g, b = 1.00, 0.65, 0.00
-        else
-            r, g, b = 1.00, 0.20, 0.20
-        end
-    end
-
-    SetRowKilled(bossKey, splitSegment, pbSegment, deltaSeconds, r, g, b)
+    SetRowKilled(bossKey, splitSegment, pbSegment, deltaSeconds, r or Colors.gold.r, g or Colors.gold.g, b or Colors.gold.b)
 
     SetKillCount(Run.killedCount, #Run.entries)
     RefreshTotals(false)
@@ -2033,9 +1882,6 @@ end
 -- =========================================================
 -- Boss list loading (Objectives first, EJ fallback)
 -- =========================================================
-local BOSS_LOAD_MAX_TRIES = 40 -- ~10s at 0.25s delay
-local BOSS_LOAD_RETRY_DELAY = 0.25
-
 local function ApplyBossEntries(entries, source, tier, journalID)
     Run.entries = entries or {}
     Run.bossSource = source or "none"
@@ -2069,47 +1915,28 @@ local function ForceLoadEJ()
     if journalID then
         local ejBosses = GetEJBossesForInstance(journalID)
         if #ejBosses > 0 then
-            local entries = {}
-            for _, boss in ipairs(ejBosses) do
-                local encounterID = tonumber(boss.encounterID)
-                local key = encounterID and ("E:" .. encounterID) or ("N:" .. NormalizeName(boss.name))
-                entries[#entries + 1] = {
-                    key = key,
-                    name = boss.name,
-                    encounterID = encounterID
-                }
-            end
-            ApplyBossEntries(entries, "encounter_journal", tier, journalID)
+            ApplyBossEntries(EJBossesToEntries(ejBosses), "encounter_journal", tier, journalID)
             return
         end
     end
-
     ApplyBossEntries({}, "none", tier, journalID)
 end
 
 local function TryLoadBossList()
-    if Run._bossLoaded or not Run.inInstance then
-        return
-    end
-
+    if Run._bossLoaded or not Run.inInstance then return end
     Run._bossLoadTries = (Run._bossLoadTries or 0) + 1
-
-    local entries, source, tier, journalID, ready = BuildBossEntriesOld()
+    local entries, source, tier, journalID, ready = BuildBossEntries()
 
     if not ready then
         if Run._bossLoadTries >= BOSS_LOAD_MAX_TRIES then
             ForceLoadEJ()
             return
         end
-
         C_Timer.After(BOSS_LOAD_RETRY_DELAY, function()
-            if Run.inInstance and not Run._bossLoaded then
-                TryLoadBossList()
-            end
+            if Run.inInstance and not Run._bossLoaded then TryLoadBossList() end
         end)
         return
     end
-
     ApplyBossEntries(entries, source, tier, journalID)
 end
 
@@ -2227,14 +2054,6 @@ local function EnterOrUpdateWorld()
 end
 
 -- =========================================================
-local TimerUpdater = CreateFrame("Frame")
-TimerUpdater:SetScript("OnUpdate", function()
-    if Run.active and Run.startGameTime > 0 then
-        SetTimerText(NowGameTime() - Run.startGameTime, false)
-    end
-end)
-
--- =========================================================
 -- Main event handler
 -- =========================================================
 App:SetScript("OnEvent", function(_, event, ...)
@@ -2349,9 +2168,3 @@ end
 App:RegisterEvent("ADDON_LOADED")
 App:RegisterEvent("PLAYER_ENTERING_WORLD")
 App:RegisterEvent("PLAYER_LEAVING_WORLD")
-
--- =========================================================
--- Final note:
--- - To persist data, add in your .toc:
---     ## SavedVariables: SpeedSplitsDB
--- =========================================================

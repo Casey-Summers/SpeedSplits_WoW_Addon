@@ -6,16 +6,17 @@ local ADDON_NAME = ...
 local App = CreateFrame("Frame")
 
 -- Constants
-local COL_MIN_NUM = 54
 local COL_MAX_PB_SPLIT = 260
 local COL_MAX_DELTA = 200
-local COL_MIN_BOSS = 160
+local COL_MIN_BOSS = 180 -- Increased for "Boss (x/x)"
+local COL_MIN_NUM = 75  -- Enough for "00:00.000"
+local COL_MIN_DELTA_TITLE = 90 -- Enough for "Difference"
 local GRIP_HALFWIDTH = 5
 local HEADER_H = 18
 local RIGHT_INSET_DEFAULT = 26
 local TOP_BAR_H = 28
 local TOP_BAR_GAP = 4
-local LOGO_COLOR = "|cff33ff99"
+local LOGO_COLOR = "|cffffd100" -- Bold Gold
 local BOSS_LOAD_MAX_TRIES = 40
 local BOSS_LOAD_RETRY_DELAY = 0.25
 local DELTA_GREEN_THRESH = 3
@@ -566,9 +567,10 @@ local function ApplyTableLayout()
     local w = UI.st.frame:GetWidth() or 1
     local available = math.max(w - UI._rightInset, 1)
 
-    UI._pbWidth = Clamp(UI._pbWidth, COL_MIN_NUM, math.max(available - (COL_MIN_BOSS + UI._splitWidth + UI._deltaWidth), COL_MIN_NUM))
-    UI._splitWidth = Clamp(UI._splitWidth, COL_MIN_NUM, math.max(available - (COL_MIN_BOSS + UI._pbWidth + UI._deltaWidth), COL_MIN_NUM))
-    UI._deltaWidth = Clamp(UI._deltaWidth, COL_MIN_NUM, math.max(available - (COL_MIN_BOSS + UI._pbWidth + UI._splitWidth), COL_MIN_NUM))
+    local minDelta = math.max(COL_MIN_NUM, COL_MIN_DELTA_TITLE)
+    UI._pbWidth = Clamp(UI._pbWidth, COL_MIN_NUM, math.max(available - (COL_MIN_BOSS + UI._splitWidth + minDelta), COL_MIN_NUM))
+    UI._splitWidth = Clamp(UI._splitWidth, COL_MIN_NUM, math.max(available - (COL_MIN_BOSS + UI._pbWidth + minDelta), COL_MIN_NUM))
+    UI._deltaWidth = Clamp(UI._deltaWidth, minDelta, math.max(available - (COL_MIN_BOSS + UI._pbWidth + UI._splitWidth), minDelta))
     local bossWidth = math.max(available - (UI._pbWidth + UI._splitWidth + UI._deltaWidth), COL_MIN_BOSS)
 
     UI.cols[1].width = bossWidth
@@ -590,22 +592,32 @@ local function ApplyTableLayout()
     local tf = UI.totalFrame
     if tf then
         local rightPad = UI._rightInset
+        
+        -- Center UI.totalDelta in Difference column
+        local midDelta = rightPad + UI._deltaWidth / 2
         UI.totalDelta:ClearAllPoints()
-        UI.totalDelta:SetPoint("RIGHT", tf, "RIGHT", -rightPad, 0)
+        UI.totalDelta:SetPoint("CENTER", tf, "RIGHT", -midDelta, 0)
         UI.totalDelta:SetWidth(UI._deltaWidth)
+        UI.totalDelta:SetJustifyH("CENTER")
 
+        -- Center UI.totalSplit in Split column
+        local midSplit = rightPad + UI._deltaWidth + UI._splitWidth / 2
         UI.totalSplit:ClearAllPoints()
-        UI.totalSplit:SetPoint("RIGHT", tf, "RIGHT", -(rightPad + UI._deltaWidth), 0)
+        UI.totalSplit:SetPoint("CENTER", tf, "RIGHT", -midSplit, 0)
         UI.totalSplit:SetWidth(UI._splitWidth)
+        UI.totalSplit:SetJustifyH("CENTER")
 
+        -- Center UI.totalPB in PB column
+        local midPB = rightPad + UI._deltaWidth + UI._splitWidth + UI._pbWidth / 2
         UI.totalPB:ClearAllPoints()
-        UI.totalPB:SetPoint("RIGHT", tf, "RIGHT", -(rightPad + UI._deltaWidth + UI._splitWidth), 0)
+        UI.totalPB:SetPoint("CENTER", tf, "RIGHT", -midPB, 0)
         UI.totalPB:SetWidth(UI._pbWidth)
+        UI.totalPB:SetJustifyH("CENTER")
 
         UI.totalLabel:ClearAllPoints()
-        UI.totalLabel:SetPoint("RIGHT", tf, "RIGHT", -(rightPad + UI._deltaWidth + UI._splitWidth + UI._pbWidth + 10), 0)
-        UI.totalLabel:SetWidth(math.max((tf:GetWidth() or 1) -
-                                            (rightPad + UI._deltaWidth + UI._splitWidth + UI._pbWidth + 16), 1))
+        UI.totalLabel:SetPoint("RIGHT", UI.totalPB, "LEFT", -15, 0)
+        UI.totalLabel:SetJustifyH("RIGHT")
+        UI.totalLabel:SetWidth(100)
     end
 
     -- Position separator grips in the header area
@@ -686,14 +698,20 @@ local function UpdateColDrag()
     curX = curX / scale
 
     local dx = curX - UI._colDrag.startX
+    local available = (UI.st.frame:GetWidth() or 0) - UI._rightInset
+
     if UI._colDrag.which == 1 then
-        UI._pbWidth = Clamp(UI._colDrag.pb - dx, COL_MIN_NUM, COL_MAX_PB_SPLIT)
+        -- Boundary between Boss and PB. 
+        -- BossWidth = available - (PB + Split + Diff). Cannot be less than COL_MIN_BOSS.
+        local maxPB = math.max(COL_MIN_NUM, available - (UI._splitWidth + UI._deltaWidth + COL_MIN_BOSS))
+        UI._pbWidth = Clamp(UI._colDrag.pb - dx, COL_MIN_NUM, math.min(COL_MAX_PB_SPLIT, maxPB))
     elseif UI._colDrag.which == 2 then
         UI._pbWidth = Clamp(UI._colDrag.pb + dx, COL_MIN_NUM, COL_MAX_PB_SPLIT)
         UI._splitWidth = Clamp(UI._colDrag.split - dx, COL_MIN_NUM, COL_MAX_PB_SPLIT)
     elseif UI._colDrag.which == 3 then
+        local minDelta = math.max(COL_MIN_NUM, COL_MIN_DELTA_TITLE)
         UI._splitWidth = Clamp(UI._colDrag.split + dx, COL_MIN_NUM, COL_MAX_PB_SPLIT)
-        UI._deltaWidth = Clamp(UI._colDrag.delta - dx, COL_MIN_NUM, COL_MAX_DELTA)
+        UI._deltaWidth = Clamp(UI._colDrag.delta - dx, minDelta, COL_MAX_DELTA)
     end
 
     ApplyTableLayout()
@@ -744,7 +762,9 @@ local function StyleHeaderCell(cellFrame, align)
     cellFrame.text:SetJustifyH(align or "CENTER")
     cellFrame.text:SetJustifyV("TOP")
     cellFrame.text:SetFontObject(GameFontNormalSmall)
-    cellFrame.text:SetTextColor(1, 1, 1, 0.90)
+    local f, s = cellFrame.text:GetFont()
+    cellFrame.text:SetFont(f, s or 10, "OUTLINE, THICKOUTLINE")
+    cellFrame.text:SetTextColor(1, 0.82, 0, 1) -- Golden titles
 end
 
 local function MakeCellUpdater(opts)
@@ -772,8 +792,23 @@ local function MakeCellUpdater(opts)
     end
 end
 
-local Boss_DoCellUpdate = MakeCellUpdater { justifyH = "LEFT", justifyV = "TOP", wordWrap = true, maxLines = 2 }
-local Num_DoCellUpdate = MakeCellUpdater { justifyH = "RIGHT", useColColor = true }
+local Boss_DoCellUpdate = function(rowFrame, cellFrame, data, cols, row, realrow, column, fShow, stable)
+    if not fShow or not realrow then
+        if cellFrame and cellFrame.text then cellFrame.text:SetText("") end
+        return
+    end
+    local e = data[realrow]
+    local cell = e and e.cols and e.cols[column]
+    if not cell then return end
+    cellFrame.text:SetText(cell.value or "")
+    -- Different font for Boss Name
+    cellFrame.text:SetFontObject(GameFontHighlight)
+    cellFrame.text:SetJustifyH("LEFT")
+    cellFrame.text:SetJustifyV("MIDDLE")
+    cellFrame.text:SetWordWrap(false)
+end
+
+local Num_DoCellUpdate = MakeCellUpdater { justifyH = "CENTER", useColColor = true }
 
 local function DeltaColor(data, cols, realrow, column)
     local e = data[realrow]
@@ -1313,6 +1348,12 @@ local function EnsureUI()
     bossFrame:SetClampedToScreen(true)
     bossFrame:SetMovable(true)
     bossFrame:EnableMouse(true)
+    bossFrame:RegisterForDrag("LeftButton")
+    bossFrame:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    bossFrame:SetScript("OnDragStop", function(self)
+        self:StopMovingOrSizing()
+        SaveFrameGeom("boss", self)
+    end)
     ApplyResizeBounds(bossFrame, 360, 180, 1400, 1000)
     SetHoverBackdrop(bossFrame, 0.80)
 
@@ -1336,20 +1377,9 @@ local function EnsureUI()
         bossFrame:StopMovingOrSizing()
         SaveFrameGeom("boss", bossFrame)
     end)
+    titleBar:Hide() -- Hide the old title bar handles as the whole frame is now draggable
 
-    local killCountText = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    killCountText:SetPoint("LEFT", titleBar, "LEFT", 10, 0)
-    killCountText:SetPoint("RIGHT", titleBar, "CENTER", -10, 0)
-    killCountText:SetJustifyH("LEFT")
-    killCountText:SetJustifyV("MIDDLE")
-    killCountText:SetText("Bosses: 0/0")
-
-    local logoText = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    logoText:SetPoint("RIGHT", titleBar, "RIGHT", -10, 0)
-    logoText:SetPoint("LEFT", titleBar, "CENTER", 10, 0)
-    logoText:SetJustifyH("RIGHT")
-    logoText:SetJustifyV("MIDDLE")
-    logoText:SetText(LOGO_COLOR .. "SpeedSplits|r")
+    -- (killCountText and logoText in titleBar are now unused/hidden)
 
     -- Scrolling table (lib-st)
     local ST = ResolveScrollingTable()
@@ -1360,7 +1390,7 @@ local function EnsureUI()
     local cols = {{
         name = "Boss",
         width = 220,
-        align = "CENTER",
+        align = "LEFT",
         DoCellUpdate = Boss_DoCellUpdate
     }, {
         name = "PB",
@@ -1380,7 +1410,7 @@ local function EnsureUI()
         color = DeltaColor
     }}
 
-    local st = ST and ST:CreateST(cols, 12, 18, nil, bossFrame)
+    local st = ST and ST:CreateST(cols, 12, 24, nil, bossFrame)
     if st and st.frame then
         st.frame:SetPoint("TOPLEFT", bossFrame, "TOPLEFT", 6, -UI._topInset)
         st.frame:SetPoint("BOTTOMRIGHT", bossFrame, "BOTTOMRIGHT", -6, UI._bottomInset)
@@ -1400,9 +1430,8 @@ local function EnsureUI()
     totalFrame:EnableMouse(false)
 
     local totalLabel = totalFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    totalLabel:SetJustifyH("LEFT")
-    totalLabel:SetPoint("LEFT", totalFrame, "LEFT", 2, 0)
-    totalLabel:SetText("Total")
+    totalLabel:SetJustifyH("RIGHT")
+    totalLabel:SetText("Totals:")
 
     local totalPB = totalFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     totalPB:SetJustifyH("RIGHT")
@@ -1419,7 +1448,12 @@ local function EnsureUI()
     -- History button
     local historyButton = CreateFrame("Button", nil, bossFrame)
     historyButton:SetSize(18, 18)
-    historyButton:SetPoint("BOTTOMLEFT", bossFrame, "BOTTOMLEFT", 6, 6)
+
+    local logoText = bossFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    logoText:SetPoint("BOTTOMLEFT", bossFrame, "BOTTOMLEFT", 10, 8)
+    logoText:SetText(LOGO_COLOR .. "SpeedSplits|r")
+
+    historyButton:SetPoint("LEFT", logoText, "RIGHT", 6, 0)
 
     local historyTex = historyButton:CreateTexture(nil, "ARTWORK")
     historyTex:SetAllPoints()
@@ -1440,7 +1474,7 @@ local function EnsureUI()
 
     -- Move totals beside history button
     totalFrame:ClearAllPoints()
-    totalFrame:SetPoint("BOTTOMLEFT", historyButton, "BOTTOMRIGHT", 6, 0)
+    totalFrame:SetPoint("BOTTOMLEFT", historyButton, "BOTTOMRIGHT", 6, 2)
     totalFrame:SetPoint("BOTTOMRIGHT", bossFrame, "BOTTOMRIGHT", -6, 6)
 
     -- Resize grips
@@ -1492,10 +1526,31 @@ end
 
 
 local function SetKillCount(killed, total)
-    if not UI.killCountText then
-        return
+    local text = string.format("Boss (%d/%d)", killed or 0, total or 0)
+    
+    -- Ensure persistence by updating the column definition
+    if UI.cols and UI.cols[1] then
+        UI.cols[1].name = text
     end
-    UI.killCountText:SetText(string.format("Bosses: %d/%d", killed or 0, total or 0))
+
+    if UI.st and UI.st.head and UI.st.head.cols and UI.st.head.cols[1] then
+        local cell = UI.st.head.cols[1]
+        local fs = cell.text or cell.label or (cell.GetFontString and cell:GetFontString())
+        
+        if not fs then
+            local regions = { cell:GetRegions() }
+            for _, r in ipairs(regions) do
+                if r and r.IsObjectType and r:IsObjectType("FontString") then
+                    fs = r
+                    break
+                end
+            end
+        end
+
+        if fs and fs.SetText then
+            fs:SetText(text)
+        end
+    end
 end
 
 

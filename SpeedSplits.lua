@@ -33,6 +33,7 @@ local Colors = {
     goldLight = { r = 1.00, g = 0.92, b = 0.25, a = 1 },
     orange = { r = 1.00, g = 0.65, b = 0.00, a = 1 },
     white = { r = 1, g = 1, b = 1, a = 1 },
+    turquoise = { r = 0.0, g = 0.8, b = 0.8, a = 1 },
 }
 
 -- =========================================================
@@ -457,6 +458,7 @@ local UI = {
     totalPB = nil,
     totalSplit = nil,
     totalDelta = nil,
+    timerDeltaText = nil,
 
     resizeGrip = nil,
     _timerResizeGrip = nil,
@@ -618,6 +620,7 @@ local function ApplyTableLayout()
         UI.totalLabel:SetPoint("RIGHT", UI.totalPB, "LEFT", -15, 0)
         UI.totalLabel:SetJustifyH("RIGHT")
         UI.totalLabel:SetWidth(100)
+        UI.totalLabel:SetTextColor(Colors.turquoise.r, Colors.turquoise.g, Colors.turquoise.b, 1)
     end
 
     -- Position separator grips in the header area
@@ -836,6 +839,16 @@ local function DeltaColor(data, cols, realrow, column)
     local e = data[realrow]
     local cell = e and e.cols and e.cols[column]
     return cell and cell.color or nil
+end
+
+local function PBColor()
+    return Colors.gold
+end
+
+local function SplitColor(data, cols, realrow, column)
+    local e = data[realrow]
+    local diffCell = e and e.cols and e.cols[4] -- Difference column
+    return diffCell and diffCell.color or nil
 end
 
 -- =========================================================
@@ -1364,6 +1377,10 @@ local function EnsureUI()
     timerText:SetPoint("CENTER", timerFrame, "CENTER", 0, 0)
     timerText:SetText("00:00.000")
 
+    local timerDeltaText = timerFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    timerDeltaText:SetPoint("TOP", timerText, "BOTTOM", 0, -2)
+    timerDeltaText:SetText("")
+
     -- Boss frame
     local bossFrame = CreateFrame("Frame", "SpeedSplitsBossFrame", UIParent, "BackdropTemplate")
     bossFrame:SetFrameStrata("HIGH")
@@ -1418,12 +1435,14 @@ local function EnsureUI()
         name = "PB",
         width = UI._pbWidth,
         align = "CENTER",
-        DoCellUpdate = Num_DoCellUpdate
+        DoCellUpdate = Num_DoCellUpdate,
+        color = PBColor
     }, {
         name = "Split",
         width = UI._splitWidth,
         align = "CENTER",
-        DoCellUpdate = Num_DoCellUpdate
+        DoCellUpdate = Num_DoCellUpdate,
+        color = SplitColor
     }, {
         name = "Difference",
         width = UI._deltaWidth,
@@ -1454,6 +1473,7 @@ local function EnsureUI()
     local totalLabel = totalFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     totalLabel:SetJustifyH("RIGHT")
     totalLabel:SetText("Totals:")
+    totalLabel:SetTextColor(Colors.turquoise.r, Colors.turquoise.g, Colors.turquoise.b, 1)
 
     local totalPB = totalFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     totalPB:SetJustifyH("RIGHT")
@@ -1473,7 +1493,8 @@ local function EnsureUI()
 
     local logoText = bossFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     logoText:SetPoint("BOTTOMLEFT", bossFrame, "BOTTOMLEFT", 10, 8)
-    logoText:SetText(LOGO_COLOR .. "SpeedSplits|r")
+    logoText:SetText("SpeedSplits")
+    logoText:SetTextColor(Colors.turquoise.r, Colors.turquoise.g, Colors.turquoise.b, 1)
 
     historyButton:SetPoint("LEFT", logoText, "RIGHT", 6, 0)
 
@@ -1528,6 +1549,7 @@ local function EnsureUI()
     UI.totalPB = totalPB
     UI.totalSplit = totalSplit
     UI.totalDelta = totalDelta
+    UI.timerDeltaText = timerDeltaText
     UI.historyButton = historyButton
     UI.resizeGrip = bossGrip
     UI._timerResizeGrip = timerGrip
@@ -1544,6 +1566,17 @@ local function SetTimerText(seconds, finished)
     UI.timerText:SetText(FormatTime(seconds))
     local c = finished and Colors.green or Colors.white
     UI.timerText:SetTextColor(c.r, c.g, c.b, c.a or 1)
+end
+
+local function SetTimerDelta(delta)
+    if not UI.timerDeltaText then return end
+    if delta == nil then
+        UI.timerDeltaText:SetText("")
+        return
+    end
+    UI.timerDeltaText:SetText(FormatDelta(delta))
+    local r, g, b = DeltaToRGB(delta, delta < 0)
+    UI.timerDeltaText:SetTextColor(r or 1, g or 1, b or 1, 1)
 end
 
 
@@ -1582,7 +1615,14 @@ local function SetTotals(pbTotal, splitTotal, deltaTotal, deltaR, deltaG, deltaB
     end
 
     UI.totalPB:SetText(FormatTime(pbTotal))
+    UI.totalPB:SetTextColor(Colors.gold.r, Colors.gold.g, Colors.gold.b, 1)
+
     UI.totalSplit:SetText(FormatTime(splitTotal))
+    if deltaR then
+        UI.totalSplit:SetTextColor(deltaR, deltaG, deltaB, 1)
+    else
+        UI.totalSplit:SetTextColor(1, 1, 1, 1)
+    end
 
     if deltaTotal == nil then
         UI.totalDelta:SetText("")
@@ -1663,7 +1703,7 @@ local function GetPreviousKilledCumulativeInTableOrder(run, bossKey)
     return previous
 end
 
-local function SetRowKilled(bossKey, splitCumulative, cumulativePB, deltaSeconds, deltaR, deltaG, deltaB)
+local function SetRowKilled(bossKey, splitCumulative, cumulativePB, deltaSeconds, deltaR, deltaG, deltaB, isGold)
     local realrow = UI.rowByBossKey and UI.rowByBossKey[bossKey]
     local row = realrow and UI.data and UI.data[realrow]
     if not row then
@@ -1672,8 +1712,12 @@ local function SetRowKilled(bossKey, splitCumulative, cumulativePB, deltaSeconds
 
     row.cols[2].value = FormatTime(cumulativePB)
     row.cols[3].value = FormatTime(splitCumulative)
-    row.cols[4].value = FormatDelta(deltaSeconds)
-    row.cols[4].color = { r = deltaR or 1, g = deltaG or 1, b = deltaB or 1, a = 1 }
+    
+    if isGold then
+        row.cols[3].color = Colors.gold
+    else
+        row.cols[3].color = { r = deltaR or 1, g = deltaG or 1, b = deltaB or 1, a = 1 }
+    end
 
     if deltaSeconds == nil then
         row.cols[4].value = ""
@@ -1768,6 +1812,7 @@ local function ResetRun()
     SetKillCount(0, 0)
     ClearBossRows()
     SetTotals(nil, nil, nil)
+    SetTimerDelta(nil)
 end
 
 local function GetPBTableForDungeon(dungeonKey)
@@ -1795,16 +1840,40 @@ local function RefreshTotals(isFinal)
     local pbTable = (Run.dungeonKey ~= "") and (DB.pbBoss[Run.dungeonKey] or nil) or nil
     local pbTotal = pbTable and ComputeSumOfBest(pbTable, Run.entries) or nil
 
-    if not isFinal then
-        SetTotals(pbTotal, nil, nil)
+    if isFinal then
+        local duration = (Run.endGameTime > 0 and Run.startGameTime > 0) and (Run.endGameTime - Run.startGameTime) or nil
+        local deltaTotal = (duration and pbTotal) and (duration - pbTotal) or nil
+        local r, g, b = DeltaToRGB(deltaTotal, deltaTotal and deltaTotal < 0)
+        SetTotals(pbTotal, duration, deltaTotal, r, g, b)
+        SetTimerDelta(deltaTotal)
         return
     end
 
-    local duration = (Run.endGameTime > 0 and Run.startGameTime > 0) and (Run.endGameTime - Run.startGameTime) or nil
-    local deltaTotal = (duration and pbTotal) and (duration - pbTotal) or nil
-    local r, g, b = DeltaToRGB(deltaTotal, deltaTotal and deltaTotal < 0)
+    -- During run: show running total (sum of splits vs sum of PBs so far)
+    local lastBossKey = nil
+    for _, entry in ipairs(Run.entries) do
+        if Run.kills[entry.key] then
+            lastBossKey = entry.key
+        else
+            break
+        end
+    end
 
-    SetTotals(pbTotal, duration, deltaTotal, r, g, b)
+    if lastBossKey then
+        local currentDuration = Run.kills[lastBossKey]
+        local currentPB = 0
+        for _, entry in ipairs(Run.entries) do
+            currentPB = currentPB + (pbTable and pbTable[entry.key] or 0)
+            if entry.key == lastBossKey then break end
+        end
+        local delta = currentDuration - currentPB
+        local r, g, b = DeltaToRGB(delta, delta < 0)
+        SetTotals(pbTotal, currentDuration, delta, r, g, b)
+        SetTimerDelta(delta)
+    else
+        SetTotals(pbTotal, nil, nil)
+        SetTimerDelta(nil)
+    end
 end
 
 local function UpdateBestRunIfNeeded(durationSeconds)
@@ -1941,24 +2010,35 @@ local function RecordBossKill(encounterID, encounterName)
     local oldSegmentPB = pbTable[bossKey]
     local isNewSegmentPB = (oldSegmentPB == nil) or (splitSegment < oldSegmentPB)
 
-    if isNewSegmentPB then
-        pbTable[bossKey] = splitSegment
-    end
-
-    -- Cumulative calculations for display
-    local cumulativePB = 0
+    -- Prepare cumulative comparison vs old PB sum
+    local cumulativePB_Comparison = 0
     for _, entry in ipairs(Run.entries) do
         local seg = pbTable[entry.key] or 0
-        cumulativePB = cumulativePB + seg
+        cumulativePB_Comparison = cumulativePB_Comparison + seg
         if entry.key == bossKey then
             break
         end
     end
 
-    local deltaSeconds = splitCumulative - cumulativePB
-    local r, g, b = DeltaToRGB(deltaSeconds, deltaSeconds < 0)
+    -- Update the table with the new best segment
+    if isNewSegmentPB then
+        pbTable[bossKey] = splitSegment
+    end
 
-    SetRowKilled(bossKey, splitCumulative, cumulativePB, deltaSeconds, r, g, b)
+    -- Prepare cumulative display (sum of current best segments)
+    local cumulativePB_Display = 0
+    for _, entry in ipairs(Run.entries) do
+        local seg = pbTable[entry.key] or 0
+        cumulativePB_Display = cumulativePB_Display + seg
+        if entry.key == bossKey then
+            break
+        end
+    end
+
+    local deltaOverall = splitCumulative - cumulativePB_Comparison
+    local r, g, b = DeltaToRGB(deltaOverall, deltaOverall < 0)
+
+    SetRowKilled(bossKey, splitCumulative, cumulativePB_Display, deltaOverall, r, g, b, isNewSegmentPB)
 
     SetKillCount(Run.killedCount, #Run.entries)
     RefreshTotals(false)

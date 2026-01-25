@@ -1,10 +1,12 @@
 ## Interface: 110207, 120000, 120001
 ## Title: SpeedSplits
-## Notes: Aceman's addon for tracking speedrun splits in World of Warcraft.
+## Notes: Records splits for boss kills while speedrunning instances.
 ## Author: Aceman
-## Version: 0.0.3
-## X-Curse-Project-ID: 999999
-## SavedVariables: 
-## SavedVariablesPerCharacter: SpeedSplitsDB
+## Version: 0.1.3
+## SavedVariables: SpeedSplitsDB
+
+Libs/LibStub/LibStub.lua
+Libs/CallbackHandler-1.0/CallbackHandler-1.0.lua
+Libs/lib-st-v4.1.3/lib-st/Core.lua
 
 SpeedSplits.lua

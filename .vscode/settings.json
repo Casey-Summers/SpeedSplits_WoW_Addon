@@ -17,7 +17,17 @@
     "Lua.diagnostics.globals": [
         "ID",
         "SlashCmdList",
-        "UISpecialFrames"
+        "UISpecialFrames",
+        "DEFAULT_CHAT_FRAME",
+        "FauxScrollFrame_Update",
+        "FauxScrollFrame_OnVerticalScroll",
+        "FauxScrollFrame_GetOffset",
+        "UIDropDownMenu_Initialize",
+        "UIDropDownMenu_SetWidth",
+        "UIDropDownMenu_SetText",
+        "UIDropDownMenu_AddButton",
+        "UIDropDownMenu_CreateInfo",
+        "STANDARD_TEXT_FONT"
     ],
     "Lua.type.weakUnionCheck": true
 }

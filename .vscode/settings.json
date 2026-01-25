@@ -18,5 +18,6 @@
         "ID",
         "SlashCmdList",
         "UISpecialFrames"
-    ]
+    ],
+    "Lua.type.weakUnionCheck": true
 }

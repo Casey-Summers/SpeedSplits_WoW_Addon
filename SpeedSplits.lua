@@ -1058,16 +1058,38 @@ local function FormatEpochShort(epoch)
     if not epoch or epoch <= 0 then
         return "—"
     end
-    return date("%d/%m/%Y %H:%M", epoch)
+    return date("%H:%M %d/%m/%Y", epoch)
 end
 
 local function GetTierNameSafe(tierIndex)
     tierIndex = tonumber(tierIndex)
-    if not tierIndex or tierIndex <= 0 or not EJ_GetTierInfo then
+    if not tierIndex or tierIndex <= 0 then
         return "Unknown"
     end
-    local name = EJ_GetTierInfo(tierIndex)
-    return name or ("Tier " .. tostring(tierIndex))
+
+    -- Prefer Encounter Journal data when available.
+    if EJ_GetTierInfo then
+        local name = EJ_GetTierInfo(tierIndex)
+        if type(name) == "string" and name ~= "" and name ~= tostring(tierIndex) then
+            return name
+        end
+    end
+
+    -- Fallback mapping (keeps UI readable even if EJ isn't ready).
+    local fallback = {
+        [1] = "Classic",
+        [2] = "The Burning Crusade",
+        [3] = "Wrath of the Lich King",
+        [4] = "Cataclysm",
+        [5] = "Mists of Pandaria",
+        [6] = "Warlords of Draenor",
+        [7] = "Legion",
+        [8] = "Battle for Azeroth",
+        [9] = "Shadowlands",
+        [10] = "Dragonflight",
+        [11] = "The War Within",
+    }
+    return fallback[tierIndex] or ("Tier " .. tostring(tierIndex))
 end
 
 local function IsRunPB(record)
@@ -1172,18 +1194,42 @@ end
 
 local History_DoCellUpdate = MakeCellUpdater {} -- uses cols[column].align, cell.color
 
-local function HistoryColumnSort(st, rowA, rowB, sortCollIndex)
-    local valA = rowA.cols[sortCollIndex].value
-    local valB = rowB.cols[sortCollIndex].value
-    if valA == nil and valB == nil then return false end
-    if valA == nil then return false end
-    if valB == nil then return true end
+-- NOTE:
+-- LibScrollingTable typically handles DESC sorting by swapping rowA/rowB when invoking the sort.
+-- Therefore our comparator must be a strict ASC comparator (stable + transitive). DESC will "just work".
+local function History_NormalizeSortValue(v)
+    if v == nil then return nil end
+    local t = type(v)
+    if t == "string" then return v:lower() end
+    if t == "number" then return v end
+    if t == "boolean" then return v and 1 or 0 end
+    return tostring(v):lower()
+end
 
-    -- Case insensitive sort for strings
-    if type(valA) == "string" and type(valB) == "string" then
-        return valA:lower() < valB:lower()
+local function HistoryColumnSort(st, rowA, rowB, sortCol)
+    -- Primary sort (ASC)
+    local cellA = rowA.cols and rowA.cols[sortCol]
+    local cellB = rowB.cols and rowB.cols[sortCol]
+    local valA = History_NormalizeSortValue(cellA and cellA.value)
+    local valB = History_NormalizeSortValue(cellB and cellB.value)
+
+    if valA ~= valB then
+        if valA == nil then return false end -- nil always sorts last
+        if valB == nil then return true end
+        return valA < valB
     end
-    return valA < valB
+
+    -- Tie-breaker: run timestamp (ASC)
+    local tA = tonumber(rowA.record and (rowA.record.startedAt or rowA.record.endedAt) or 0) or 0
+    local tB = tonumber(rowB.record and (rowB.record.startedAt or rowB.record.endedAt) or 0) or 0
+    if tA ~= tB then
+        return tA < tB
+    end
+
+    -- Final stability: render index (ASC)
+    local iA = tonumber(rowA.sortIndex) or 0
+    local iB = tonumber(rowB.sortIndex) or 0
+    return iA < iB
 end
 
 UI.RefreshHistoryTable = function()
@@ -1226,28 +1272,18 @@ UI.RefreshHistoryTable = function()
         end
     end
 
-    -- Sorting Logic
+    -- Default ordering for refresh (header sorting can still override this)
     table.sort(rows, function(a, b)
-        local isPB_A = IsRunPB(a)
-        local isPB_B = IsRunPB(b)
-
-        -- 1. PB Pinning: All PBs (matching filters) stay at top
-        if isPB_A ~= isPB_B then
-            return isPB_A
-        end
-
-        -- 2. Sort non-pinned items (or between multiple PBs)
         if f.sortMode == "time" then
-            local durA = (type(a) == "table" and tonumber(a.duration)) or 1e9
-            local durB = (type(b) == "table" and tonumber(b.duration)) or 1e9
+            local durA = tonumber(a and a.duration) or math.huge
+            local durB = tonumber(b and b.duration) or math.huge
             if durA ~= durB then
                 return durA < durB
             end
         end
 
-        -- Default (Ascending Date)
-        local timeA = (type(a) == "table" and tonumber(a.startedAt or a.endedAt)) or 0
-        local timeB = (type(b) == "table" and tonumber(b.startedAt or b.endedAt)) or 0
+        local timeA = tonumber(a and (a.startedAt or a.endedAt) or 0) or 0
+        local timeB = tonumber(b and (b.startedAt or b.endedAt) or 0) or 0
         return timeA < timeB
     end)
 
@@ -1274,23 +1310,24 @@ UI.RefreshHistoryTable = function()
 
         local deltaPB = (pbDur and duration) and (duration - pbDur) or nil
         local deltaText = "—"
-        local deltaVal = 999999 -- High sort value for nil
-
         if deltaPB then
             local _, _, _, hex = NS.GetPaceColor(deltaPB, isPB)
             deltaText = (hex or "|cffffffff") .. FormatDelta(deltaPB) .. "|r"
-            deltaVal = deltaPB
         end
 
+        local resultOrder = isPB and 1 or (r.success and 2 or 3)
+        local startedEpoch = tonumber(r.startedAt or r.endedAt or 0) or 0
+        local tierIndex = tonumber(r.tier) or 0
+        local tierName = GetTierNameSafe(tierIndex)
         local rowColor = isPB and NS.Colors.gold or nil
-        local tierName = GetTierNameSafe(r.tier)
 
         data[#data + 1] = {
             record = r,
+            sortIndex = i,
             cols = {
                 {
-                    value = r.startedAt or r.endedAt or 0,
-                    display = FormatEpochShort(r.startedAt or r.endedAt or 0),
+                    value = startedEpoch,
+                    display = FormatEpochShort(startedEpoch),
                     color = rowColor
                 },
                 {
@@ -1298,20 +1335,22 @@ UI.RefreshHistoryTable = function()
                     color = rowColor
                 },
                 {
-                    value = tierName,
+                    value = tierIndex,
+                    display = tierName,
                     color = rowColor
                 },
                 {
-                    value = duration or 999999,
+                    value = duration,
                     display = duration and FormatTime(duration) or "--:--.---",
                     color = rowColor
                 },
                 {
-                    value = resultText,
+                    value = resultOrder,
+                    display = resultText,
                     color = resultColor
                 },
                 {
-                    value = deltaVal,
+                    value = deltaPB,
                     display = deltaText
                 },
                 {

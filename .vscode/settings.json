@@ -27,7 +27,12 @@
         "UIDropDownMenu_SetText",
         "UIDropDownMenu_AddButton",
         "UIDropDownMenu_CreateInfo",
-        "STANDARD_TEXT_FONT"
+        "STANDARD_TEXT_FONT",
+        "StaticPopupDialogs",
+        "Settings",
+        "StaticPopup_Show",
+        "ReloadUI",
+        "ColorPickerFrame"
     ],
     "Lua.type.weakUnionCheck": true
 }

@@ -1010,10 +1010,10 @@ local Delete_DoCellUpdate = function(rowFrame, cellFrame, data, cols, row, realr
 
     if not cellFrame.delBtn then
         local btn = CreateFrame("Button", nil, cellFrame)
-        btn:SetSize(12, 12)
+        btn:SetSize(14, 14) -- Increased size for better click target
         btn:SetPoint("CENTER", cellFrame, "CENTER", 0, 0)
-        btn:SetNormalTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Up")
-        btn:SetHighlightTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Highlight")
+        btn:SetNormalTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Up")
+        btn:SetHighlightTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Highlight")
         btn:SetScript("OnClick", function(self)
             if self.record then
                 DeleteRecord(self.record)
@@ -1217,10 +1217,10 @@ UI.RefreshHistoryTable = function()
             end
         end
 
-        -- Default/Fallback: Sort by Date (Most Recent first)
+        -- Default (Ascending Date)
         local timeA = (type(a) == "table" and tonumber(a.startedAt or a.endedAt)) or 0
         local timeB = (type(b) == "table" and tonumber(b.startedAt or b.endedAt)) or 0
-        return timeA > timeB
+        return timeA < timeB
     end)
 
     local data = {}
@@ -1327,7 +1327,16 @@ local function EnsureHistoryUI()
     UI.history.frame = historyFrame -- Set early for safety
 
     historyFrame:SetFrameStrata("DIALOG")
-    SetHoverBackdrop(historyFrame, 0.90)
+    historyFrame:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        tile = false,
+        tileSize = 16,
+        edgeSize = 16,
+        insets = { left = 4, right = 4, top = 4, bottom = 4 }
+    })
+    historyFrame:SetBackdropColor(0.08, 0.08, 0.08, 0.95)
+    historyFrame:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
     historyFrame:EnableMouse(true)
     historyFrame:SetMovable(true)
     historyFrame:SetResizable(true)
@@ -1420,6 +1429,7 @@ local function EnsureHistoryUI()
     local listFrame = CreateFrame("Frame", nil, historyFrame)
     listFrame:SetPoint("TOPLEFT", controls, "BOTTOMLEFT", 0, -24)
     listFrame:SetPoint("BOTTOMRIGHT", historyFrame, "BOTTOMRIGHT", -10, 10)
+    UI.history.listFrame = listFrame
 
     local ST = ResolveScrollingTable()
     if not ST then
@@ -1435,7 +1445,7 @@ local function EnsureHistoryUI()
                 { name = "Time",               width = 80,  align = "RIGHT",  DoCellUpdate = History_DoCellUpdate },
                 { name = "Result",             width = 110, align = "CENTER", DoCellUpdate = History_DoCellUpdate },
                 { name = "Difference from PB", width = 120, align = "RIGHT",  DoCellUpdate = History_DoCellUpdate },
-                { name = "",                   width = 24,  align = "CENTER", DoCellUpdate = Delete_DoCellUpdate }
+                { name = "",                   width = 50,  align = "CENTER", DoCellUpdate = Delete_DoCellUpdate } -- Increased width for delete button
             }
 
             local st = ST:CreateST(cols, 12, 18, nil, listFrame)
@@ -1457,16 +1467,22 @@ local function EnsureHistoryUI()
     end)
     UI.history.resizeGrip = grip
 
-    historyFrame:SetScript("OnSizeChanged", function(self)
-        if UI.history.st and UI.history.st.frame then
-            local h = listFrame:GetHeight()
+    local function UpdateHistoryLayout()
+        if UI.history.st and UI.history.st.frame and UI.history.listFrame then
+            local h = UI.history.listFrame:GetHeight()
             local displayRows = math.floor((h - 4) / 18)
             if displayRows < 1 then displayRows = 1 end
             UI.history.st:SetDisplayRows(displayRows, 18)
             UI.history.st:Refresh()
         end
+    end
+    UI.history.UpdateLayout = UpdateHistoryLayout -- Expose for ToggleHistoryFrame
+
+    historyFrame:SetScript("OnSizeChanged", function(self)
+        UpdateHistoryLayout()
     end)
-    UI.history.resizeGrip = grip
+
+    UpdateHistoryLayout() -- Initial layout calculation
     UI.history.frame = historyFrame
 
     historyFrame:Hide()
@@ -1485,6 +1501,7 @@ local function ToggleHistoryFrame()
             h.frame:Hide()
         else
             h.frame:Show()
+            if h.UpdateLayout then h.UpdateLayout() end
             if UI.RefreshHistoryTable then UI.RefreshHistoryTable() end
         end
     end)

@@ -33,7 +33,7 @@ local function ApplyResizeBounds(frame, minW, minH, maxW, maxH)
     if not frame then return end
     if frame.SetResizable then frame:SetResizable(true) end
     if frame.SetResizeBounds then
-        frame:SetResizeBounds(minW, minH, maxW or minW, maxH or minH)
+        frame:SetResizeBounds(minW, minH, maxW or 2500, maxH or 1600)
         return
     end
     if frame.SetMinResize then frame:SetMinResize(minW, minH) end
@@ -88,7 +88,9 @@ end
 local function HistoryFilterDefaults()
     return {
         search = "",
-        sortMode = "date" -- "date" or "time"
+        sortMode = "date", -- "date" or "time"
+        tier = 0,
+        result = "Any"
     }
 end
 
@@ -996,7 +998,7 @@ local function FormatEpochShort(epoch)
     if not epoch or epoch <= 0 then
         return "—"
     end
-    return date("%Y-%m-%d %H:%M", epoch)
+    return date("%d/%m/%Y %H:%M", epoch)
 end
 
 local function GetTierNameSafe(tierIndex)
@@ -1084,6 +1086,15 @@ local function BuildHistoryDungeonItems()
     return items
 end
 
+local function BuildHistoryResultItems()
+    return {
+        { text = "Any Result", value = "Any" },
+        { text = "PB",         value = "PB" },
+        { text = "Completed",  value = "Completed" },
+        { text = "Incomplete", value = "Incomplete" }
+    }
+end
+
 local function DateRangeToMinEpoch(mode)
     mode = mode or "any"
     if mode == "today" then
@@ -1111,6 +1122,8 @@ local function RefreshHistoryTable()
 
     local f = UI.history.filters
     local search = NormalizeName(f.search or "")
+    local filterResult = f.result or "Any"
+    local filterTier = f.tier or 0
 
     local rows = {}
     local history = DB and DB.RunHistory
@@ -1119,9 +1132,20 @@ local function RefreshHistoryTable()
             local r = history[i]
             if type(r) == "table" and r.instanceName then
                 local matchesSearch = (search == "" or NormalizeName(r.instanceName):find(search, 1, true))
-                local matchesTier = (f.tier == 0 or (tonumber(r.tier) == f.tier))
+                local matchesTier = (filterTier == 0 or (tonumber(r.tier) == filterTier))
 
-                if matchesSearch and matchesTier then
+                -- Result filtering logic
+                local isPB = IsRunPB(r)
+                local matchesResult = true
+                if filterResult == "PB" then
+                    matchesResult = isPB
+                elseif filterResult == "Completed" then
+                    matchesResult = (r.success and not isPB)
+                elseif filterResult == "Incomplete" then
+                    matchesResult = (not r.success)
+                end
+
+                if matchesSearch and matchesTier and matchesResult then
                     rows[#rows + 1] = r
                 end
             end
@@ -1257,9 +1281,10 @@ local function EnsureHistoryUI()
     SetHoverBackdrop(historyFrame, 0.90)
     historyFrame:EnableMouse(true)
     historyFrame:SetMovable(true)
+    historyFrame:SetResizable(true)
     historyFrame:RegisterForDrag("LeftButton")
 
-    ApplyResizeBounds(historyFrame, 600, 300)
+    ApplyResizeBounds(historyFrame, 820, 300)
 
     historyFrame:SetScript("OnDragStart", function(self) self:StartMoving() end)
     historyFrame:SetScript("OnDragStop", function(self)
@@ -1271,30 +1296,28 @@ local function EnsureHistoryUI()
         historyFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     end
 
-    local title = historyFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    title:SetText("Run History Tracking")
-    title:SetTextColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 1)
+    -- Controls Bar (Moved up to top)
+    local controls = CreateFrame("Frame", nil, historyFrame)
+    controls:SetPoint("TOPLEFT", 10, -10)
+    controls:SetPoint("TOPRIGHT", -10, -10)
+    controls:SetHeight(30)
+
+    local title = controls:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("LEFT", 0, 0)
+    title:SetText("Run History")
+    title:SetTextColor(1, 1, 1, 1)
 
     local close = CreateFrame("Button", nil, historyFrame, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", historyFrame, "TOPRIGHT", -2, -2)
 
-    -- Controls Bar
-    local controls = CreateFrame("Frame", nil, historyFrame)
-    controls:SetPoint("TOPLEFT", 10, -32)
-    controls:SetPoint("TOPRIGHT", -10, -32)
-    controls:SetHeight(30)
-
-    -- Position Title inline
-    title:SetPoint("LEFT", controls, "LEFT", 0, 0)
-
     -- Search Bar
     local searchLabel = controls:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     searchLabel:SetPoint("LEFT", title, "RIGHT", 16, 0)
-    searchLabel:SetText("Search Dungeon:")
+    searchLabel:SetText("Search:")
 
     local searchBox = CreateFrame("EditBox", nil, controls, "InputBoxTemplate")
     searchBox:SetAutoFocus(false)
-    searchBox:SetSize(160, 20)
+    searchBox:SetSize(140, 20)
     searchBox:SetPoint("LEFT", searchLabel, "RIGHT", 8, 0)
     searchBox:SetScript("OnTextChanged", function(self)
         if not UI.history.filters then return end
@@ -1305,9 +1328,9 @@ local function EnsureHistoryUI()
 
     -- Expansion DropDown
     local tierDropDown = CreateFrame("Frame", nil, controls, "UIDropDownMenuTemplate")
-    tierDropDown:SetPoint("LEFT", searchBox, "RIGHT", -10, -2)
-    UIDropDownMenu_SetWidth(tierDropDown, 110)
-    UIDropDownMenu_SetText(tierDropDown, "Any Expansion")
+    tierDropDown:SetPoint("LEFT", searchBox, "RIGHT", -12, -2)
+    UIDropDownMenu_SetWidth(tierDropDown, 100)
+    UIDropDownMenu_SetText(tierDropDown, "Expansion")
     InitHistoryDropDown(tierDropDown, BuildHistoryTierItems, function()
         return UI.history.filters and UI.history.filters.tier or 0
     end, function(v)
@@ -1315,15 +1338,26 @@ local function EnsureHistoryUI()
     end)
     UI.history.tierDropDown = tierDropDown
 
+    -- Result DropDown
+    local resultDropDown = CreateFrame("Frame", nil, controls, "UIDropDownMenuTemplate")
+    resultDropDown:SetPoint("LEFT", tierDropDown, "RIGHT", -24, 0)
+    UIDropDownMenu_SetWidth(resultDropDown, 90)
+    UIDropDownMenu_SetText(resultDropDown, "Result")
+    InitHistoryDropDown(resultDropDown, BuildHistoryResultItems, function()
+        return UI.history.filters and UI.history.filters.result or "Any"
+    end, function(v)
+        if UI.history.filters then UI.history.filters.result = v end
+    end)
+
     -- Sort Toggle
     local sortBtn = CreateFrame("Button", nil, controls, "UIPanelButtonTemplate")
-    sortBtn:SetSize(130, 22)
-    sortBtn:SetPoint("LEFT", tierDropDown, "RIGHT", -10, 2)
+    sortBtn:SetSize(120, 22)
+    sortBtn:SetPoint("LEFT", resultDropDown, "RIGHT", -12, 2)
 
     local function UpdateSortBtn()
         if not UI.history.filters then return end
         local mode = UI.history.filters.sortMode
-        sortBtn:SetText("Sort: " .. (mode == "date" and "Date" or "Finish Time"))
+        sortBtn:SetText("Sort: " .. (mode == "date" and "Date" or "Time"))
     end
 
     sortBtn:SetScript("OnClick", function()
@@ -1336,7 +1370,7 @@ local function EnsureHistoryUI()
     UpdateSortBtn()
 
     local listFrame = CreateFrame("Frame", nil, historyFrame)
-    listFrame:SetPoint("TOPLEFT", controls, "BOTTOMLEFT", 0, -10)
+    listFrame:SetPoint("TOPLEFT", controls, "BOTTOMLEFT", 0, -24)
     listFrame:SetPoint("BOTTOMRIGHT", historyFrame, "BOTTOMRIGHT", -10, 10)
 
     local ST = ResolveScrollingTable()

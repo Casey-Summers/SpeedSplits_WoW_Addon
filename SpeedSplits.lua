@@ -139,8 +139,13 @@ end
 
 local function GetPaceColor(delta, isPB)
     if delta == nil then return 1, 1, 1, "|cffffffff" end
-    if isPB then return Colors.gold.r, Colors.gold.g, Colors.gold.b, Colors.gold.hex end
-    if delta <= 0 then return Colors.deepGreen.r, Colors.deepGreen.g, Colors.deepGreen.b, Colors.deepGreen.hex end
+    -- Gold if new PB or a tie (+0.000)
+    if isPB or math.abs(delta) < 0.001 then
+        return Colors.gold.r, Colors.gold.g, Colors.gold.b, Colors.gold.hex
+    end
+    if delta < 0 then
+        return Colors.deepGreen.r, Colors.deepGreen.g, Colors.deepGreen.b, Colors.deepGreen.hex
+    end
     local t1, t2 = 4, 12
     if delta <= t1 then
         return InterpolateColor(Colors.deepGreen, Colors.lightGreen, delta / t1)
@@ -727,34 +732,25 @@ local function ApplyTableLayout()
     else
         UI.st.cols = UI.cols
     end
-
     if UI.st.Refresh then
         UI.st:Refresh()
     end
 
-    -- Totals row alignment
+    -- Totals row alignment (perfectly centered vs table columns)
     local tf = UI.totalFrame
     if tf then
-        local rightPad = UI._rightInset
-
-        -- Center UI.totalDelta in Difference column
-        local midDelta = rightPad + UI._deltaWidth / 2
         UI.totalDelta:ClearAllPoints()
-        UI.totalDelta:SetPoint("CENTER", tf, "RIGHT", -midDelta, 0)
+        UI.totalDelta:SetPoint("CENTER", tf, "LEFT", bossWidth + UI._pbWidth + UI._splitWidth + UI._deltaWidth / 2, 0)
         UI.totalDelta:SetWidth(UI._deltaWidth)
         UI.totalDelta:SetJustifyH("CENTER")
 
-        -- Center UI.totalSplit in Split column
-        local midSplit = rightPad + UI._deltaWidth + UI._splitWidth / 2
         UI.totalSplit:ClearAllPoints()
-        UI.totalSplit:SetPoint("CENTER", tf, "RIGHT", -midSplit, 0)
+        UI.totalSplit:SetPoint("CENTER", tf, "LEFT", bossWidth + UI._pbWidth + UI._splitWidth / 2, 0)
         UI.totalSplit:SetWidth(UI._splitWidth)
         UI.totalSplit:SetJustifyH("CENTER")
 
-        -- Center UI.totalPB in PB column
-        local midPB = rightPad + UI._deltaWidth + UI._splitWidth + UI._pbWidth / 2
         UI.totalPB:ClearAllPoints()
-        UI.totalPB:SetPoint("CENTER", tf, "RIGHT", -midPB, 0)
+        UI.totalPB:SetPoint("CENTER", tf, "LEFT", bossWidth + UI._pbWidth / 2, 0)
         UI.totalPB:SetWidth(UI._pbWidth)
         UI.totalPB:SetJustifyH("CENTER")
     end
@@ -1782,7 +1778,7 @@ local function UpdateTimerFrameBounds()
     local totalW = wL + wR
     local h      = UI.timerTextSec:GetStringHeight()
     local padW   = 20
-    local padH   = 14
+    local padH   = 24
     local minW   = math.ceil(totalW + padW * 2)
     local minH   = math.ceil(h + padH * 2)
 
@@ -2093,7 +2089,7 @@ local function RefreshTotals(isFinal)
         local existingPB = node and node.FullRun
         local isPB = false
         if duration and duration > 0 then
-            isPB = (not existingPB or not existingPB.duration or duration < (existingPB.duration - 0.001))
+            isPB = (not existingPB or not existingPB.duration or duration <= (existingPB.duration + 0.001))
         end
 
         local r, g, b, hex = GetPaceColor(deltaTotal, isPB)

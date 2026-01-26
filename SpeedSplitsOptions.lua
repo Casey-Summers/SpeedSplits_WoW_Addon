@@ -1,5 +1,13 @@
 local ADDON_NAME, NS = ...
 
+-- Libraries / Globals
+local UIDropDownMenu_SetWidth = _G.UIDropDownMenu_SetWidth
+local UIDropDownMenu_SetSelectedValue = _G.UIDropDownMenu_SetSelectedValue
+local UIDropDownMenu_SetText = _G.UIDropDownMenu_SetText
+local UIDropDownMenu_Initialize = _G.UIDropDownMenu_Initialize
+local UIDropDownMenu_AddButton = _G.UIDropDownMenu_AddButton
+local UIDropDownMenu_CreateInfo = _G.UIDropDownMenu_CreateInfo
+
 -- Helper to create a color picker row
 local function CreateColorPicker(parent, label, key)
     local frame = CreateFrame("Button", nil, parent, "BackdropTemplate")
@@ -21,7 +29,7 @@ local function CreateColorPicker(parent, label, key)
     text:SetText(label)
 
     local function UpdateSwatch()
-        local hex = NS.DB.settings.colors[key]
+        local hex = NS.DB.Settings.colors[key]
         local c = NS.Colors[key]
         if c then
             bg:SetVertexColor(c.r, c.g, c.b, c.a or 1)
@@ -30,7 +38,7 @@ local function CreateColorPicker(parent, label, key)
 
     frame:SetScript("OnClick", function()
         local c = NS.Colors[key]
-        local originalHex = NS.DB.settings.colors[key]
+        local originalHex = NS.DB.Settings.colors[key]
 
         -- Support for both classic ColorPicker and the newer setup (Dragonflight)
         if ColorPickerFrame.SetupColorPickerAndShow then
@@ -45,7 +53,7 @@ local function CreateColorPicker(parent, label, key)
                     local a = ColorPickerFrame:GetColorAlpha()
                     local hex = string.format("%02x%02x%02x%02x", math.floor(a * 255 + 0.5), math.floor(r * 255 + 0.5),
                         math.floor(g * 255 + 0.5), math.floor(b * 255 + 0.5))
-                    NS.DB.settings.colors[key] = hex
+                    NS.DB.Settings.colors[key] = hex
                     NS.UpdateColorsFromSettings()
                     UpdateSwatch()
                     NS.RefreshAllUI()
@@ -55,13 +63,13 @@ local function CreateColorPicker(parent, label, key)
                     local a = ColorPickerFrame:GetColorAlpha()
                     local hex = string.format("%02x%02x%02x%02x", math.floor(a * 255 + 0.5), math.floor(r * 255 + 0.5),
                         math.floor(g * 255 + 0.5), math.floor(b * 255 + 0.5))
-                    NS.DB.settings.colors[key] = hex
+                    NS.DB.Settings.colors[key] = hex
                     NS.UpdateColorsFromSettings()
                     UpdateSwatch()
                     NS.RefreshAllUI()
                 end,
                 cancelFunc = function()
-                    NS.DB.settings.colors[key] = originalHex
+                    NS.DB.Settings.colors[key] = originalHex
                     NS.UpdateColorsFromSettings()
                     UpdateSwatch()
                     NS.RefreshAllUI()
@@ -74,7 +82,7 @@ local function CreateColorPicker(parent, label, key)
                 local a = ColorPickerFrame:GetColorAlpha()
                 local hex = string.format("%02x%02x%02x%02x", math.floor(a * 255), math.floor(r * 255), math.floor(g *
                     255), math.floor(b * 255))
-                NS.DB.settings.colors[key] = hex
+                NS.DB.Settings.colors[key] = hex
                 NS.UpdateColorsFromSettings()
                 UpdateSwatch()
                 NS.RefreshAllUI()
@@ -82,7 +90,7 @@ local function CreateColorPicker(parent, label, key)
             ColorPickerFrame.hasOpacity = true
             ColorPickerFrame.opacityFunc = ColorPickerFrame.func
             ColorPickerFrame.cancelFunc = function()
-                NS.DB.settings.colors[key] = originalHex
+                NS.DB.Settings.colors[key] = originalHex
                 NS.UpdateColorsFromSettings()
                 UpdateSwatch()
                 NS.RefreshAllUI()
@@ -150,12 +158,12 @@ function NS.CreateOptionsPanel()
         local text = s:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
         text:SetPoint("BOTTOM", s, "TOP", 0, 4)
 
-        local val = NS.DB.settings.fonts[typeKey][field]
+        local val = NS.DB.Settings.fonts[typeKey][field]
         s:SetValue(val)
         text:SetText(string.format("%s: %d", label, val))
 
         s:SetScript("OnValueChanged", function(self, value)
-            NS.DB.settings.fonts[typeKey][field] = math.floor(value)
+            NS.DB.Settings.fonts[typeKey][field] = math.floor(value)
             text:SetText(string.format("%s: %d", label, value))
             NS.RefreshAllUI()
         end)
@@ -165,10 +173,10 @@ function NS.CreateOptionsPanel()
     local function CreateCheckbox(parent, label, typeKey, flag)
         local cb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
         cb.Text:SetText(label)
-        local cur = NS.DB.settings.fonts[typeKey].flags
+        local cur = NS.DB.Settings.fonts[typeKey].flags
         cb:SetChecked(cur:find(flag) ~= nil)
         cb:SetScript("OnClick", function(self)
-            local f = NS.DB.settings.fonts[typeKey]
+            local f = NS.DB.Settings.fonts[typeKey]
             if self:GetChecked() then
                 if not f.flags:find(flag) then
                     f.flags = f.flags == "" and flag or (f.flags .. ", " .. flag)
@@ -198,7 +206,7 @@ function NS.CreateOptionsPanel()
         local function OnClick(self)
             UIDropDownMenu_SetSelectedValue(f, self.value)
             UIDropDownMenu_SetText(f, self.text)
-            NS.DB.settings.fonts[typeKey].font = self.value
+            NS.DB.Settings.fonts[typeKey].font = self.value
             NS.RefreshAllUI()
         end
         UIDropDownMenu_Initialize(f, function()
@@ -210,7 +218,7 @@ function NS.CreateOptionsPanel()
                 UIDropDownMenu_AddButton(item)
             end
         end)
-        local cur = NS.DB.settings.fonts[typeKey].font
+        local cur = NS.DB.Settings.fonts[typeKey].font
         UIDropDownMenu_SetSelectedValue(f, cur)
         for _, info in ipairs(fonts) do
             if info.path == cur then UIDropDownMenu_SetText(f, info.name) end
@@ -241,37 +249,70 @@ function NS.CreateOptionsPanel()
     timerBold:SetPoint("TOPLEFT", numBold, "BOTTOMLEFT", 0, -4)
 
     local resetBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    resetBtn:SetSize(120, 22)
+    resetBtn:SetSize(140, 22)
     resetBtn:SetPoint("BOTTOMLEFT", 16, 16)
-    resetBtn:SetText("Reset Defaults")
+    resetBtn:SetText("Reset Styles Only")
     resetBtn:SetScript("OnClick", function()
-        NS.DB.settings.colors = {
+        NS.DB.Settings.colors = {
             gold       = "ffffd100",
             white      = "ffffffff",
-            turquoise  = "ff00cccc",
-            deepGreen  = "ff00cc36",
-            lightGreen = "ff52cc73",
-            lightRed   = "ffff7777",
-            darkRed    = "ffcc1200",
+            turquoise  = "ff00bec3",
+            deepGreen  = "ff10ff00",
+            lightGreen = "ffcc2232",
+            darkRed    = "ffcc0005",
         }
-        NS.DB.settings.fonts = {
-            boss  = { size = 12, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
-            num   = { size = 11, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
-            timer = { size = 24, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
+        NS.DB.Settings.fonts = {
+            boss  = { size = 14, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
+            num   = { size = 17, font = "Fonts\\ARIALN.TTF", flags = "OUTLINE" },
+            timer = { size = 30, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
         }
         NS.UpdateColorsFromSettings()
         for _, s in ipairs(swatches) do s.UpdateSwatch() end
-        bossSize:SetValue(12)
-        numSize:SetValue(11)
-        timerSize:SetValue(24)
+
+        bossSize:SetValue(14)
+        numSize:SetValue(17)
+        timerSize:SetValue(30)
+
         bossBold:SetChecked(false)
         numBold:SetChecked(false)
         timerBold:SetChecked(false)
-        UIDropDownMenu_SetText(bossFont, "Friz Quadrata")
-        UIDropDownMenu_SetText(numFont, "Friz Quadrata")
-        UIDropDownMenu_SetText(timerFont, "Friz Quadrata")
+
+        _G.UIDropDownMenu_SetText(bossFont, "Friz Quadrata")
+        _G.UIDropDownMenu_SetSelectedValue(bossFont, "Fonts\\FRIZQT__.TTF")
+
+        _G.UIDropDownMenu_SetText(numFont, "Arial Narrow")
+        _G.UIDropDownMenu_SetSelectedValue(numFont, "Fonts\\ARIALN.TTF")
+
+        _G.UIDropDownMenu_SetText(timerFont, "Friz Quadrata")
+        _G.UIDropDownMenu_SetSelectedValue(timerFont, "Fonts\\FRIZQT__.TTF")
+
         NS.RefreshAllUI()
     end)
+
+    local wipeBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    wipeBtn:SetSize(160, 22)
+    wipeBtn:SetPoint("LEFT", resetBtn, "RIGHT", 10, 0)
+    wipeBtn:SetText("Wipe All Records & Data")
+    wipeBtn:SetScript("OnClick", function()
+        StaticPopup_Show("SPEEDSPLITS_WIPE_CONFIRM")
+    end)
+
+    StaticPopupDialogs["SPEEDSPLITS_WIPE_CONFIRM"] = {
+        text =
+        "Are you sure you want to WIPE all SpeedSplits data? This will clear all Personal Bests and Run History. This cannot be undone.",
+        button1 = "WIPE DATA",
+        button2 = "Cancel",
+        OnAccept = function()
+            NS.WipeDatabase()
+            -- Force UI update for options panel if visible
+            NS.RefreshAllUI()
+            ReloadUI() -- Force full reset to be safe
+        end,
+        timeout = 0,
+        whileDead = true,
+        hideOnEscape = true,
+        showAlert = true,
+    }
 
     -- Register in Blizzard options
     if Settings and Settings.RegisterCanvasLayoutCategory then

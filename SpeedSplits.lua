@@ -120,10 +120,10 @@ end
 local Colors = {
     gold       = HexToColor("ffffd100"),
     white      = HexToColor("ffffffff"),
-    turquoise  = HexToColor("ff00cccc"),
-    deepGreen  = HexToColor("ff00cc36"),
-    lightGreen = HexToColor("ff52cc73"),
-    darkRed    = HexToColor("ffcc1200"),
+    turquoise  = HexToColor("ff00bec3"),
+    deepGreen  = HexToColor("ff10ff00"),
+    lightGreen = HexToColor("ffcc2232"),
+    darkRed    = HexToColor("ffcc0005"),
 }
 NS.Colors = Colors
 
@@ -158,61 +158,94 @@ local DB
 
 local function EnsureDB()
     if SpeedSplitsDB == nil then
-        SpeedSplitsDB = MyAddonDB or {}
+        SpeedSplitsDB = {}
     end
-    MyAddonDB                          = nil
 
-    SpeedSplitsDB.runs                 = SpeedSplitsDB.runs or {}
-    SpeedSplitsDB.bestSplits           = SpeedSplitsDB.bestSplits or {}
-    SpeedSplitsDB.pbBoss               = SpeedSplitsDB.pbBoss or {}
-    SpeedSplitsDB.pbRun                = SpeedSplitsDB.pbRun or {}
-    SpeedSplitsDB.settings             = SpeedSplitsDB.settings or {}
-    SpeedSplitsDB.settings.colors      = SpeedSplitsDB.settings.colors or {
+    -- Human-readable structure
+    SpeedSplitsDB.RunHistory            = SpeedSplitsDB.RunHistory or SpeedSplitsDB.runs or {}
+    SpeedSplitsDB.InstancePersonalBests = SpeedSplitsDB.InstancePersonalBests or SpeedSplitsDB.PersonalBests or
+        SpeedSplitsDB.bestSplits or {}
+    SpeedSplitsDB.Settings              = SpeedSplitsDB.Settings or SpeedSplitsDB.settings or {}
+
+    -- Clean up old keys
+    SpeedSplitsDB.runs                  = nil
+    SpeedSplitsDB.bestSplits            = nil
+    SpeedSplitsDB.PersonalBests         = nil
+    SpeedSplitsDB.settings              = nil
+    SpeedSplitsDB.pbBoss                = nil
+    SpeedSplitsDB.pbRun                 = nil
+
+    -- Defaults
+    SpeedSplitsDB.Settings.colors       = SpeedSplitsDB.Settings.colors or {
         gold       = "ffffd100",
         white      = "ffffffff",
-        turquoise  = "ff00cccc",
-        deepGreen  = "ff00cc36",
-        lightGreen = "ff52cc73",
-        darkRed    = "ffcc1200",
+        turquoise  = "ff00bec3",
+        deepGreen  = "ff10ff00",
+        lightGreen = "ffcc2232",
+        darkRed    = "ffcc0005",
     }
-    SpeedSplitsDB.settings.fonts       = SpeedSplitsDB.settings.fonts or {}
-    SpeedSplitsDB.settings.fonts.boss  = SpeedSplitsDB.settings.fonts.boss or
-        { size = 12, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" }
-    SpeedSplitsDB.settings.fonts.num   = SpeedSplitsDB.settings.fonts.num or
-        { size = 11, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" }
-    SpeedSplitsDB.settings.fonts.timer = SpeedSplitsDB.settings.fonts.timer or
-        { size = 24, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" }
+    SpeedSplitsDB.Settings.fonts        = SpeedSplitsDB.Settings.fonts or {}
+    SpeedSplitsDB.Settings.fonts.boss   = SpeedSplitsDB.Settings.fonts.boss or
+        { size = 14, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" }
+    SpeedSplitsDB.Settings.fonts.num    = SpeedSplitsDB.Settings.fonts.num or
+        { size = 17, font = "Fonts\\ARIALN.TTF", flags = "OUTLINE" }
+    SpeedSplitsDB.Settings.fonts.timer  = SpeedSplitsDB.Settings.fonts.timer or
+        { size = 30, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" }
 
-    DB                                 = SpeedSplitsDB
-    NS.DB                              = DB
+    DB                                  = SpeedSplitsDB
+    NS.DB                               = DB
 end
 
-local function GetBestSplitsSubtable(instanceName, difficultyName, dungeonKey)
+function NS.WipeDatabase()
+    SpeedSplitsDB.InstancePersonalBests = {}
+    SpeedSplitsDB.RunHistory = {}
+    EnsureDB()
+    NS.UpdateColorsFromSettings()
+    NS.RefreshAllUI()
+    SS_Print("Personal Best records and Run History have been wiped.")
+end
+
+local function GetBestSplitsSubtable(instanceName)
     instanceName = instanceName or (NS.Run and NS.Run.instanceName)
     if not instanceName or instanceName == "" then return nil end
 
-    local diffKey = (difficultyName and difficultyName ~= "") and difficultyName
-        or
-        (NS.Run and NS.Run.instanceName == instanceName and NS.Run.difficultyName and NS.Run.difficultyName ~= "") and
-        NS.Run.difficultyName
-        or dungeonKey or (NS.Run and NS.Run.instanceName == instanceName and NS.Run.dungeonKey)
+    DB.InstancePersonalBests = DB.InstancePersonalBests or {}
 
-    if not diffKey or diffKey == "" then return nil end
+    -- Migrate if old structure exists
+    if DB.InstancePersonalBests[instanceName] and not DB.InstancePersonalBests[instanceName].Segments then
+        local oldInstance = DB.InstancePersonalBests[instanceName]
+        -- Check if it contains difficulty tables (old behavior)
+        local firstDiff = nil
+        for _, val in pairs(oldInstance) do
+            if type(val) == "table" and val.pbBoss then
+                firstDiff = val
+                break
+            end
+        end
 
-    DB.bestSplits = DB.bestSplits or {}
-    DB.bestSplits[instanceName] = DB.bestSplits[instanceName] or {}
-    DB.bestSplits[instanceName][diffKey] = DB.bestSplits[instanceName][diffKey] or { pbBoss = {} }
-    return DB.bestSplits[instanceName][diffKey]
+        if firstDiff then
+            DB.InstancePersonalBests[instanceName] = {
+                Segments = firstDiff.pbBoss or {},
+                FullRun = firstDiff.pbRun or {}
+            }
+        else
+            -- Check if old structure was just keys directly (unlikely but safe)
+            DB.InstancePersonalBests[instanceName] = { Segments = {}, FullRun = {} }
+        end
+    end
+
+    DB.InstancePersonalBests[instanceName] = DB.InstancePersonalBests[instanceName] or { Segments = {}, FullRun = {} }
+    return DB.InstancePersonalBests[instanceName]
 end
 
-local function GetPBTableForDungeon(instanceName, difficultyName, dungeonKey)
-    local node = GetBestSplitsSubtable(instanceName, difficultyName, dungeonKey)
-    return node and node.pbBoss
+local function GetPBTableForDungeon(instanceName)
+    local node = GetBestSplitsSubtable(instanceName)
+    return node and node.Segments
 end
 
 function NS.UpdateColorsFromSettings()
-    if not DB or not DB.settings or not DB.settings.colors then return end
-    local s = DB.settings.colors
+    if not DB or not DB.Settings or not DB.Settings.colors then return end
+    local s = DB.Settings.colors
     for k, hex in pairs(s) do
         if NS.Colors[k] then
             NS.Colors[k] = HexToColor(hex)
@@ -222,8 +255,8 @@ end
 
 function NS.ApplyFontToFS(fs, typeKey)
     if not fs then return end
-    local f = (NS.DB and NS.DB.settings and NS.DB.settings.fonts and NS.DB.settings.fonts[typeKey])
-        or (NS.DB and NS.DB.settings and NS.DB.settings.fonts and NS.DB.settings.fonts.num)
+    local f = (NS.DB and NS.DB.Settings and NS.DB.Settings.fonts and NS.DB.Settings.fonts[typeKey])
+        or (NS.DB and NS.DB.Settings and NS.DB.Settings.fonts and NS.DB.Settings.fonts.num)
 
     local fontPath = f and f.font or "Fonts\\FRIZQT__.TTF"
     local fontSize = f and f.size or 12
@@ -950,8 +983,8 @@ end
 
 local function SplitColor(data, cols, realrow, column)
     local e = data[realrow]
-    local diffCell = e and e.cols and e.cols[4] -- Difference column
-    return diffCell and diffCell.color or nil
+    local cell = e and e.cols and e.cols[column]
+    return cell and cell.color or nil
 end
 
 -- =========================================================
@@ -978,11 +1011,8 @@ local function IsRunPB(record)
         return false
     end
 
-    local node = GetBestSplitsSubtable(record.instanceName, record.difficultyName, record.dungeonKey)
-    local pb = node and node.pbRun
-    if (not pb or not pb.duration) and record.dungeonKey then
-        pb = DB.pbRun[record.dungeonKey]
-    end
+    local node = GetBestSplitsSubtable(record.instanceName)
+    local pb = node and node.FullRun
 
     if not pb or not pb.duration then
         return false
@@ -995,11 +1025,11 @@ local function BuildHistoryTierItems()
         text = "Any",
         value = 0
     } }
-    if not DB or not DB.runs then
+    if not DB or not DB.RunHistory then
         return items
     end
     local seen = {}
-    for _, r in ipairs(DB.runs) do
+    for _, r in ipairs(DB.RunHistory) do
         local t = tonumber(r.tier)
         if t and t > 0 then
             seen[t] = true
@@ -1024,11 +1054,11 @@ local function BuildHistoryDungeonItems()
         text = "Any",
         value = 0
     } }
-    if not DB or not DB.runs then
+    if not DB or not DB.RunHistory then
         return items
     end
     local seen = {}
-    for _, r in ipairs(DB.runs) do
+    for _, r in ipairs(DB.RunHistory) do
         local mapID = tonumber(r.mapID) or 0
         local name = r.instanceName or ("Map " .. tostring(mapID))
         if mapID > 0 and not seen[mapID] then
@@ -1079,7 +1109,7 @@ local function RefreshHistoryTable()
     local minEpoch = DateRangeToMinEpoch(f.dateMode)
 
     local rows = {}
-    for _, r in ipairs(DB.runs or {}) do
+    for _, r in ipairs(DB.RunHistory or {}) do
         if f.tier == 0 or tonumber(r.tier) == tonumber(f.tier) then
             if f.mapID == 0 or (tonumber(r.mapID) or 0) == tonumber(f.mapID) then
                 if not minEpoch or ((r.startedAt or 0) >= minEpoch) then
@@ -1123,8 +1153,8 @@ local function RefreshHistoryTable()
             diffName = tostring(tonumber(r.difficultyID) or "")
         end
 
-        local node = GetBestSplitsSubtable(r.instanceName, r.difficultyName, r.dungeonKey)
-        local pb = node and node.pbRun or (DB.pbRun and r.dungeonKey and DB.pbRun[r.dungeonKey])
+        local node = GetBestSplitsSubtable(r.instanceName)
+        local pb = node and node.FullRun
         local deltaPB = (pb and pb.duration and r.duration) and (r.duration - pb.duration) or nil
 
         local resultColor = r.success and Colors.green or Colors.red
@@ -1901,7 +1931,10 @@ local function RenderBossTable(entries, pbSegments)
             key = entry.key,
             cols = {
                 { value = entry.name or "Unknown" },
-                { value = (cumulativePB > 0) and FormatTime(cumulativePB) or "--:--.---", color = NS.Colors.gold },
+                {
+                    value = (pbSegment > 0 and cumulativePB > 0) and FormatTime(cumulativePB) or "--:--.---",
+                    color = NS.Colors.gold
+                },
                 { value = "" },
                 { value = "" }
             }
@@ -1934,12 +1967,13 @@ local function GetPreviousKilledCumulativeInTableOrder(run, bossKey)
     return previous
 end
 
-local function SetRowKilled(bossKey, splitCumulative, cumulativePB, deltaSeconds, r, g, b, hex, isGold)
+local function SetRowKilled(bossKey, splitCumulative, cumulativePB, deltaSeconds, r, g, b, hex, isGold,
+                            pbSegmentForThisRow)
     local realrow = UI.rowByBossKey and UI.rowByBossKey[bossKey]
     local row = realrow and UI.data and UI.data[realrow]
     if not row then return end
 
-    row.cols[2].value = (cumulativePB > 0) and FormatTime(cumulativePB) or "--:--.---"
+    row.cols[2].value = (pbSegmentForThisRow and pbSegmentForThisRow > 0) and FormatTime(cumulativePB) or "--:--.---"
     row.cols[2].color = NS.Colors.gold
     row.cols[3].value = FormatTime(splitCumulative)
     row.cols[3].color = isGold and NS.Colors.gold or { r = r, g = g, b = b, a = 1 }
@@ -2049,14 +2083,14 @@ end
 
 local function RefreshTotals(isFinal)
     local node = GetBestSplitsSubtable()
-    local pbTable = node and node.pbBoss or nil
+    local pbTable = node and node.Segments or nil
     local pbTotal = pbTable and ComputeSumOfBest(pbTable, Run.entries) or nil
 
     if isFinal then
         local duration = (Run.endGameTime > 0 and Run.startGameTime > 0) and (Run.endGameTime - Run.startGameTime) or nil
         local deltaTotal = (duration and pbTotal) and (duration - pbTotal) or nil
 
-        local existingPB = node and node.pbRun
+        local existingPB = node and node.FullRun
         local isPB = false
         if duration and duration > 0 then
             isPB = (not existingPB or not existingPB.duration or duration < (existingPB.duration - 0.001))
@@ -2077,16 +2111,11 @@ local function RefreshTotals(isFinal)
     end
 
     if lastBossKey then
-        local currentDuration = Run.kills[lastBossKey]
-        local currentPB = 0
-        for _, entry in ipairs(Run.entries) do
-            currentPB = currentPB + (pbTable and pbTable[entry.key] or 0)
-            if entry.key == lastBossKey then break end
-        end
-        local delta = currentDuration - currentPB
-        local r, g, b, hex = GetPaceColor(delta, false)
-        SetTotals(pbTotal, currentDuration, delta, r, g, b, hex)
-        SetTimerDelta(delta)
+        -- Synchronize with table: pull the state directly from the last calculated split
+        SetTotals(Run.lastPBTotal, Run.lastSplitCumulative, Run.lastDelta, Run.lastColorR, Run.lastColorG, Run
+            .lastColorB,
+            Run.lastColorHex)
+        SetTimerDelta(Run.lastDelta)
     else
         SetTotals(pbTotal, nil, nil)
         SetTimerDelta(nil)
@@ -2114,7 +2143,7 @@ function NS.RefreshAllUI()
     if UI.timerTextSec then NS.ApplyFontToFS(UI.timerTextSec, "timer") end
     if UI.timerTextMs then NS.ApplyFontToFS(UI.timerTextMs, "timer") end
     if UI.timerDeltaText then
-        local f = (NS.DB and NS.DB.settings and NS.DB.settings.fonts and NS.DB.settings.fonts.timer)
+        local f = (NS.DB and NS.DB.Settings and NS.DB.Settings.fonts and NS.DB.Settings.fonts.timer)
         local fontPath = f and f.font or "Fonts\\FRIZQT__.TTF"
         local fontSize = math.max(8, math.floor((f and f.size or 24) * 0.55))
         local fontFlags = f and f.flags or "OUTLINE"
@@ -2123,9 +2152,9 @@ function NS.RefreshAllUI()
 
     UpdateTimerFrameBounds()
 
-    if NS.Run.inInstance and NS.Run._bossLoaded then
+    if NS.Run.entries and #NS.Run.entries > 0 then
         local node = GetBestSplitsSubtable()
-        local pbTable = node and node.pbBoss or {}
+        local pbTable = node and node.Segments or {}
         RenderBossTable(NS.Run.entries, pbTable)
 
         local runningPBTotal = 0
@@ -2136,7 +2165,7 @@ function NS.RefreshAllUI()
                 local prevCumulative = GetPreviousKilledCumulativeInTableOrder(NS.Run, entry.key)
                 local segTime = prevCumulative and (splitCumulative - prevCumulative) or splitCumulative
                 local oldSegPB = pbTable[entry.name]
-                local isGold = (not oldSegPB) or (segTime < oldSegPB)
+                local isGold = (not oldSegPB) or (segTime <= oldSegPB + 0.001)
 
                 local delta = splitCumulative - runningPBTotal
                 local r, g, b, hex = NS.GetPaceColor(delta, false)
@@ -2155,9 +2184,9 @@ local function UpdateBestRunIfNeeded(durationSeconds)
     local node = GetBestSplitsSubtable()
     if not node then return end
 
-    local existing = node.pbRun
+    local existing = node.FullRun
     if not existing or not existing.duration or durationSeconds < existing.duration then
-        node.pbRun = {
+        node.FullRun = {
             duration = durationSeconds,
             endedAt = Run.endedAt,
             instanceName = Run.instanceName,
@@ -2198,8 +2227,8 @@ local function SaveRunRecord(success)
         gameBuild = select(4, GetBuildInfo())
     }
 
-    table.insert(DB.runs, 1, record)
-    while #DB.runs > RUNS_MAX do table.remove(DB.runs) end
+    table.insert(DB.RunHistory, 1, record)
+    while #DB.RunHistory > RUNS_MAX do table.remove(DB.RunHistory) end
 
     if success and duration then
         UpdateBestRunIfNeeded(duration)
@@ -2291,11 +2320,26 @@ local function RecordBossKill(encounterID, encounterName)
     end
 
     local node = GetBestSplitsSubtable()
-    local pbTable = node and node.pbBoss
+    local pbTable = node and node.Segments
     if not pbTable then return end
 
+    -- Baseline for this segment
+    local baseline = 0
+    if prevCumulative then
+        baseline = prevCumulative
+    else
+        -- If previous split was skipped, evaluate this segment relative to the sum of previous PBs
+        for _, entry in ipairs(Run.entries) do
+            if entry.key == bossKey then break end
+            baseline = baseline + (pbTable[entry.name] or 0)
+        end
+    end
+
+    local splitSegment = splitCumulative - baseline
+    if splitSegment < 0 then splitSegment = 0 end
+
     local oldSegmentPB = pbTable[bossName]
-    local isNewSegmentPB = (oldSegmentPB == nil) or (splitSegment < oldSegmentPB)
+    local isNewSegmentPB = (oldSegmentPB == nil or oldSegmentPB == 0) or (splitSegment <= oldSegmentPB + 0.001)
 
     -- Prepare cumulative comparison vs old PB sum
     local cumulativePB_Comparison = 0
@@ -2322,9 +2366,18 @@ local function RecordBossKill(encounterID, encounterName)
         end
     end
 
+    local pbTotalTableSum = ComputeSumOfBest(pbTable, Run.entries) or 0
     local deltaOverall = splitCumulative - cumulativePB_Comparison
-    local r, g, b, hex = GetPaceColor(deltaOverall, false) -- Pace is based on overall delta, not segment PB
-    SetRowKilled(bossKey, splitCumulative, cumulativePB_Display, deltaOverall, r, g, b, hex, isNewSegmentPB)
+    local r, g, b, hex = GetPaceColor(deltaOverall, false)
+
+    -- Store for footer/timer synchronization
+    Run.lastDelta = deltaOverall
+    Run.lastPBTotal = pbTotalTableSum
+    Run.lastSplitCumulative = splitCumulative
+    Run.lastColorR, Run.lastColorG, Run.lastColorB, Run.lastColorHex = r, g, b, hex
+
+    SetRowKilled(bossKey, splitCumulative, cumulativePB_Display, deltaOverall, r, g, b, hex, isNewSegmentPB,
+        pbTable[bossName])
 
     SetKillCount(Run.killedCount, #Run.entries)
     RefreshTotals(false)
@@ -2358,7 +2411,7 @@ local function ApplyBossEntries(entries, source, tier, journalID)
     end
 
     local node = GetBestSplitsSubtable()
-    local pbSplits = node and node.pbBoss or {}
+    local pbSplits = node and node.Segments or {}
     RenderBossTable(Run.entries, pbSplits)
     SetKillCount(0, #Run.entries)
     RefreshTotals(false)

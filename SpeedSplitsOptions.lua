@@ -210,23 +210,27 @@ function NS.CreateOptionsPanel()
         return f
     end
 
-    local bossSize = CreateSlider(panel, "Boss Text Size", 8, 24, "boss", "size")
+    local bossSize = CreateSlider(panel, "Boss Size", 8, 24, "boss", "size")
     bossSize:SetPoint("TOPLEFT", typeTitle, "BOTTOMLEFT", 8, -24)
-
     local bossFont = CreateFontDropdown(panel, "Boss Font", "boss")
     bossFont:SetPoint("TOPLEFT", bossSize, "BOTTOMLEFT", -16, -24)
 
-    local numSize = CreateSlider(panel, "Splits Text Size", 8, 24, "num", "size")
+    local numSize = CreateSlider(panel, "Splits Size", 8, 24, "num", "size")
     numSize:SetPoint("TOPLEFT", bossFont, "BOTTOMLEFT", 16, -32)
-
     local numFont = CreateFontDropdown(panel, "Splits Font", "num")
     numFont:SetPoint("TOPLEFT", numSize, "BOTTOMLEFT", -16, -24)
 
-    local bossBold = CreateCheckbox(panel, "Bold Boss Names", "boss", "THICKOUTLINE")
-    bossBold:SetPoint("TOPLEFT", numFont, "BOTTOMLEFT", 12, -8)
+    local timerSize = CreateSlider(panel, "Timer Size", 8, 48, "timer", "size")
+    timerSize:SetPoint("TOPLEFT", numFont, "BOTTOMLEFT", 16, -32)
+    local timerFont = CreateFontDropdown(panel, "Timer Font", "timer")
+    timerFont:SetPoint("TOPLEFT", timerSize, "BOTTOMLEFT", -16, -24)
 
+    local bossBold = CreateCheckbox(panel, "Bold Boss Names", "boss", "THICKOUTLINE")
+    bossBold:SetPoint("TOPLEFT", typeTitle, "TOPLEFT", 210, -24)
     local numBold = CreateCheckbox(panel, "Bold Splits", "num", "THICKOUTLINE")
     numBold:SetPoint("TOPLEFT", bossBold, "BOTTOMLEFT", 0, -4)
+    local timerBold = CreateCheckbox(panel, "Bold Timer", "timer", "THICKOUTLINE")
+    timerBold:SetPoint("TOPLEFT", numBold, "BOTTOMLEFT", 0, -4)
 
     local resetBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     resetBtn:SetSize(120, 22)
@@ -243,17 +247,21 @@ function NS.CreateOptionsPanel()
             darkRed    = "ffcc1200",
         }
         NS.DB.settings.fonts = {
-            boss = { size = 12, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
-            num  = { size = 11, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
+            boss  = { size = 12, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
+            num   = { size = 11, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
+            timer = { size = 24, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
         }
         NS.UpdateColorsFromSettings()
         for _, s in ipairs(swatches) do s.UpdateSwatch() end
         bossSize:SetValue(12)
         numSize:SetValue(11)
+        timerSize:SetValue(24)
         bossBold:SetChecked(false)
         numBold:SetChecked(false)
+        timerBold:SetChecked(false)
         UIDropDownMenu_SetText(bossFont, "Friz Quadrata")
         UIDropDownMenu_SetText(numFont, "Friz Quadrata")
+        UIDropDownMenu_SetText(timerFont, "Friz Quadrata")
         NS.RefreshAllUI()
     end)
 

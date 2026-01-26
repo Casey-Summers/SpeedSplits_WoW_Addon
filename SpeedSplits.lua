@@ -154,13 +154,13 @@ local function EnsureDB()
     if SpeedSplitsDB == nil then
         SpeedSplitsDB = MyAddonDB or {}
     end
-    MyAddonDB = nil
+    MyAddonDB                          = nil
 
-    SpeedSplitsDB.runs = SpeedSplitsDB.runs or {}
-    SpeedSplitsDB.pbBoss = SpeedSplitsDB.pbBoss or {}
-    SpeedSplitsDB.pbRun = SpeedSplitsDB.pbRun or {}
-    SpeedSplitsDB.settings = SpeedSplitsDB.settings or {}
-    SpeedSplitsDB.settings.colors = SpeedSplitsDB.settings.colors or {
+    SpeedSplitsDB.runs                 = SpeedSplitsDB.runs or {}
+    SpeedSplitsDB.pbBoss               = SpeedSplitsDB.pbBoss or {}
+    SpeedSplitsDB.pbRun                = SpeedSplitsDB.pbRun or {}
+    SpeedSplitsDB.settings             = SpeedSplitsDB.settings or {}
+    SpeedSplitsDB.settings.colors      = SpeedSplitsDB.settings.colors or {
         gold       = "ffffd100",
         white      = "ffffffff",
         turquoise  = "ff00cccc",
@@ -169,13 +169,16 @@ local function EnsureDB()
         lightRed   = "ffff7777",
         darkRed    = "ffcc1200",
     }
-    SpeedSplitsDB.settings.fonts = SpeedSplitsDB.settings.fonts or {
-        boss = { size = 12, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
-        num  = { size = 11, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
-    }
+    SpeedSplitsDB.settings.fonts       = SpeedSplitsDB.settings.fonts or {}
+    SpeedSplitsDB.settings.fonts.boss  = SpeedSplitsDB.settings.fonts.boss or
+        { size = 12, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" }
+    SpeedSplitsDB.settings.fonts.num   = SpeedSplitsDB.settings.fonts.num or
+        { size = 11, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" }
+    SpeedSplitsDB.settings.fonts.timer = SpeedSplitsDB.settings.fonts.timer or
+        { size = 24, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" }
 
-    DB = SpeedSplitsDB
-    NS.DB = DB
+    DB                                 = SpeedSplitsDB
+    NS.DB                              = DB
 end
 
 function NS.UpdateColorsFromSettings()
@@ -189,9 +192,25 @@ function NS.UpdateColorsFromSettings()
 end
 
 function NS.ApplyFontToFS(fs, typeKey)
-    if not fs or not NS.DB or not NS.DB.settings or not NS.DB.settings.fonts then return end
-    local f = NS.DB.settings.fonts[typeKey] or NS.DB.settings.fonts.num
-    fs:SetFont(f.font or "Fonts\\FRIZQT__.TTF", f.size or 12, f.flags or "OUTLINE")
+    if not fs then return end
+    local f = (NS.DB and NS.DB.settings and NS.DB.settings.fonts and NS.DB.settings.fonts[typeKey])
+        or (NS.DB and NS.DB.settings and NS.DB.settings.fonts and NS.DB.settings.fonts.num)
+
+    local fontPath = f and f.font or "Fonts\\FRIZQT__.TTF"
+    local fontSize = f and f.size or 12
+    local fontFlags = f and f.flags or "OUTLINE"
+
+    -- Safety: Ensure we actually set SOMETHING
+    local success = fs:SetFont(fontPath, fontSize, fontFlags)
+    if not success then
+        -- Fallback to standard Blizzard fonts if custom set fails
+        fs:SetFont("Fonts\\FRIZQT__.TTF", fontSize, fontFlags)
+    end
+
+    -- Ultimate fallback if still not set
+    if not fs:GetFont() then
+        fs:SetFontObject("GameFontHighlight")
+    end
 end
 
 local ScrollingTable
@@ -1397,10 +1416,12 @@ local function EnsureUI()
     timerFrame:SetMovable(true)
     timerFrame:EnableMouse(true)
     timerFrame:RegisterForDrag("LeftButton")
-    ApplyResizeBounds(timerFrame, 180, 60, 900, 300)
-    SetHoverBackdrop(timerFrame, 0.80)
+    ApplyResizeBounds(timerFrame, 120, 40, 900, 300)
+    SetHoverBackdrop(timerFrame, 0.60)
+    timerFrame:SetBackdropColor(0, 0, 0, 0)
+    timerFrame:SetBackdropBorderColor(1, 1, 1, 0)
 
-    local timerRestored = RestoreFrameGeom("timer", timerFrame, 360, 80)
+    local timerRestored = RestoreFrameGeom("timer", timerFrame, 140, 50)
     if not timerRestored then
         timerFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 200)
     end
@@ -1413,13 +1434,45 @@ local function EnsureUI()
         SaveFrameGeom("timer", self)
     end)
 
-    local timerText = timerFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
-    timerText:SetPoint("CENTER", timerFrame, "CENTER", 0, 0)
-    timerText:SetText("00:00.000")
+    local fadeTarget = 0
+    local fadeCurrent = 0
+    local fadeSpeed = 5 -- Alpha per second
 
-    local timerDeltaText = timerFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    timerDeltaText:SetPoint("TOP", timerText, "BOTTOM", 0, -2)
+    timerFrame:SetScript("OnUpdate", function(self, elapsed)
+        if self:IsMouseOver() then fadeTarget = 1 else fadeTarget = 0 end
+        if math.abs(fadeCurrent - fadeTarget) > 0.01 then
+            local dir = (fadeTarget > fadeCurrent) and 1 or -1
+            fadeCurrent = Clamp(fadeCurrent + (dir * fadeSpeed * elapsed), 0, 1)
+            self:SetBackdropColor(0, 0, 0, 0.60 * fadeCurrent)
+            self:SetBackdropBorderColor(1, 1, 1, 0.10 * fadeCurrent)
+            if UI._timerResizeGrip then UI._timerResizeGrip:SetAlpha(fadeCurrent) end
+        end
+    end)
+
+    local timerTextSec = timerFrame:CreateFontString(nil, "OVERLAY")
+    timerTextSec:SetJustifyH("RIGHT")
+    NS.ApplyFontToFS(timerTextSec, "timer")
+    timerTextSec:SetText("00")
+
+    local timerTextMin = timerFrame:CreateFontString(nil, "OVERLAY")
+    timerTextMin:SetPoint("RIGHT", timerTextSec, "LEFT", 0, 0)
+    timerTextMin:SetJustifyH("RIGHT")
+    NS.ApplyFontToFS(timerTextMin, "timer")
+    timerTextMin:SetText("00:")
+
+    local timerTextMs = timerFrame:CreateFontString(nil, "OVERLAY")
+    timerTextMs:SetPoint("LEFT", timerTextSec, "RIGHT", 0, 0)
+    timerTextMs:SetJustifyH("LEFT")
+    NS.ApplyFontToFS(timerTextMs, "timer")
+    timerTextMs:SetText(".000")
+
+    local timerDeltaText = timerFrame:CreateFontString(nil, "OVERLAY")
+    timerDeltaText:SetPoint("TOP", timerFrame, "CENTER", 0, -18)
+    NS.ApplyFontToFS(timerDeltaText, "num")
     timerDeltaText:SetText("")
+
+    -- Initial pivot anchor (will be refined in RefreshAllUI)
+    timerTextSec:SetPoint("RIGHT", timerFrame, "CENTER", 0, 0)
 
     -- Boss frame
     local bossFrame = CreateFrame("Frame", "SpeedSplitsBossFrame", UIParent, "BackdropTemplate")
@@ -1564,6 +1617,7 @@ local function EnsureUI()
     local timerGrip = SetupSizeGrip(timerFrame, function()
         SaveFrameGeom("timer", timerFrame)
     end)
+    timerGrip:SetAlpha(0)
 
     local bossGrip = SetupSizeGrip(bossFrame, function()
         SaveFrameGeom("boss", bossFrame)
@@ -1578,7 +1632,9 @@ local function EnsureUI()
     -- Store UI refs
     UI.timerFrame = timerFrame
     UI.bossFrame = bossFrame
-    UI.timerText = timerText
+    UI.timerTextMin = timerTextMin
+    UI.timerTextSec = timerTextSec
+    UI.timerTextMs = timerTextMs
     UI.killCountText = killCountText
     UI.st = st
     UI.cols = cols
@@ -1601,11 +1657,56 @@ local function EnsureUI()
     bossFrame:Hide()
 end
 
+local function UpdateTimerFrameBounds()
+    if not UI.timerFrame or not UI.timerTextSec then return end
+
+    -- Use neutral text to calibrate visual center & constraints
+    local oldMin = UI.timerTextMin:GetText()
+    local oldSec = UI.timerTextSec:GetText()
+    local oldMs  = UI.timerTextMs:GetText()
+
+    UI.timerTextMin:SetText("00:")
+    UI.timerTextSec:SetText("00")
+    UI.timerTextMs:SetText(".000")
+
+    local wL = UI.timerTextMin:GetStringWidth() + UI.timerTextSec:GetStringWidth()
+    local wR = UI.timerTextMs:GetStringWidth()
+
+    -- Centering logic: Calculate pivot offset to balance asymmetrical text MM:SS.mmm
+    UI._timerPivotOffset = (wL - wR) / 2
+    UI.timerTextSec:ClearAllPoints()
+    UI.timerTextSec:SetPoint("RIGHT", UI.timerFrame, "CENTER", UI._timerPivotOffset, 0)
+
+    local totalW = wL + wR
+    local h      = UI.timerTextSec:GetStringHeight()
+    local padW   = 20
+    local padH   = 14
+    local minW   = math.ceil(totalW + padW * 2)
+    local minH   = math.ceil(h + padH * 2)
+
+    ApplyResizeBounds(UI.timerFrame, minW, minH, 900, 300)
+
+    -- Restore text
+    UI.timerTextMin:SetText(oldMin)
+    UI.timerTextSec:SetText(oldSec)
+    UI.timerTextMs:SetText(oldMs)
+end
+
 local function SetTimerText(seconds, finished)
-    if not UI.timerText then return end
-    UI.timerText:SetText(FormatTime(seconds))
+    if not UI.timerTextMin or not UI.timerTextSec or not UI.timerTextMs then return end
+    local full = FormatTime(seconds)
+    -- HH:MM:SS.mmm pattern
+    local min, sec, ms = full:match("^(.-)(%d%d)(%.%d+)$")
+    if not min then min, sec, ms = full, "", "" end
+
+    UI.timerTextMin:SetText(min)
+    UI.timerTextSec:SetText(sec)
+    UI.timerTextMs:SetText(ms)
+
     local c = finished and NS.Colors.deepGreen or NS.Colors.white
-    UI.timerText:SetTextColor(c.r, c.g, c.b, c.a or 1)
+    UI.timerTextMin:SetTextColor(c.r, c.g, c.b, c.a or 1)
+    UI.timerTextSec:SetTextColor(c.r, c.g, c.b, c.a or 1)
+    UI.timerTextMs:SetTextColor(c.r, c.g, c.b, c.a or 1)
 end
 
 local function SetTimerDelta(delta)
@@ -1921,11 +2022,12 @@ function NS.RefreshAllUI()
     if UI.totalPB then NS.ApplyFontToFS(UI.totalPB, "num") end
     if UI.totalSplit then NS.ApplyFontToFS(UI.totalSplit, "num") end
     if UI.totalDelta then NS.ApplyFontToFS(UI.totalDelta, "num") end
-    if UI.timerText then
-        local f = NS.DB.settings.fonts.num
-        UI.timerText:SetFont(f.font or "Fonts\\FRIZQT__.TTF", (f.size or 12) * 2, f.flags or "OUTLINE")
-    end
+    if UI.timerTextMin then NS.ApplyFontToFS(UI.timerTextMin, "timer") end
+    if UI.timerTextSec then NS.ApplyFontToFS(UI.timerTextSec, "timer") end
+    if UI.timerTextMs then NS.ApplyFontToFS(UI.timerTextMs, "timer") end
     if UI.timerDeltaText then NS.ApplyFontToFS(UI.timerDeltaText, "num") end
+
+    UpdateTimerFrameBounds()
 
     if NS.Run.inInstance and NS.Run._bossLoaded then
         local pbTable = (NS.Run.dungeonKey ~= "") and (NS.DB.pbBoss[NS.Run.dungeonKey] or {}) or {}

@@ -1615,18 +1615,11 @@ local function EnsureUI()
         edgeSize = 1,
     })
     titleTab:SetBackdropColor(0, 0, 0, 0.95)
-    local tc = NS.Colors and NS.Colors.turquoise or { r = 0, g = 0.8, b = 0.8 }
-    titleTab:SetBackdropBorderColor(tc.r, tc.g, tc.b, 0.5)
     UI.titleTab = titleTab
 
     local killCountText = titleTab:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     killCountText:SetPoint("LEFT", 10, 0)
     UI.killCountText = killCountText
-
-    local logoText = titleTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    logoText:SetPoint("RIGHT", -10, 0)
-    logoText:SetText("SpeedSplits")
-    logoText:SetTextColor(tc.r, tc.g, tc.b, 1)
 
     -- Totals 'tab' (Footer portion)
     local totalFrame = CreateFrame("Frame", nil, bossFrame, "BackdropTemplate")
@@ -1637,13 +1630,45 @@ local function EnsureUI()
         edgeSize = 1,
     })
     totalFrame:SetBackdropColor(0, 0, 0, 0.95)
-    totalFrame:SetBackdropBorderColor(tc.r, tc.g, tc.b, 0.5)
     UI.totalFrame = totalFrame
+
+    local logoText = totalFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    logoText:SetPoint("LEFT", 10, 0)
+    logoText:SetText("SpeedSplits")
+    UI.logoText = logoText
+
+    -- History button on Footer Tab
+    local historyButton = CreateFrame("Button", nil, totalFrame)
+    historyButton:SetSize(16, 16)
+    historyButton:SetPoint("LEFT", logoText, "RIGHT", 6, 0)
+    UI.historyButton = historyButton
+
+    local historyTex = historyButton:CreateTexture(nil, "ARTWORK")
+    historyTex:SetAllPoints()
+    historyTex:SetTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Up")
+    UI.historyTex = historyTex
+
+    historyButton:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Runs History", 1, 1, 1)
+        GameTooltip:Show()
+        if UI.historyTex then
+            UI.historyTex:SetTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Down")
+        end
+    end)
+    historyButton:SetScript("OnLeave", function(self)
+        GameTooltip:Hide()
+        if UI.historyTex then
+            UI.historyTex:SetTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Up")
+        end
+    end)
+    historyButton:SetScript("OnClick", function()
+        ToggleHistoryFrame()
+    end)
 
     local totalLabel = totalFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     totalLabel:SetJustifyH("RIGHT")
     totalLabel:SetText("Totals:")
-    totalLabel:SetTextColor(tc.r, tc.g, tc.b, 1)
     UI.totalLabel = totalLabel
 
     local totalPB = totalFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -1660,36 +1685,6 @@ local function EnsureUI()
     totalDelta:SetJustifyH("RIGHT")
     totalDelta:SetText("--:--.---")
     UI.totalDelta = totalDelta
-
-    -- Apply initial positioning
-    ApplyTableLayout()
-
-    -- History button on Title Tab
-    local historyButton = CreateFrame("Button", nil, titleTab)
-    historyButton:SetSize(16, 16)
-    historyButton:SetPoint("RIGHT", logoText, "LEFT", -6, 0)
-
-    local historyTex = historyButton:CreateTexture(nil, "ARTWORK")
-    historyTex:SetAllPoints()
-    historyTex:SetTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Up")
-
-    historyButton:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Runs History", 1, 1, 1)
-        GameTooltip:Show()
-        historyTex:SetTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Down")
-    end)
-    historyButton:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-        historyTex:SetTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Up")
-    end)
-
-    historyButton:SetScript("OnClick", ToggleHistoryFrame)
-
-    -- Move totals beside history button
-    totalFrame:ClearAllPoints()
-    totalFrame:SetPoint("BOTTOMLEFT", historyButton, "BOTTOMRIGHT", 6, 2)
-    totalFrame:SetPoint("BOTTOMRIGHT", bossFrame, "BOTTOMRIGHT", -6, 6)
 
     -- Resize grips
     local timerGrip = SetupSizeGrip(timerFrame, function()
@@ -1802,9 +1797,9 @@ end
 local function SetKillCount(killed, total)
     local text = string.format("Boss (%d/%d)", killed or 0, total or 0)
 
-    -- Ensure persistence by updating the column definition
+    -- Ensure persistence by updating the column definition (but remove the count from the header label)
     if UI.cols and UI.cols[1] then
-        UI.cols[1].name = text
+        UI.cols[1].name = "" -- Remove text from table header to avoid duplication with tab
     end
 
     if UI.killCountText then
@@ -1826,7 +1821,7 @@ local function SetKillCount(killed, total)
         end
 
         if fs and fs.SetText then
-            fs:SetText(text)
+            fs:SetText("") -- Clear header to avoid overlap with titleTab
         end
     end
 end
@@ -2096,6 +2091,15 @@ function NS.RefreshAllUI()
     if UI.totalLabel then
         UI.totalLabel:SetTextColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 1)
         NS.ApplyFontToFS(UI.totalLabel, "num")
+    end
+    if UI.logoText then
+        UI.logoText:SetTextColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 1)
+    end
+    if UI.titleTab then
+        UI.titleTab:SetBackdropBorderColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 0.5)
+    end
+    if UI.totalFrame then
+        UI.totalFrame:SetBackdropBorderColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 0.5)
     end
     if UI.totalPB then NS.ApplyFontToFS(UI.totalPB, "num") end
     if UI.totalSplit then NS.ApplyFontToFS(UI.totalSplit, "num") end

@@ -58,11 +58,6 @@ end
 
 -- Debug toggle
 SpeedSplits_DebugObjectives = SpeedSplits_DebugObjectives or false
-SLASH_SPEEDSPLITSOBJ1 = "/ssobj"
-SlashCmdList.SPEEDSPLITSOBJ = function()
-    SpeedSplits_DebugObjectives = not SpeedSplits_DebugObjectives
-    SS_Print("Objective debug: " .. (SpeedSplits_DebugObjectives and "ON" or "OFF"))
-end
 
 local function FormatTime(seconds)
     if seconds == nil then return "--:--.---" end
@@ -91,7 +86,10 @@ local function GetDungeonKey(mapID, difficultyID)
 end
 
 local function HistoryFilterDefaults()
-    return { tier = 0, mapID = 0, dateMode = "any", sort = "recent", successOnly = false, pbOnly = false, search = "" }
+    return {
+        search = "",
+        sortMode = "date" -- "date" or "time"
+    }
 end
 
 -- =========================================================
@@ -160,6 +158,7 @@ NS.GetPaceColor = GetPaceColor
 -- SavedVariables
 -- =========================================================
 local DB
+local UI
 
 local function EnsureDB()
     if SpeedSplitsDB == nil then
@@ -199,6 +198,11 @@ local function EnsureDB()
 
     DB                                  = SpeedSplitsDB
     NS.DB                               = DB
+
+    -- Ensure History filters are ready
+    if UI and UI.history then
+        UI.history.filters = UI.history.filters or HistoryFilterDefaults()
+    end
 end
 
 function NS.WipeDatabase()
@@ -550,7 +554,7 @@ end
 --  - Column resizing: thin draggable separators between columns (Excel-style).
 --  - Frame resizing: bottom-right grip on both timer and table frames.
 
-local UI = {
+UI = {
     timerFrame = nil,
     bossFrame = nil,
 
@@ -1003,17 +1007,18 @@ local function GetTierNameSafe(tierIndex)
 end
 
 local function IsRunPB(record)
-    if not record or not record.success or not record.duration then
+    if type(record) ~= "table" or not record.success or not record.duration or not record.instanceName then
         return false
     end
 
     local node = GetBestSplitsSubtable(record.instanceName)
     local pb = node and node.FullRun
 
-    if not pb or not pb.duration then
+    if type(pb) ~= "table" or not pb.duration then
         return false
     end
-    return math.abs((record.duration or 0) - (pb.duration or 0)) < 0.001
+    -- Allow slight float margin
+    return math.abs(record.duration - pb.duration) < 0.001
 end
 
 local function BuildHistoryTierItems()
@@ -1095,90 +1100,86 @@ end
 local History_DoCellUpdate = MakeCellUpdater {} -- uses cols[column].align, cell.color
 
 local function RefreshHistoryTable()
-    if not UI or not UI.history or not UI.history.st then
-        return
+    if not UI or not UI.history or not UI.history.st then return end
+
+    -- Safe filter check
+    if not UI.history.filters then
+        UI.history.filters = HistoryFilterDefaults()
     end
 
-    UI.history.filters = UI.history.filters or HistoryFilterDefaults()
     local f = UI.history.filters
     local search = NormalizeName(f.search or "")
-    local minEpoch = DateRangeToMinEpoch(f.dateMode)
 
     local rows = {}
-    for _, r in ipairs(DB.RunHistory or {}) do
-        if f.tier == 0 or tonumber(r.tier) == tonumber(f.tier) then
-            if f.mapID == 0 or (tonumber(r.mapID) or 0) == tonumber(f.mapID) then
-                if not minEpoch or ((r.startedAt or 0) >= minEpoch) then
-                    if not f.successOnly or r.success then
-                        if not f.pbOnly or IsRunPB(r) then
-                            if search == "" or NormalizeName(r.instanceName or ""):find(search, 1, true) then
-                                rows[#rows + 1] = r
-                            end
-                        end
-                    end
+    local history = DB and DB.RunHistory
+    if type(history) == "table" then
+        for i = 1, #history do
+            local r = history[i]
+            if type(r) == "table" and r.instanceName then
+                if search == "" or NormalizeName(r.instanceName):find(search, 1, true) then
+                    rows[#rows + 1] = r
                 end
             end
         end
     end
 
-    if f.sort == "fastest" then
-        table.sort(rows, function(a, b)
-            return (a.duration or 1e9) < (b.duration or 1e9)
-        end)
-    elseif f.sort == "slowest" then
-        table.sort(rows, function(a, b)
-            return (a.duration or 0) > (b.duration or 0)
-        end)
-    elseif f.sort == "oldest" then
-        table.sort(rows, function(a, b)
-            return (a.startedAt or 0) < (b.startedAt or 0)
-        end)
-    else -- recent
-        table.sort(rows, function(a, b)
-            return (a.startedAt or 0) > (b.startedAt or 0)
-        end)
-    end
+    -- Sorting Logic
+    table.sort(rows, function(a, b)
+        local isPB_A = IsRunPB(a)
+        local isPB_B = IsRunPB(b)
+
+        -- 1. PB Pinning: PBs always come first
+        if isPB_A ~= isPB_B then
+            return isPB_A
+        end
+
+        -- 2. Sort non-pinned items (or between multiple PBs)
+        if f.sortMode == "time" then
+            local durA = (type(a) == "table" and tonumber(a.duration)) or 1e9
+            local durB = (type(b) == "table" and tonumber(b.duration)) or 1e9
+            if durA ~= durB then
+                return durA < durB
+            end
+        end
+
+        -- Default/Fallback: Sort by Date (Most Recent first)
+        local timeA = (type(a) == "table" and tonumber(a.startedAt or a.endedAt)) or 0
+        local timeB = (type(b) == "table" and tonumber(b.startedAt or b.endedAt)) or 0
+        return timeA > timeB
+    end)
 
     local data = {}
-    for i, r in ipairs(rows) do
+    for i = 1, #rows do
+        local r = rows[i]
+        local isPB = IsRunPB(r)
+        local rowColor = isPB and NS.Colors.gold or nil
+
         local diffName = ""
-        if GetDifficultyInfo then
-            diffName = select(1, GetDifficultyInfo(tonumber(r.difficultyID) or 0)) or ""
-        end
-        if diffName == "" then
-            diffName = tostring(tonumber(r.difficultyID) or "")
+        if GetDifficultyInfo and r.difficultyID then
+            diffName = select(1, GetDifficultyInfo(tonumber(r.difficultyID) or 0)) or ("Diff " .. r.difficultyID)
         end
 
         local node = GetBestSplitsSubtable(r.instanceName)
         local pb = node and node.FullRun
         local deltaPB = (pb and pb.duration and r.duration) and (r.duration - pb.duration) or nil
-
-        local resultColor = r.success and Colors.green or Colors.red
-        local pbMark = IsRunPB(r) and "★" or ""
-        local pbMarkColor = pbMark ~= "" and Colors.goldLight or nil
         local deltaText = deltaPB and FormatDelta(deltaPB) or "—"
-        local deltaColor = deltaPB and (deltaPB <= 0 and Colors.green or Colors.red) or nil
 
-        data[i] = {
+        if deltaPB then
+            local _, _, _, hex = NS.GetPaceColor(deltaPB, isPB)
+            deltaText = (hex or "|cffffffff") .. deltaText .. "|r"
+        end
+
+        data[#data + 1] = {
             record = r,
-            cols = { {
-                value = FormatEpochShort(r.startedAt or r.endedAt or 0)
-            }, {
-                value = r.instanceName or "—"
-            }, {
-                value = diffName
-            }, {
-                value = r.duration and FormatTime(r.duration) or "--:--.---"
-            }, {
-                value = r.success and "OK" or "FAIL",
-                color = resultColor
-            }, {
-                value = pbMark,
-                color = pbMarkColor
-            }, {
-                value = deltaText,
-                color = deltaColor
-            } }
+            cols = {
+                { value = FormatEpochShort(r.startedAt or r.endedAt or 0), color = rowColor },
+                { value = r.instanceName or "—", color = rowColor },
+                { value = diffName, color = rowColor },
+                { value = r.duration and FormatTime(r.duration) or "--:--.---", color = rowColor },
+                { value = r.success and "OK" or "FAIL", color = isPB and rowColor or (r.success and Colors.deepGreen or Colors.darkRed) },
+                { value = isPB and "★" or "", color = NS.Colors.gold },
+                { value = deltaText }
+            }
         }
     end
 
@@ -1209,246 +1210,107 @@ local function InitHistoryDropDown(dropDown, buildItems, getValue, setValue)
 end
 
 local function EnsureHistoryUI()
-    EnsureDB()
-
-    if UI.history.frame then
-        return
-    end
+    if UI.history.frame then return end
+    UI.history.filters = UI.history.filters or HistoryFilterDefaults()
 
     local historyFrame = CreateFrame("Frame", "SpeedSplitsHistoryFrame", UIParent, "BackdropTemplate")
+    UI.history.frame = historyFrame -- Set early for safety
+
     historyFrame:SetFrameStrata("DIALOG")
-    SetHoverBackdrop(historyFrame, 0.85)
+    SetHoverBackdrop(historyFrame, 0.90)
     historyFrame:EnableMouse(true)
     historyFrame:SetMovable(true)
     historyFrame:RegisterForDrag("LeftButton")
-    historyFrame:SetScript("OnDragStart", function(self)
-        self:StartMoving()
-    end)
+    historyFrame:SetScript("OnDragStart", function(self) self:StartMoving() end)
     historyFrame:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
         SaveFrameGeom("history", self)
     end)
 
-    RestoreFrameGeom("history", historyFrame, 980, 460)
+    if not RestoreFrameGeom("history", historyFrame, 800, 500) then
+        historyFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    end
 
-    local title = historyFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local title = historyFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     title:SetPoint("TOPLEFT", historyFrame, "TOPLEFT", 12, -10)
-    title:SetText("Runs History")
+    title:SetText("Run History Tracking")
 
     local close = CreateFrame("Button", nil, historyFrame, "UIPanelCloseButton")
-    close:SetPoint("TOPRIGHT", historyFrame, "TOPRIGHT", -4, -4)
+    close:SetPoint("TOPRIGHT", historyFrame, "TOPRIGHT", -2, -2)
 
-    local filterW = 230
+    -- Controls Bar
+    local controls = CreateFrame("Frame", nil, historyFrame)
+    controls:SetPoint("TOPLEFT", 10, -32)
+    controls:SetPoint("TOPRIGHT", -10, -32)
+    controls:SetHeight(30)
 
-    local listFrame = CreateFrame("Frame", nil, historyFrame)
-    listFrame:SetPoint("TOPLEFT", historyFrame, "TOPLEFT", 10, -32)
-    listFrame:SetPoint("BOTTOMRIGHT", historyFrame, "BOTTOMRIGHT", -(filterW + 10), 10)
+    -- Search Bar
+    local searchLabel = controls:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    searchLabel:SetPoint("LEFT", 4, 0)
+    searchLabel:SetText("Search Dungeon:")
 
-    local filterFrame = CreateFrame("Frame", nil, historyFrame, "BackdropTemplate")
-    filterFrame:SetPoint("TOPRIGHT", historyFrame, "TOPRIGHT", -10, -32)
-    filterFrame:SetPoint("BOTTOMRIGHT", historyFrame, "BOTTOMRIGHT", -10, 10)
-    filterFrame:SetWidth(filterW)
-    SetHoverBackdrop(filterFrame, 0.60)
-
-    local filterTitle = filterFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    filterTitle:SetPoint("TOPLEFT", filterFrame, "TOPLEFT", 10, -10)
-    filterTitle:SetText("Filters")
-
-    local y = -28
-
-    local function AddLabel(text)
-        local fs = filterFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        fs:SetPoint("TOPLEFT", filterFrame, "TOPLEFT", 10, y)
-        fs:SetText(text)
-        y = y - 16
-        return fs
-    end
-
-    local function AddSearchBox()
-        AddLabel("Search dungeon")
-        local box = CreateFrame("EditBox", nil, filterFrame, "InputBoxTemplate")
-        box:SetAutoFocus(false)
-        box:SetSize(filterW - 26, 20)
-        box:SetPoint("TOPLEFT", filterFrame, "TOPLEFT", 10, y)
-        box:SetScript("OnTextChanged", function(self)
-            UI.history.filters.search = self:GetText() or ""
-            RefreshHistoryTable()
-        end)
-        y = y - 30
-        UI.history.searchBox = box
-    end
-
-    local function AddDropDown(labelText, width, buildItems, getValue, setValue, defaultText)
-        AddLabel(labelText)
-        local dd = CreateFrame("Frame", nil, filterFrame, "UIDropDownMenuTemplate")
-        dd:SetPoint("TOPLEFT", filterFrame, "TOPLEFT", -6, y + 8)
-        UIDropDownMenu_SetWidth(dd, width)
-        UIDropDownMenu_SetText(dd, defaultText or "Any")
-        InitHistoryDropDown(dd, buildItems, getValue, setValue)
-        y = y - 36
-        return dd
-    end
-
-    local function AddCheck(labelText, getter, setter)
-        local cb = CreateFrame("CheckButton", nil, filterFrame, "UICheckButtonTemplate")
-        cb:SetPoint("TOPLEFT", filterFrame, "TOPLEFT", 8, y)
-        cb.Text:SetText(labelText)
-        cb:SetChecked(getter())
-        cb:SetScript("OnClick", function(self)
-            setter(self:GetChecked() and true or false)
-            RefreshHistoryTable()
-        end)
-        y = y - 24
-        return cb
-    end
-
-    UI.history.filters = UI.history.filters or HistoryFilterDefaults()
-    AddSearchBox()
-
-    UI.history.tierDropDown = AddDropDown("Expansion", filterW - 26, BuildHistoryTierItems, function()
-        return UI.history.filters.tier
-    end, function(v)
-        UI.history.filters.tier = tonumber(v) or 0
-    end, "Any")
-
-    UI.history.dungeonDropDown = AddDropDown("Dungeon", filterW - 26, BuildHistoryDungeonItems, function()
-        return UI.history.filters.mapID
-    end, function(v)
-        UI.history.filters.mapID = tonumber(v) or 0
-    end, "Any")
-
-    local dateItems = function()
-        return { {
-            text = "Any",
-            value = "any"
-        }, {
-            text = "Today",
-            value = "today"
-        }, {
-            text = "Last 7 days",
-            value = "7d"
-        }, {
-            text = "Last 30 days",
-            value = "30d"
-        } }
-    end
-
-    UI.history.dateDropDown = AddDropDown("Date created", filterW - 26, dateItems, function()
-        return UI.history.filters.dateMode
-    end, function(v)
-        UI.history.filters.dateMode = v or "any"
-    end, "Any")
-
-    local sortItems = function()
-        return { {
-            text = "Most recent",
-            value = "recent"
-        }, {
-            text = "Oldest",
-            value = "oldest"
-        }, {
-            text = "Fastest",
-            value = "fastest"
-        }, {
-            text = "Slowest",
-            value = "slowest"
-        } }
-    end
-
-    UI.history.sortDropDown = AddDropDown("Sort", filterW - 26, sortItems, function()
-        return UI.history.filters.sort
-    end, function(v)
-        UI.history.filters.sort = v or "recent"
-    end, "Most recent")
-
-    UI.history.successOnlyCheck = AddCheck("Success only", function()
-        return UI.history.filters.successOnly
-    end, function(v)
-        UI.history.filters.successOnly = v
-    end)
-
-    UI.history.pbOnlyCheck = AddCheck("PB runs only", function()
-        return UI.history.filters.pbOnly
-    end, function(v)
-        UI.history.filters.pbOnly = v
-    end)
-
-    local clearBtn = CreateFrame("Button", nil, filterFrame, "UIPanelButtonTemplate")
-    clearBtn:SetSize(filterW - 26, 22)
-    clearBtn:SetPoint("BOTTOMLEFT", filterFrame, "BOTTOMLEFT", 10, 10)
-    clearBtn:SetText("Clear filters")
-    clearBtn:SetScript("OnClick", function()
-        UI.history.filters = HistoryFilterDefaults()
-        if UI.history.searchBox then
-            UI.history.searchBox:SetText("")
-        end
-        UIDropDownMenu_SetText(UI.history.tierDropDown, "Any")
-        UIDropDownMenu_SetText(UI.history.dungeonDropDown, "Any")
-        UIDropDownMenu_SetText(UI.history.dateDropDown, "Any")
-        UIDropDownMenu_SetText(UI.history.sortDropDown, "Most recent")
-        if UI.history.successOnlyCheck then
-            UI.history.successOnlyCheck:SetChecked(false)
-        end
-        if UI.history.pbOnlyCheck then
-            UI.history.pbOnlyCheck:SetChecked(false)
-        end
+    local searchBox = CreateFrame("EditBox", nil, controls, "InputBoxTemplate")
+    searchBox:SetAutoFocus(false)
+    searchBox:SetSize(200, 20)
+    searchBox:SetPoint("LEFT", searchLabel, "RIGHT", 10, 0)
+    searchBox:SetScript("OnTextChanged", function(self)
+        UI.history.filters.search = self:GetText() or ""
         RefreshHistoryTable()
     end)
+    UI.history.searchBox = searchBox
 
+    -- Sort Toggle
+    local sortBtn = CreateFrame("Button", nil, controls, "UIPanelButtonTemplate")
+    sortBtn:SetSize(140, 22)
+    sortBtn:SetPoint("LEFT", searchBox, "RIGHT", 20, 0)
+
+    local function UpdateSortBtn()
+        if not UI.history.filters then return end
+        local mode = UI.history.filters.sortMode
+        sortBtn:SetText("Sort: " .. (mode == "date" and "Date" or "Finish Time"))
+    end
+
+    sortBtn:SetScript("OnClick", function()
+        if not UI.history.filters then return end
+        UI.history.filters.sortMode = (UI.history.filters.sortMode == "date") and "time" or "date"
+        UpdateSortBtn()
+        RefreshHistoryTable()
+    end)
+    UI.history.sortBtn = sortBtn
+    UpdateSortBtn()
+
+    local listFrame = CreateFrame("Frame", nil, historyFrame)
+    listFrame:SetPoint("TOPLEFT", controls, "BOTTOMLEFT", 0, -10)
+    listFrame:SetPoint("BOTTOMRIGHT", historyFrame, "BOTTOMRIGHT", -10, 10)
     local ST = ResolveScrollingTable()
     if not ST then
         local warn = listFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         warn:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 6, -6)
         warn:SetText("Missing LibScrollingTable (lib-st).")
     else
-        local cols = { {
-            name = "Date",
-            width = 130,
-            align = "LEFT",
-            DoCellUpdate = History_DoCellUpdate
-        }, {
-            name = "Dungeon",
-            width = 260,
-            align = "LEFT",
-            DoCellUpdate = History_DoCellUpdate
-        }, {
-            name = "Diff",
-            width = 70,
-            align = "LEFT",
-            DoCellUpdate = History_DoCellUpdate
-        }, {
-            name = "Time",
-            width = 90,
-            align = "RIGHT",
-            DoCellUpdate = History_DoCellUpdate
-        }, {
-            name = "Result",
-            width = 60,
-            align = "LEFT",
-            DoCellUpdate = History_DoCellUpdate
-        }, {
-            name = "PB",
-            width = 40,
-            align = "CENTER",
-            DoCellUpdate = History_DoCellUpdate
-        }, {
-            name = "ΔPB",
-            width = 80,
-            align = "RIGHT",
-            DoCellUpdate = History_DoCellUpdate
-        } }
+        pcall(function()
+            local cols = {
+                { name = "Date", width = 110, align = "LEFT", DoCellUpdate = History_DoCellUpdate },
+                { name = "Dungeon", width = 180, align = "LEFT", DoCellUpdate = History_DoCellUpdate },
+                { name = "Diff", width = 70, align = "LEFT", DoCellUpdate = History_DoCellUpdate },
+                { name = "Time", width = 90, align = "RIGHT", DoCellUpdate = History_DoCellUpdate },
+                { name = "Result", width = 60, align = "LEFT", DoCellUpdate = History_DoCellUpdate },
+                { name = "PB", width = 40, align = "CENTER", DoCellUpdate = History_DoCellUpdate },
+                { name = "ΔPB", width = 80, align = "RIGHT", DoCellUpdate = History_DoCellUpdate }
+            }
 
-        local st = ST:CreateST(cols, 18, 18, nil, listFrame)
-        if st and st.frame then
-            st.frame:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 0, 0)
-            st.frame:SetPoint("BOTTOMRIGHT", listFrame, "BOTTOMRIGHT", 0, 0)
-            if st.head and st.head.cols then
-                for i = 1, #cols do
-                    StyleHeaderCell(st.head.cols[i], cols[i].align)
+            local st = ST:CreateST(cols, 18, 18, nil, listFrame)
+            if st and st.frame then
+                st.frame:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 0, 0)
+                st.frame:SetPoint("BOTTOMRIGHT", listFrame, "BOTTOMRIGHT", 0, 0)
+                if st.head and st.head.cols then
+                    for i = 1, #cols do
+                        if st.head.cols[i] then StyleHeaderCell(st.head.cols[i], cols[i].align) end
+                    end
                 end
+                UI.history.st = st
             end
-        end
-        UI.history.st = st
+        end)
     end
 
     local grip = SetupSizeGrip(historyFrame, function()
@@ -1462,21 +1324,23 @@ local function EnsureHistoryUI()
 end
 
 local function ToggleHistoryFrame()
-    EnsureDB()
-    EnsureHistoryUI()
+    local ok, err = pcall(function()
+        EnsureDB()
+        EnsureHistoryUI()
 
-    local frame = UI.history and UI.history.frame
-    if not frame then
-        return
+        local h = UI.history
+        if not h or not h.frame then return end
+
+        if h.frame:IsShown() then
+            h.frame:Hide()
+        else
+            h.frame:Show()
+            RefreshHistoryTable()
+        end
+    end)
+    if not ok then
+        SS_Print("Error opening history: " .. tostring(err))
     end
-
-    if frame:IsShown() then
-        frame:Hide()
-        return
-    end
-
-    frame:Show()
-    RefreshHistoryTable()
 end
 
 local function EnsureUI()
@@ -1671,26 +1535,18 @@ local function EnsureUI()
     local historyButton = CreateFrame("Button", nil, totalFrame)
     historyButton:SetSize(16, 16)
     historyButton:SetPoint("LEFT", logoText, "RIGHT", 6, 0)
+    historyButton:SetNormalTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Up")
+    historyButton:SetPushedTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Down")
+    historyButton:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
     UI.historyButton = historyButton
-
-    local historyTex = historyButton:CreateTexture(nil, "ARTWORK")
-    historyTex:SetAllPoints()
-    historyTex:SetTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Up")
-    UI.historyTex = historyTex
 
     historyButton:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Runs History", 1, 1, 1)
         GameTooltip:Show()
-        if UI.historyTex then
-            UI.historyTex:SetTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Down")
-        end
     end)
     historyButton:SetScript("OnLeave", function(self)
         GameTooltip:Hide()
-        if UI.historyTex then
-            UI.historyTex:SetTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Up")
-        end
     end)
     historyButton:SetScript("OnClick", function()
         ToggleHistoryFrame()
@@ -2629,15 +2485,17 @@ end)
 SLASH_SPEEDSPLITS1 = "/ss"
 SlashCmdList.SPEEDSPLITS = function(msg)
     EnsureDB()
-    msg = (msg or ""):match("^%s*(.-)%s*$") or ""
-    local cmd = (msg:match("^(%S+)") or ""):lower()
+    local cmd, arg = strsplit(" ", msg or "", 2)
+    cmd = (cmd or ""):lower()
 
     if cmd == "history" then
         ToggleHistoryFrame()
-        return
-    end
-
-    if cmd == "" or cmd == "toggle" then
+    elseif cmd == "options" or cmd == "config" then
+        if NS.OpenOptions then NS.OpenOptions() end
+    elseif cmd == "debugobj" then
+        SpeedSplits_DebugObjectives = not SpeedSplits_DebugObjectives
+        SS_Print("Objective debug: " .. (SpeedSplits_DebugObjectives and "ON" or "OFF"))
+    elseif cmd == "" or cmd == "toggle" then
         local enabled = not IsPreviewEnabled()
         SetPreviewEnabled(enabled)
         EnsureUI()
@@ -2651,28 +2509,21 @@ SlashCmdList.SPEEDSPLITS = function(msg)
             end
             SS_Print("Frames hidden.")
         end
-        return
-    end
-
-    if cmd == "show" or cmd == "on" then
+    elseif cmd == "show" or cmd == "on" then
         SetPreviewEnabled(true)
         EnsureUI()
         ResetRun()
         ShowAddonFrames()
         SS_Print("Frames shown (preview mode).")
-        return
-    end
-
-    if cmd == "hide" or cmd == "off" then
+    elseif cmd == "hide" or cmd == "off" then
         SetPreviewEnabled(false)
         if not Run.inInstance then
             HideAddonFrames()
         end
         SS_Print("Frames hidden.")
-        return
+    else
+        SS_Print("Commands: /ss (toggle frames), /ss show, /ss hide, /ss history, /ss options")
     end
-
-    SS_Print("Commands: /ss (toggle frames), /ss show, /ss hide, /ss history")
 end
 
 App:RegisterEvent("ADDON_LOADED")

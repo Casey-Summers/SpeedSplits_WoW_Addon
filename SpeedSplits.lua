@@ -1015,9 +1015,8 @@ local Delete_DoCellUpdate = function(rowFrame, cellFrame, data, cols, row, realr
         btn:SetNormalTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Up")
         btn:SetHighlightTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Highlight")
         btn:SetScript("OnClick", function(self)
-            local d = data[realrow]
-            if d and d.record then
-                DeleteRecord(d.record)
+            if self.record then
+                DeleteRecord(self.record)
             end
         end)
         btn:SetScript("OnEnter", function(self)
@@ -1029,11 +1028,13 @@ local Delete_DoCellUpdate = function(rowFrame, cellFrame, data, cols, row, realr
         cellFrame.delBtn = btn
     end
 
-    -- Show/Hide based on mouseover logic is hard in pure cell update w/o hook
-    -- We'll just always show it for utility, or ideally check rowFrame:IsMouseOver()
-    -- But row hover logic requires hooking OnEnter of the row.
-    -- For now, always visible but subtle.
-    cellFrame.delBtn:Show()
+    -- Update record reference for this specific render pass
+    if data[realrow] then
+        cellFrame.delBtn.record = data[realrow].record
+        cellFrame.delBtn:Show()
+    else
+        cellFrame.delBtn:Hide()
+    end
 end
 
 -- =========================================================
@@ -1432,12 +1433,12 @@ local function EnsureHistoryUI()
                 { name = "Dungeon",            width = 180, align = "LEFT",   DoCellUpdate = History_DoCellUpdate },
                 { name = "Expansion",          width = 120, align = "LEFT",   DoCellUpdate = History_DoCellUpdate },
                 { name = "Time",               width = 80,  align = "RIGHT",  DoCellUpdate = History_DoCellUpdate },
-                { name = "Result",             width = 100, align = "CENTER", DoCellUpdate = History_DoCellUpdate },
+                { name = "Result",             width = 110, align = "CENTER", DoCellUpdate = History_DoCellUpdate },
                 { name = "Difference from PB", width = 120, align = "RIGHT",  DoCellUpdate = History_DoCellUpdate },
                 { name = "",                   width = 24,  align = "CENTER", DoCellUpdate = Delete_DoCellUpdate }
             }
 
-            local st = ST:CreateST(cols, 15, nil, nil, listFrame)
+            local st = ST:CreateST(cols, 12, 18, nil, listFrame)
             if st and st.frame then
                 st.frame:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 0, 0)
                 st.frame:SetPoint("BOTTOMRIGHT", listFrame, "BOTTOMRIGHT", 0, 0)
@@ -1453,28 +1454,20 @@ local function EnsureHistoryUI()
 
     local grip = SetupSizeGrip(historyFrame, function()
         SaveFrameGeom("history", historyFrame)
-        -- Recalculate visible rows on resize
-        if UI.history.st and listFrame then
-            local frameHeight = listFrame:GetHeight()
-            local rowHeight = 18
-            local headerHeight = 20
-            local visibleRows = math.max(5, math.floor((frameHeight - headerHeight) / rowHeight))
-            UI.history.st:SetDisplayRows(visibleRows, rowHeight)
+    end)
+    UI.history.resizeGrip = grip
+
+    historyFrame:SetScript("OnSizeChanged", function(self)
+        if UI.history.st and UI.history.st.frame then
+            local h = listFrame:GetHeight()
+            local displayRows = math.floor((h - 4) / 18)
+            if displayRows < 1 then displayRows = 1 end
+            UI.history.st:SetDisplayRows(displayRows, 18)
+            UI.history.st:Refresh()
         end
     end)
     UI.history.resizeGrip = grip
     UI.history.frame = historyFrame
-
-    -- Add resize handler for dynamic row count
-    historyFrame:SetScript("OnSizeChanged", function(self, width, height)
-        if UI.history.st and listFrame then
-            local frameHeight = listFrame:GetHeight()
-            local rowHeight = 18
-            local headerHeight = 20
-            local visibleRows = math.max(5, math.floor((frameHeight - headerHeight) / rowHeight))
-            UI.history.st:SetDisplayRows(visibleRows, rowHeight)
-        end
-    end)
 
     historyFrame:Hide()
     if UI.RefreshHistoryTable then UI.RefreshHistoryTable() end

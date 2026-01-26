@@ -991,14 +991,12 @@ local function SplitColor(data, cols, realrow, column)
     return cell and cell.color or nil
 end
 
-local RefreshHistoryTable -- Forward declare
-
 local function DeleteRecord(record)
     if not DB or not DB.RunHistory then return end
     for i, r in ipairs(DB.RunHistory) do
         if r == record then
             table.remove(DB.RunHistory, i)
-            RefreshHistoryTable()
+            if UI and UI.RefreshHistoryTable then UI.RefreshHistoryTable() end
             return
         end
     end
@@ -1159,7 +1157,7 @@ end
 
 local History_DoCellUpdate = MakeCellUpdater {} -- uses cols[column].align, cell.color
 
-RefreshHistoryTable = function()
+UI.RefreshHistoryTable = function()
     if not UI or not UI.history or not UI.history.st then return end
 
     -- Safe filter check
@@ -1313,7 +1311,7 @@ local function InitHistoryDropDown(dropDown, buildItems, getValue, setValue)
             info.func = function()
                 setValue(item.value)
                 UIDropDownMenu_SetText(dropDown, item.text)
-                RefreshHistoryTable()
+                if UI.RefreshHistoryTable then UI.RefreshHistoryTable() end
             end
             UIDropDownMenu_AddButton(info, level)
         end
@@ -1334,7 +1332,7 @@ local function EnsureHistoryUI()
     historyFrame:SetResizable(true)
     historyFrame:RegisterForDrag("LeftButton")
 
-    ApplyResizeBounds(historyFrame, 780, 300)
+    ApplyResizeBounds(historyFrame, 780, 200)
 
     historyFrame:SetScript("OnDragStart", function(self) self:StartMoving() end)
     historyFrame:SetScript("OnDragStop", function(self)
@@ -1370,9 +1368,8 @@ local function EnsureHistoryUI()
     searchBox:SetSize(140, 20)
     searchBox:SetPoint("LEFT", searchLabel, "RIGHT", 8, 0)
     searchBox:SetScript("OnTextChanged", function(self)
-        if not UI.history.filters then return end
-        UI.history.filters.search = self:GetText() or ""
-        RefreshHistoryTable()
+        if UI.history.filters then UI.history.filters.search = self:GetText() or "" end
+        if UI.RefreshHistoryTable then UI.RefreshHistoryTable() end
     end)
     UI.history.searchBox = searchBox
 
@@ -1407,14 +1404,14 @@ local function EnsureHistoryUI()
     local function UpdateSortBtn()
         if not UI.history.filters then return end
         local mode = UI.history.filters.sortMode
-        sortBtn:SetText("Sort: " .. (mode == "date" and "Date" or "Time"))
+        sortBtn:SetText("Sort by: " .. (mode == "date" and "Date" or "Time"))
     end
 
     sortBtn:SetScript("OnClick", function()
         if not UI.history.filters then return end
         UI.history.filters.sortMode = (UI.history.filters.sortMode == "date") and "time" or "date"
         UpdateSortBtn()
-        RefreshHistoryTable()
+        if UI.RefreshHistoryTable then UI.RefreshHistoryTable() end
     end)
     UI.history.sortBtn = sortBtn
     UpdateSortBtn()
@@ -1435,12 +1432,12 @@ local function EnsureHistoryUI()
                 { name = "Dungeon",            width = 180, align = "LEFT",   DoCellUpdate = History_DoCellUpdate },
                 { name = "Expansion",          width = 120, align = "LEFT",   DoCellUpdate = History_DoCellUpdate },
                 { name = "Time",               width = 80,  align = "RIGHT",  DoCellUpdate = History_DoCellUpdate },
-                { name = "Result",             width = 80,  align = "LEFT",   DoCellUpdate = History_DoCellUpdate },
+                { name = "Result",             width = 100, align = "CENTER", DoCellUpdate = History_DoCellUpdate },
                 { name = "Difference from PB", width = 120, align = "RIGHT",  DoCellUpdate = History_DoCellUpdate },
                 { name = "",                   width = 24,  align = "CENTER", DoCellUpdate = Delete_DoCellUpdate }
             }
 
-            local st = ST:CreateST(cols, 18, nil, nil, listFrame)
+            local st = ST:CreateST(cols, 15, nil, nil, listFrame)
             if st and st.frame then
                 st.frame:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 0, 0)
                 st.frame:SetPoint("BOTTOMRIGHT", listFrame, "BOTTOMRIGHT", 0, 0)
@@ -1456,12 +1453,31 @@ local function EnsureHistoryUI()
 
     local grip = SetupSizeGrip(historyFrame, function()
         SaveFrameGeom("history", historyFrame)
+        -- Recalculate visible rows on resize
+        if UI.history.st and listFrame then
+            local frameHeight = listFrame:GetHeight()
+            local rowHeight = 18
+            local headerHeight = 20
+            local visibleRows = math.max(5, math.floor((frameHeight - headerHeight) / rowHeight))
+            UI.history.st:SetDisplayRows(visibleRows, rowHeight)
+        end
     end)
     UI.history.resizeGrip = grip
     UI.history.frame = historyFrame
 
+    -- Add resize handler for dynamic row count
+    historyFrame:SetScript("OnSizeChanged", function(self, width, height)
+        if UI.history.st and listFrame then
+            local frameHeight = listFrame:GetHeight()
+            local rowHeight = 18
+            local headerHeight = 20
+            local visibleRows = math.max(5, math.floor((frameHeight - headerHeight) / rowHeight))
+            UI.history.st:SetDisplayRows(visibleRows, rowHeight)
+        end
+    end)
+
     historyFrame:Hide()
-    RefreshHistoryTable()
+    if UI.RefreshHistoryTable then UI.RefreshHistoryTable() end
 end
 
 local function ToggleHistoryFrame()
@@ -1476,7 +1492,7 @@ local function ToggleHistoryFrame()
             h.frame:Hide()
         else
             h.frame:Show()
-            RefreshHistoryTable()
+            if UI.RefreshHistoryTable then UI.RefreshHistoryTable() end
         end
     end)
     if not ok then

@@ -66,10 +66,19 @@ end
 
 local function FormatTime(seconds)
     if seconds == nil then return "--:--.---" end
-    local m = math.floor(seconds / 60)
+    local h = math.floor(seconds / 3600)
+    local m = math.floor((seconds % 3600) / 60)
     local s = seconds % 60
     local ms = math.floor((s - math.floor(s)) * 1000 + 0.5)
-    return string.format("%02d:%02d.%03d", m, math.floor(s), ms)
+    if ms >= 1000 then ms = 999 end
+
+    if h > 0 then
+        return string.format("%d:%02d:%02d.%03d", h, m, math.floor(s), ms)
+    elseif m > 0 then
+        return string.format("%d:%02d.%03d", m, math.floor(s), ms)
+    else
+        return string.format("%d.%03d", math.floor(s), ms)
+    end
 end
 
 local function FormatDelta(delta)
@@ -715,13 +724,6 @@ local function ApplyTableLayout()
         UI.totalPB:SetPoint("CENTER", tf, "RIGHT", -midPB, 0)
         UI.totalPB:SetWidth(UI._pbWidth)
         UI.totalPB:SetJustifyH("CENTER")
-
-        UI.totalLabel:ClearAllPoints()
-        UI.totalLabel:SetPoint("RIGHT", UI.totalPB, "LEFT", -15, 0)
-        UI.totalLabel:SetJustifyH("RIGHT")
-        UI.totalLabel:SetWidth(100)
-        local tc = NS.Colors and NS.Colors.turquoise or { r = 0, g = 0.8, b = 0.8 }
-        UI.totalLabel:SetTextColor(tc.r, tc.g, tc.b, 1)
     end
 
     -- Position separator grips
@@ -921,11 +923,13 @@ local Num_DoCellUpdate = function(rowFrame, cellFrame, data, cols, row, realrow,
     if not cell then return end
     cellFrame.text:SetText(cell.value or "")
     NS.ApplyFontToFS(cellFrame.text, "num")
-    cellFrame.text:SetJustifyH("CENTER")
+    cellFrame.text:SetJustifyH("RIGHT")
     cellFrame.text:SetJustifyV("MIDDLE")
     cellFrame.text:ClearAllPoints()
+    -- Centered right-alignment: Anchor the right of the text to the center area of the cell plus an offset
+    -- This ensures milliseconds are perfectly aligned vertically.
     cellFrame.text:SetPoint("LEFT", cellFrame, "LEFT", 0, 0)
-    cellFrame.text:SetPoint("RIGHT", cellFrame, "RIGHT", 0, 0)
+    cellFrame.text:SetPoint("RIGHT", cellFrame, "CENTER", 32, 0)
     local c = (cols[column].color) and cols[column].color(data, cols, realrow, column, stable) or cell.color
     if c then
         cellFrame.text:SetTextColor(c.r or 1, c.g or 1, c.b or 1, c.a or 1)
@@ -1533,7 +1537,7 @@ local function EnsureUI()
         self:StopMovingOrSizing()
         SaveFrameGeom("boss", self)
     end)
-    ApplyResizeBounds(bossFrame, 360, 180, 1400, 1000)
+    ApplyResizeBounds(bossFrame, 450, 200, 1400, 1000)
 
     -- Hide main background since we use tabs
     if bossFrame.SetBackdrop then
@@ -1666,11 +1670,6 @@ local function EnsureUI()
         ToggleHistoryFrame()
     end)
 
-    local totalLabel = totalFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    totalLabel:SetJustifyH("RIGHT")
-    totalLabel:SetText("Totals:")
-    UI.totalLabel = totalLabel
-
     local totalPB = totalFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     totalPB:SetJustifyH("RIGHT")
     totalPB:SetText("--:--.---")
@@ -1714,7 +1713,6 @@ local function EnsureUI()
     UI.data = {}
     UI.rowByBossKey = {}
     UI.totalFrame = totalFrame
-    UI.totalLabel = totalLabel
     UI.totalPB = totalPB
     UI.totalSplit = totalSplit
     UI.totalDelta = totalDelta
@@ -1725,6 +1723,7 @@ local function EnsureUI()
 
     EnsureColGrips()
     ApplyTableLayout()
+    NS.RefreshAllUI()
 
     timerFrame:Hide()
     bossFrame:Hide()
@@ -1768,9 +1767,18 @@ end
 local function SetTimerText(seconds, finished)
     if not UI.timerTextMin or not UI.timerTextSec or not UI.timerTextMs then return end
     local full = FormatTime(seconds)
-    -- HH:MM:SS.mmm pattern
-    local min, sec, ms = full:match("^(.-)(%d%d)(%.%d+)$")
-    if not min then min, sec, ms = full, "", "" end
+
+    local min, sec, ms = "", "", ""
+    if full:find(":") then
+        -- Has minutes or hours
+        min, sec, ms = full:match("^(.*:)(%d%d)(%.%d+)$")
+    else
+        -- Only seconds
+        sec, ms = full:match("^(%d+)(%.%d+)$")
+        min = ""
+    end
+
+    if not sec then min, sec, ms = full, "", "" end
 
     UI.timerTextMin:SetText(min)
     UI.timerTextSec:SetText(sec)
@@ -1795,7 +1803,8 @@ end
 
 
 local function SetKillCount(killed, total)
-    local text = string.format("Boss (%d/%d)", killed or 0, total or 0)
+    local displayName = (NS.Run and NS.Run.instanceName ~= "") and NS.Run.instanceName or "Boss"
+    local text = string.format("%s (%d/%d)", displayName, killed or 0, total or 0)
 
     -- Ensure persistence by updating the column definition (but remove the count from the header label)
     if UI.cols and UI.cols[1] then
@@ -2088,10 +2097,7 @@ NS.UI = UI
 
 function NS.RefreshAllUI()
     if not UI.bossFrame then return end
-    if UI.totalLabel then
-        UI.totalLabel:SetTextColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 1)
-        NS.ApplyFontToFS(UI.totalLabel, "num")
-    end
+    NS.UpdateColorsFromSettings()
     if UI.logoText then
         UI.logoText:SetTextColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 1)
     end

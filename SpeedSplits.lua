@@ -913,7 +913,9 @@ local function MakeCellUpdater(opts)
         local e = data[realrow]
         local cell = e and e.cols and e.cols[column]
         if not cell then return end
-        cellFrame.text:SetText(cell.value or "")
+
+        local val = cell.display or cell.value or ""
+        cellFrame.text:SetText(val)
         cellFrame.text:SetFontObject(GameFontHighlightSmall)
         cellFrame.text:SetJustifyH(opts.justifyH or cols[column].align or "LEFT")
         cellFrame.text:SetJustifyV(opts.justifyV or "MIDDLE")
@@ -1116,7 +1118,10 @@ local function RefreshHistoryTable()
         for i = 1, #history do
             local r = history[i]
             if type(r) == "table" and r.instanceName then
-                if search == "" or NormalizeName(r.instanceName):find(search, 1, true) then
+                local matchesSearch = (search == "" or NormalizeName(r.instanceName):find(search, 1, true))
+                local matchesTier = (f.tier == 0 or (tonumber(r.tier) == f.tier))
+
+                if matchesSearch and matchesTier then
                     rows[#rows + 1] = r
                 end
             end
@@ -1128,7 +1133,7 @@ local function RefreshHistoryTable()
         local isPB_A = IsRunPB(a)
         local isPB_B = IsRunPB(b)
 
-        -- 1. PB Pinning: PBs always come first
+        -- 1. PB Pinning: All PBs (matching filters) stay at top
         if isPB_A ~= isPB_B then
             return isPB_A
         end
@@ -1152,33 +1157,65 @@ local function RefreshHistoryTable()
     for i = 1, #rows do
         local r = rows[i]
         local isPB = IsRunPB(r)
-        local rowColor = isPB and NS.Colors.gold or nil
 
-        local diffName = ""
-        if GetDifficultyInfo and r.difficultyID then
-            diffName = select(1, GetDifficultyInfo(tonumber(r.difficultyID) or 0)) or ("Diff " .. r.difficultyID)
+        -- Determine Result Status
+        local resultText = "Incomplete"
+        local resultColor = NS.Colors.darkRed
+        if isPB then
+            resultText = "PB"
+            resultColor = NS.Colors.gold
+        elseif r.success then
+            resultText = "Completed"
+            resultColor = NS.Colors.deepGreen
         end
 
         local node = GetBestSplitsSubtable(r.instanceName)
         local pb = node and node.FullRun
-        local deltaPB = (pb and pb.duration and r.duration) and (r.duration - pb.duration) or nil
-        local deltaText = deltaPB and FormatDelta(deltaPB) or "—"
+        local duration = tonumber(r.duration)
+        local pbDur = pb and tonumber(pb.duration)
+
+        local deltaPB = (pbDur and duration) and (duration - pbDur) or nil
+        local deltaText = "—"
+        local deltaVal = 999999 -- High sort value for nil
 
         if deltaPB then
             local _, _, _, hex = NS.GetPaceColor(deltaPB, isPB)
-            deltaText = (hex or "|cffffffff") .. deltaText .. "|r"
+            deltaText = (hex or "|cffffffff") .. FormatDelta(deltaPB) .. "|r"
+            deltaVal = deltaPB
         end
+
+        local rowColor = isPB and NS.Colors.gold or nil
+        local tierName = GetTierNameSafe(r.tier)
 
         data[#data + 1] = {
             record = r,
             cols = {
-                { value = FormatEpochShort(r.startedAt or r.endedAt or 0), color = rowColor },
-                { value = r.instanceName or "—", color = rowColor },
-                { value = diffName, color = rowColor },
-                { value = r.duration and FormatTime(r.duration) or "--:--.---", color = rowColor },
-                { value = r.success and "OK" or "FAIL", color = isPB and rowColor or (r.success and Colors.deepGreen or Colors.darkRed) },
-                { value = isPB and "★" or "", color = NS.Colors.gold },
-                { value = deltaText }
+                {
+                    value = r.startedAt or r.endedAt or 0,
+                    display = FormatEpochShort(r.startedAt or r.endedAt or 0),
+                    color = rowColor
+                },
+                {
+                    value = r.instanceName or "—",
+                    color = rowColor
+                },
+                {
+                    value = tierName,
+                    color = rowColor
+                },
+                {
+                    value = duration or 999999,
+                    display = duration and FormatTime(duration) or "--:--.---",
+                    color = rowColor
+                },
+                {
+                    value = resultText,
+                    color = resultColor
+                },
+                {
+                    value = deltaVal,
+                    display = deltaText
+                }
             }
         }
     end
@@ -1221,6 +1258,9 @@ local function EnsureHistoryUI()
     historyFrame:EnableMouse(true)
     historyFrame:SetMovable(true)
     historyFrame:RegisterForDrag("LeftButton")
+
+    ApplyResizeBounds(historyFrame, 600, 300)
+
     historyFrame:SetScript("OnDragStart", function(self) self:StartMoving() end)
     historyFrame:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
@@ -1231,9 +1271,9 @@ local function EnsureHistoryUI()
         historyFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     end
 
-    local title = historyFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    title:SetPoint("TOPLEFT", historyFrame, "TOPLEFT", 12, -10)
+    local title = historyFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     title:SetText("Run History Tracking")
+    title:SetTextColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 1)
 
     local close = CreateFrame("Button", nil, historyFrame, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", historyFrame, "TOPRIGHT", -2, -2)
@@ -1244,25 +1284,41 @@ local function EnsureHistoryUI()
     controls:SetPoint("TOPRIGHT", -10, -32)
     controls:SetHeight(30)
 
+    -- Position Title inline
+    title:SetPoint("LEFT", controls, "LEFT", 0, 0)
+
     -- Search Bar
     local searchLabel = controls:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    searchLabel:SetPoint("LEFT", 4, 0)
+    searchLabel:SetPoint("LEFT", title, "RIGHT", 16, 0)
     searchLabel:SetText("Search Dungeon:")
 
     local searchBox = CreateFrame("EditBox", nil, controls, "InputBoxTemplate")
     searchBox:SetAutoFocus(false)
-    searchBox:SetSize(200, 20)
-    searchBox:SetPoint("LEFT", searchLabel, "RIGHT", 10, 0)
+    searchBox:SetSize(160, 20)
+    searchBox:SetPoint("LEFT", searchLabel, "RIGHT", 8, 0)
     searchBox:SetScript("OnTextChanged", function(self)
+        if not UI.history.filters then return end
         UI.history.filters.search = self:GetText() or ""
         RefreshHistoryTable()
     end)
     UI.history.searchBox = searchBox
 
+    -- Expansion DropDown
+    local tierDropDown = CreateFrame("Frame", nil, controls, "UIDropDownMenuTemplate")
+    tierDropDown:SetPoint("LEFT", searchBox, "RIGHT", -10, -2)
+    UIDropDownMenu_SetWidth(tierDropDown, 110)
+    UIDropDownMenu_SetText(tierDropDown, "Any Expansion")
+    InitHistoryDropDown(tierDropDown, BuildHistoryTierItems, function()
+        return UI.history.filters and UI.history.filters.tier or 0
+    end, function(v)
+        if UI.history.filters then UI.history.filters.tier = tonumber(v) or 0 end
+    end)
+    UI.history.tierDropDown = tierDropDown
+
     -- Sort Toggle
     local sortBtn = CreateFrame("Button", nil, controls, "UIPanelButtonTemplate")
-    sortBtn:SetSize(140, 22)
-    sortBtn:SetPoint("LEFT", searchBox, "RIGHT", 20, 0)
+    sortBtn:SetSize(130, 22)
+    sortBtn:SetPoint("LEFT", tierDropDown, "RIGHT", -10, 2)
 
     local function UpdateSortBtn()
         if not UI.history.filters then return end
@@ -1282,6 +1338,7 @@ local function EnsureHistoryUI()
     local listFrame = CreateFrame("Frame", nil, historyFrame)
     listFrame:SetPoint("TOPLEFT", controls, "BOTTOMLEFT", 0, -10)
     listFrame:SetPoint("BOTTOMRIGHT", historyFrame, "BOTTOMRIGHT", -10, 10)
+
     local ST = ResolveScrollingTable()
     if not ST then
         local warn = listFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -1290,13 +1347,12 @@ local function EnsureHistoryUI()
     else
         pcall(function()
             local cols = {
-                { name = "Date", width = 110, align = "LEFT", DoCellUpdate = History_DoCellUpdate },
-                { name = "Dungeon", width = 180, align = "LEFT", DoCellUpdate = History_DoCellUpdate },
-                { name = "Diff", width = 70, align = "LEFT", DoCellUpdate = History_DoCellUpdate },
-                { name = "Time", width = 90, align = "RIGHT", DoCellUpdate = History_DoCellUpdate },
-                { name = "Result", width = 60, align = "LEFT", DoCellUpdate = History_DoCellUpdate },
-                { name = "PB", width = 40, align = "CENTER", DoCellUpdate = History_DoCellUpdate },
-                { name = "ΔPB", width = 80, align = "RIGHT", DoCellUpdate = History_DoCellUpdate }
+                { name = "Date",               width = 110, align = "LEFT",  DoCellUpdate = History_DoCellUpdate },
+                { name = "Dungeon",            width = 180, align = "LEFT",  DoCellUpdate = History_DoCellUpdate },
+                { name = "Expansion",          width = 120, align = "LEFT",  DoCellUpdate = History_DoCellUpdate },
+                { name = "Time",               width = 90,  align = "RIGHT", DoCellUpdate = History_DoCellUpdate },
+                { name = "Result",             width = 80,  align = "LEFT",  DoCellUpdate = History_DoCellUpdate },
+                { name = "Difference from PB", width = 120, align = "RIGHT", DoCellUpdate = History_DoCellUpdate }
             }
 
             local st = ST:CreateST(cols, 18, 18, nil, listFrame)

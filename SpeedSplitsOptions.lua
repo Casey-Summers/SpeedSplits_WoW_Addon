@@ -30,6 +30,7 @@ local function CreateColorPicker(parent, label, key)
 
     frame:SetScript("OnClick", function()
         local c = NS.Colors[key]
+        local originalHex = NS.DB.settings.colors[key]
 
         -- Support for both classic ColorPicker and the newer setup (Dragonflight)
         if ColorPickerFrame.SetupColorPickerAndShow then
@@ -60,7 +61,10 @@ local function CreateColorPicker(parent, label, key)
                     NS.RefreshAllUI()
                 end,
                 cancelFunc = function()
-                    -- Could restore previous value if desired
+                    NS.DB.settings.colors[key] = originalHex
+                    NS.UpdateColorsFromSettings()
+                    UpdateSwatch()
+                    NS.RefreshAllUI()
                 end
             })
         else
@@ -77,7 +81,12 @@ local function CreateColorPicker(parent, label, key)
             end
             ColorPickerFrame.hasOpacity = true
             ColorPickerFrame.opacityFunc = ColorPickerFrame.func
-            ColorPickerFrame.cancelFunc = nil
+            ColorPickerFrame.cancelFunc = function()
+                NS.DB.settings.colors[key] = originalHex
+                NS.UpdateColorsFromSettings()
+                UpdateSwatch()
+                NS.RefreshAllUI()
+            end
             ColorPickerFrame:SetColorRGB(c.r, c.g, c.b)
             ColorPickerFrame:Show()
         end
@@ -108,7 +117,6 @@ function NS.CreateOptionsPanel()
         { "Pace: Ahead (PB/Gold)",  "gold" },
         { "Pace: Even/Fast",        "deepGreen" },
         { "Pace: Slightly Behind",  "lightGreen" },
-        { "Pace: Behind",           "lightRed" },
         { "Pace: Way Behind",       "darkRed" },
         { "UI Accents (Turquoise)", "turquoise" },
         { "Standard Text",          "white" },

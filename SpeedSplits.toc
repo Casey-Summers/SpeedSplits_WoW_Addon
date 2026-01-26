@@ -2,7 +2,7 @@
 ## Title: SpeedSplits
 ## Notes: Records splits for boss kills while speedrunning instances.
 ## Author: Aceman
-## Version: 0.1.3
+## Version: 0.1.4
 ## SavedVariables: SpeedSplitsDB
 
 Libs/LibStub/LibStub.lua

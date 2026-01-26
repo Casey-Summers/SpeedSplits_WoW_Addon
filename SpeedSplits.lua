@@ -114,7 +114,6 @@ local Colors = {
     turquoise  = HexToColor("ff00cccc"),
     deepGreen  = HexToColor("ff00cc36"),
     lightGreen = HexToColor("ff52cc73"),
-    lightRed   = HexToColor("ffff7777"),
     darkRed    = HexToColor("ffcc1200"),
 }
 NS.Colors = Colors
@@ -133,13 +132,11 @@ local function GetPaceColor(delta, isPB)
     if delta == nil then return 1, 1, 1, "|cffffffff" end
     if isPB then return Colors.gold.r, Colors.gold.g, Colors.gold.b, Colors.gold.hex end
     if delta <= 0 then return Colors.deepGreen.r, Colors.deepGreen.g, Colors.deepGreen.b, Colors.deepGreen.hex end
-    local t1, t2, t3 = 2, 6, 12
+    local t1, t2 = 4, 12
     if delta <= t1 then
         return InterpolateColor(Colors.deepGreen, Colors.lightGreen, delta / t1)
     elseif delta <= t2 then
-        return InterpolateColor(Colors.lightGreen, Colors.lightRed, (delta - t1) / (t2 - t1))
-    elseif delta <= t3 then
-        return InterpolateColor(Colors.lightRed, Colors.darkRed, (delta - t2) / (t3 - t2))
+        return InterpolateColor(Colors.lightGreen, Colors.darkRed, (delta - t1) / (t2 - t1))
     end
     return Colors.darkRed.r, Colors.darkRed.g, Colors.darkRed.b, Colors.darkRed.hex
 end
@@ -157,6 +154,7 @@ local function EnsureDB()
     MyAddonDB                          = nil
 
     SpeedSplitsDB.runs                 = SpeedSplitsDB.runs or {}
+    SpeedSplitsDB.bestSplits           = SpeedSplitsDB.bestSplits or {}
     SpeedSplitsDB.pbBoss               = SpeedSplitsDB.pbBoss or {}
     SpeedSplitsDB.pbRun                = SpeedSplitsDB.pbRun or {}
     SpeedSplitsDB.settings             = SpeedSplitsDB.settings or {}
@@ -166,7 +164,6 @@ local function EnsureDB()
         turquoise  = "ff00cccc",
         deepGreen  = "ff00cc36",
         lightGreen = "ff52cc73",
-        lightRed   = "ffff7777",
         darkRed    = "ffcc1200",
     }
     SpeedSplitsDB.settings.fonts       = SpeedSplitsDB.settings.fonts or {}
@@ -179,6 +176,29 @@ local function EnsureDB()
 
     DB                                 = SpeedSplitsDB
     NS.DB                              = DB
+end
+
+local function GetBestSplitsSubtable(instanceName, difficultyName, dungeonKey)
+    instanceName = instanceName or (NS.Run and NS.Run.instanceName)
+    if not instanceName or instanceName == "" then return nil end
+
+    local diffKey = (difficultyName and difficultyName ~= "") and difficultyName
+        or
+        (NS.Run and NS.Run.instanceName == instanceName and NS.Run.difficultyName and NS.Run.difficultyName ~= "") and
+        NS.Run.difficultyName
+        or dungeonKey or (NS.Run and NS.Run.instanceName == instanceName and NS.Run.dungeonKey)
+
+    if not diffKey or diffKey == "" then return nil end
+
+    DB.bestSplits = DB.bestSplits or {}
+    DB.bestSplits[instanceName] = DB.bestSplits[instanceName] or {}
+    DB.bestSplits[instanceName][diffKey] = DB.bestSplits[instanceName][diffKey] or { pbBoss = {} }
+    return DB.bestSplits[instanceName][diffKey]
+end
+
+local function GetPBTableForDungeon(instanceName, difficultyName, dungeonKey)
+    local node = GetBestSplitsSubtable(instanceName, difficultyName, dungeonKey)
+    return node and node.pbBoss
 end
 
 function NS.UpdateColorsFromSettings()
@@ -621,8 +641,28 @@ local function ApplyTableLayout()
         return
     end
 
-    UI._rightInset = GetScrollBarInset(UI.st)
+    -- Update stacking constants and positions
+    UI._topInset = TOP_BAR_H + 2
+    UI._bottomInset = 24 + 2
 
+    UI.st.frame:ClearAllPoints()
+    UI.st.frame:SetPoint("TOPLEFT", UI.bossFrame, "TOPLEFT", 0, -UI._topInset)
+    UI.st.frame:SetPoint("BOTTOMRIGHT", UI.bossFrame, "BOTTOMRIGHT", 0, UI._bottomInset)
+
+    if UI.titleTab then
+        UI.titleTab:ClearAllPoints()
+        UI.titleTab:SetPoint("TOPLEFT", UI.bossFrame, "TOPLEFT", 0, 0)
+        UI.titleTab:SetPoint("BOTTOMRIGHT", UI.st.frame, "TOPRIGHT", 0, 0)
+    end
+
+    if UI.totalFrame then
+        UI.totalFrame:ClearAllPoints()
+        UI.totalFrame:SetPoint("TOPLEFT", UI.st.frame, "BOTTOMLEFT", 0, 0)
+        UI.totalFrame:SetPoint("BOTTOMRIGHT", UI.bossFrame, "BOTTOMRIGHT", 0, 0)
+    end
+
+    -- Table Column scaling logic
+    UI._rightInset = GetScrollBarInset(UI.st)
     local w = UI.st.frame:GetWidth() or 1
     local available = math.max(w - UI._rightInset, 1)
 
@@ -650,7 +690,7 @@ local function ApplyTableLayout()
         UI.st:Refresh()
     end
 
-    -- Totals row alignment (anchored to the scrolling table width, excluding scrollbar)
+    -- Totals row alignment
     local tf = UI.totalFrame
     if tf then
         local rightPad = UI._rightInset
@@ -680,15 +720,15 @@ local function ApplyTableLayout()
         UI.totalLabel:SetPoint("RIGHT", UI.totalPB, "LEFT", -15, 0)
         UI.totalLabel:SetJustifyH("RIGHT")
         UI.totalLabel:SetWidth(100)
-        UI.totalLabel:SetTextColor(Colors.turquoise.r, Colors.turquoise.g, Colors.turquoise.b, 1)
+        local tc = NS.Colors and NS.Colors.turquoise or { r = 0, g = 0.8, b = 0.8 }
+        UI.totalLabel:SetTextColor(tc.r, tc.g, tc.b, 1)
     end
 
-    -- Position separator grips in the header area
+    -- Position separator grips
     if UI._colGrips then
         local xBossRight = bossWidth
         local xPBRight = bossWidth + UI._pbWidth
         local xSplitRight = bossWidth + UI._pbWidth + UI._splitWidth
-
         local gv = -HEADER_H
         UI._colGrips[1]:ClearAllPoints()
         UI._colGrips[1]:SetPoint("TOPLEFT", UI.st.frame, "TOPLEFT", xBossRight - GRIP_HALFWIDTH, 0)
@@ -930,10 +970,16 @@ local function GetTierNameSafe(tierIndex)
 end
 
 local function IsRunPB(record)
-    if not record or not record.success or not record.duration or not record.dungeonKey then
+    if not record or not record.success or not record.duration then
         return false
     end
-    local pb = DB and DB.pbRun and DB.pbRun[record.dungeonKey]
+
+    local node = GetBestSplitsSubtable(record.instanceName, record.difficultyName, record.dungeonKey)
+    local pb = node and node.pbRun
+    if (not pb or not pb.duration) and record.dungeonKey then
+        pb = DB.pbRun[record.dungeonKey]
+    end
+
     if not pb or not pb.duration then
         return false
     end
@@ -1073,7 +1119,8 @@ local function RefreshHistoryTable()
             diffName = tostring(tonumber(r.difficultyID) or "")
         end
 
-        local pb = DB.pbRun and r.dungeonKey and DB.pbRun[r.dungeonKey]
+        local node = GetBestSplitsSubtable(r.instanceName, r.difficultyName, r.dungeonKey)
+        local pb = node and node.pbRun or (DB.pbRun and r.dungeonKey and DB.pbRun[r.dungeonKey])
         local deltaPB = (pb and pb.duration and r.duration) and (r.duration - pb.duration) or nil
 
         local resultColor = r.success and Colors.green or Colors.red
@@ -1487,7 +1534,11 @@ local function EnsureUI()
         SaveFrameGeom("boss", self)
     end)
     ApplyResizeBounds(bossFrame, 360, 180, 1400, 1000)
-    SetHoverBackdrop(bossFrame, 0.80)
+
+    -- Hide main background since we use tabs
+    if bossFrame.SetBackdrop then
+        bossFrame:SetBackdrop({ bgFile = nil, edgeFile = nil })
+    end
 
     local bossRestored = RestoreFrameGeom("boss", bossFrame, 520, 320)
     if not bossRestored then
@@ -1545,10 +1596,9 @@ local function EnsureUI()
     } }
 
     local st = ST and ST:CreateST(cols, 12, 24, nil, bossFrame)
+    UI.st = st
     if st and st.frame then
-        st.frame:SetPoint("TOPLEFT", bossFrame, "TOPLEFT", 6, -UI._topInset)
-        st.frame:SetPoint("BOTTOMRIGHT", bossFrame, "BOTTOMRIGHT", -6, UI._bottomInset)
-
+        SetHoverBackdrop(st.frame, 0.85)
         if st.head and st.head.cols then
             for i = 1, #cols do
                 StyleHeaderCell(st.head.cols[i], cols[i].align)
@@ -1556,40 +1606,68 @@ local function EnsureUI()
         end
     end
 
-    -- Totals row
-    local totalFrame = CreateFrame("Frame", nil, bossFrame)
-    totalFrame:SetHeight(20)
-    totalFrame:SetPoint("BOTTOMLEFT", bossFrame, "BOTTOMLEFT", 6, 6)
-    totalFrame:SetPoint("BOTTOMRIGHT", bossFrame, "BOTTOMRIGHT", -6, 6)
-    totalFrame:EnableMouse(false)
+    -- Title bar 'tab' (Header portion)
+    local titleTab = CreateFrame("Frame", nil, bossFrame, "BackdropTemplate")
+    titleTab:SetHeight(TOP_BAR_H)
+    titleTab:SetBackdrop({
+        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    titleTab:SetBackdropColor(0, 0, 0, 0.95)
+    local tc = NS.Colors and NS.Colors.turquoise or { r = 0, g = 0.8, b = 0.8 }
+    titleTab:SetBackdropBorderColor(tc.r, tc.g, tc.b, 0.5)
+    UI.titleTab = titleTab
+
+    local killCountText = titleTab:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    killCountText:SetPoint("LEFT", 10, 0)
+    UI.killCountText = killCountText
+
+    local logoText = titleTab:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    logoText:SetPoint("RIGHT", -10, 0)
+    logoText:SetText("SpeedSplits")
+    logoText:SetTextColor(tc.r, tc.g, tc.b, 1)
+
+    -- Totals 'tab' (Footer portion)
+    local totalFrame = CreateFrame("Frame", nil, bossFrame, "BackdropTemplate")
+    totalFrame:SetHeight(24)
+    totalFrame:SetBackdrop({
+        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    totalFrame:SetBackdropColor(0, 0, 0, 0.95)
+    totalFrame:SetBackdropBorderColor(tc.r, tc.g, tc.b, 0.5)
+    UI.totalFrame = totalFrame
 
     local totalLabel = totalFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     totalLabel:SetJustifyH("RIGHT")
     totalLabel:SetText("Totals:")
-    totalLabel:SetTextColor(Colors.turquoise.r, Colors.turquoise.g, Colors.turquoise.b, 1)
+    totalLabel:SetTextColor(tc.r, tc.g, tc.b, 1)
+    UI.totalLabel = totalLabel
 
     local totalPB = totalFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     totalPB:SetJustifyH("RIGHT")
     totalPB:SetText("--:--.---")
+    UI.totalPB = totalPB
 
     local totalSplit = totalFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     totalSplit:SetJustifyH("RIGHT")
     totalSplit:SetText("--:--.---")
+    UI.totalSplit = totalSplit
 
     local totalDelta = totalFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     totalDelta:SetJustifyH("RIGHT")
     totalDelta:SetText("--:--.---")
+    UI.totalDelta = totalDelta
 
-    -- History button
-    local historyButton = CreateFrame("Button", nil, bossFrame)
-    historyButton:SetSize(18, 18)
+    -- Apply initial positioning
+    ApplyTableLayout()
 
-    local logoText = bossFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    logoText:SetPoint("BOTTOMLEFT", bossFrame, "BOTTOMLEFT", 10, 8)
-    logoText:SetText("SpeedSplits")
-    logoText:SetTextColor(Colors.turquoise.r, Colors.turquoise.g, Colors.turquoise.b, 1)
-
-    historyButton:SetPoint("LEFT", logoText, "RIGHT", 6, 0)
+    -- History button on Title Tab
+    local historyButton = CreateFrame("Button", nil, titleTab)
+    historyButton:SetSize(16, 16)
+    historyButton:SetPoint("RIGHT", logoText, "LEFT", -6, 0)
 
     local historyTex = historyButton:CreateTexture(nil, "ARTWORK")
     historyTex:SetAllPoints()
@@ -1729,6 +1807,10 @@ local function SetKillCount(killed, total)
         UI.cols[1].name = text
     end
 
+    if UI.killCountText then
+        UI.killCountText:SetText(text)
+    end
+
     if UI.st and UI.st.head and UI.st.head.cols and UI.st.head.cols[1] then
         local cell = UI.st.head.cols[1]
         local fs = cell.text or cell.label or (cell.GetFontString and cell:GetFontString())
@@ -1809,7 +1891,7 @@ local function RenderBossTable(entries, pbSegments)
 
     local cumulativePB = 0
     for _, entry in ipairs(entries) do
-        local pbSegment = pbSegments[entry.key] or 0
+        local pbSegment = pbSegments[entry.name] or 0
         cumulativePB = cumulativePB + pbSegment
         data[#data + 1] = {
             key = entry.key,
@@ -1945,11 +2027,6 @@ local function ResetRun()
     SetTimerDelta(nil)
 end
 
-local function GetPBTableForDungeon(dungeonKey)
-    DB.pbBoss = DB.pbBoss or {}
-    DB.pbBoss[dungeonKey] = DB.pbBoss[dungeonKey] or {}
-    return DB.pbBoss[dungeonKey]
-end
 
 local function ComputeSumOfBest(pbTable, entries)
     if not pbTable or not entries or #entries == 0 then
@@ -1957,7 +2034,7 @@ local function ComputeSumOfBest(pbTable, entries)
     end
     local sum = 0
     for _, entry in ipairs(entries) do
-        local segment = pbTable[entry.key]
+        local segment = pbTable[entry.name]
         if segment == nil then
             return nil
         end
@@ -1967,14 +2044,15 @@ local function ComputeSumOfBest(pbTable, entries)
 end
 
 local function RefreshTotals(isFinal)
-    local pbTable = (Run.dungeonKey ~= "") and (DB.pbBoss[Run.dungeonKey] or nil) or nil
+    local node = GetBestSplitsSubtable()
+    local pbTable = node and node.pbBoss or nil
     local pbTotal = pbTable and ComputeSumOfBest(pbTable, Run.entries) or nil
 
     if isFinal then
         local duration = (Run.endGameTime > 0 and Run.startGameTime > 0) and (Run.endGameTime - Run.startGameTime) or nil
         local deltaTotal = (duration and pbTotal) and (duration - pbTotal) or nil
 
-        local existingPB = DB.pbRun[Run.dungeonKey]
+        local existingPB = node and node.pbRun
         local isPB = false
         if duration and duration > 0 then
             isPB = (not existingPB or not existingPB.duration or duration < (existingPB.duration - 0.001))
@@ -2025,22 +2103,29 @@ function NS.RefreshAllUI()
     if UI.timerTextMin then NS.ApplyFontToFS(UI.timerTextMin, "timer") end
     if UI.timerTextSec then NS.ApplyFontToFS(UI.timerTextSec, "timer") end
     if UI.timerTextMs then NS.ApplyFontToFS(UI.timerTextMs, "timer") end
-    if UI.timerDeltaText then NS.ApplyFontToFS(UI.timerDeltaText, "num") end
+    if UI.timerDeltaText then
+        local f = (NS.DB and NS.DB.settings and NS.DB.settings.fonts and NS.DB.settings.fonts.timer)
+        local fontPath = f and f.font or "Fonts\\FRIZQT__.TTF"
+        local fontSize = math.max(8, math.floor((f and f.size or 24) * 0.55))
+        local fontFlags = f and f.flags or "OUTLINE"
+        UI.timerDeltaText:SetFont(fontPath, fontSize, fontFlags)
+    end
 
     UpdateTimerFrameBounds()
 
     if NS.Run.inInstance and NS.Run._bossLoaded then
-        local pbTable = (NS.Run.dungeonKey ~= "") and (NS.DB.pbBoss[NS.Run.dungeonKey] or {}) or {}
+        local node = GetBestSplitsSubtable()
+        local pbTable = node and node.pbBoss or {}
         RenderBossTable(NS.Run.entries, pbTable)
 
         local runningPBTotal = 0
         for _, entry in ipairs(NS.Run.entries) do
-            runningPBTotal = runningPBTotal + (pbTable[entry.key] or 0)
+            runningPBTotal = runningPBTotal + (pbTable[entry.name] or 0)
             local splitCumulative = NS.Run.kills[entry.key]
             if splitCumulative then
                 local prevCumulative = GetPreviousKilledCumulativeInTableOrder(NS.Run, entry.key)
                 local segTime = prevCumulative and (splitCumulative - prevCumulative) or splitCumulative
-                local oldSegPB = pbTable[entry.key]
+                local oldSegPB = pbTable[entry.name]
                 local isGold = (not oldSegPB) or (segTime < oldSegPB)
 
                 local delta = splitCumulative - runningPBTotal
@@ -2057,19 +2142,18 @@ function NS.RefreshAllUI()
 end
 
 local function UpdateBestRunIfNeeded(durationSeconds)
-    local key = Run.dungeonKey
-    if not key or key == "" then
-        return
-    end
+    local node = GetBestSplitsSubtable()
+    if not node then return end
 
-    local existing = DB.pbRun[key]
+    local existing = node.pbRun
     if not existing or not existing.duration or durationSeconds < existing.duration then
-        DB.pbRun[key] = {
+        node.pbRun = {
             duration = durationSeconds,
             endedAt = Run.endedAt,
             instanceName = Run.instanceName,
             tier = Run.tier,
             difficultyID = Run.difficultyID,
+            difficultyName = Run.difficultyName,
             mapID = Run.mapID
         }
     end
@@ -2171,6 +2255,16 @@ local function RecordBossKill(encounterID, encounterName)
         return
     end
 
+    local bossEntry = nil
+    for _, entry in ipairs(Run.entries or {}) do
+        if entry.key == bossKey then
+            bossEntry = entry
+            break
+        end
+    end
+    if not bossEntry then return end
+    local bossName = bossEntry.name
+
     local splitCumulative = NowGameTime() - Run.startGameTime
     Run.kills[bossKey] = splitCumulative
 
@@ -2186,14 +2280,17 @@ local function RecordBossKill(encounterID, encounterName)
         splitSegment = 0
     end
 
-    local pbTable = GetPBTableForDungeon(Run.dungeonKey)
-    local oldSegmentPB = pbTable[bossKey]
+    local node = GetBestSplitsSubtable()
+    local pbTable = node and node.pbBoss
+    if not pbTable then return end
+
+    local oldSegmentPB = pbTable[bossName]
     local isNewSegmentPB = (oldSegmentPB == nil) or (splitSegment < oldSegmentPB)
 
     -- Prepare cumulative comparison vs old PB sum
     local cumulativePB_Comparison = 0
     for _, entry in ipairs(Run.entries) do
-        local seg = pbTable[entry.key] or 0
+        local seg = pbTable[entry.name] or 0
         cumulativePB_Comparison = cumulativePB_Comparison + seg
         if entry.key == bossKey then
             break
@@ -2202,13 +2299,13 @@ local function RecordBossKill(encounterID, encounterName)
 
     -- Update the table with the new best segment
     if isNewSegmentPB then
-        pbTable[bossKey] = splitSegment
+        pbTable[bossName] = splitSegment
     end
 
     -- Prepare cumulative display (sum of current best segments)
     local cumulativePB_Display = 0
     for _, entry in ipairs(Run.entries) do
-        local seg = pbTable[entry.key] or 0
+        local seg = pbTable[entry.name] or 0
         cumulativePB_Display = cumulativePB_Display + seg
         if entry.key == bossKey then
             break
@@ -2216,7 +2313,7 @@ local function RecordBossKill(encounterID, encounterName)
     end
 
     local deltaOverall = splitCumulative - cumulativePB_Comparison
-    local r, g, b, hex = GetPaceColor(deltaOverall, isNewSegmentPB)
+    local r, g, b, hex = GetPaceColor(deltaOverall, false) -- Pace is based on overall delta, not segment PB
     SetRowKilled(bossKey, splitCumulative, cumulativePB_Display, deltaOverall, r, g, b, hex, isNewSegmentPB)
 
     SetKillCount(Run.killedCount, #Run.entries)
@@ -2250,7 +2347,8 @@ local function ApplyBossEntries(entries, source, tier, journalID)
         end
     end
 
-    local pbSplits = (Run.dungeonKey ~= "") and (DB.pbBoss[Run.dungeonKey] or {}) or {}
+    local node = GetBestSplitsSubtable()
+    local pbSplits = node and node.pbBoss or {}
     RenderBossTable(Run.entries, pbSplits)
     SetKillCount(0, #Run.entries)
     RefreshTotals(false)
@@ -2329,12 +2427,13 @@ end
 local function BeginInstanceSession()
     EnsureUI()
 
-    local name, instanceType, difficultyID, _, _, _, _, mapID = GetInstanceInfo()
+    local name, instanceType, difficultyID, difficultyName, _, _, _, mapID = GetInstanceInfo()
     local tier, journalID = GetJournalTierAndInstanceIDForCurrentInstance()
 
     Run.instanceName = name or ""
     Run.instanceType = instanceType or ""
     Run.difficultyID = tonumber(difficultyID) or 0
+    Run.difficultyName = difficultyName or ""
     Run.mapID = tonumber(mapID) or 0
     Run.journalID = journalID
     Run.tier = tonumber(tier) or 0

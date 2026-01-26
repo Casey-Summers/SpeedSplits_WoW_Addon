@@ -1,40 +1,149 @@
 -- SpeedSplits.lua
 -- Retail WoW addon: instance splits with objective-first boss discovery + EJ fallback.
--- Run starts on first movement; boss kills record splits, PB segments, and deltas.
--- SavedVariables: SpeedSplitsDB (auto-migrates from MyAddonDB if present).
-local ADDON_NAME = ...
+local ADDON_NAME, NS = ...
 local App = CreateFrame("Frame")
+NS.App = App
 
 -- Constants
 local COL_MAX_PB_SPLIT = 260
 local COL_MAX_DELTA = 200
-local COL_MIN_BOSS = 180 -- Increased for "Boss (x/x)"
-local COL_MIN_NUM = 75  -- Enough for "00:00.000"
-local COL_MIN_DELTA_TITLE = 90 -- Enough for "Difference"
+local COL_MIN_BOSS = 180
+local COL_MIN_NUM = 75
+local COL_MIN_DELTA_TITLE = 90
 local GRIP_HALFWIDTH = 5
 local HEADER_H = 18
 local RIGHT_INSET_DEFAULT = 26
 local TOP_BAR_H = 28
 local TOP_BAR_GAP = 4
-local LOGO_COLOR = "|cffffd100" -- Bold Gold
 local BOSS_LOAD_MAX_TRIES = 40
 local BOSS_LOAD_RETRY_DELAY = 0.25
-local DELTA_GREEN_THRESH = 3
-local DELTA_ORANGE_THRESH = 5
 local RUNS_MAX = 200
 local EJ_INSTANCE_INDEX_MAX = 600
 local EJ_ENCOUNTER_INDEX_MAX = 80
 local CRITERIA_MAX = 80
 
+-- =========================================================
+-- Small utilities
+-- =========================================================
+local function Clamp(value, minV, maxV)
+    return math.max(minV, math.min(maxV, value))
+end
+
+local function ApplyResizeBounds(frame, minW, minH, maxW, maxH)
+    if not frame then return end
+    if frame.SetResizable then frame:SetResizable(true) end
+    if frame.SetResizeBounds then
+        frame:SetResizeBounds(minW, minH, maxW or minW, maxH or minH)
+        return
+    end
+    if frame.SetMinResize then frame:SetMinResize(minW, minH) end
+end
+
+local NowEpoch = time
+local NowGameTime = GetTime
+
+local function NormalizeName(text)
+    if text == nil then return "" end
+    text = tostring(text):lower():gsub("[%-–—:,%s%p]", "")
+    return text
+end
+
+local function SS_Print(msg)
+    if DEFAULT_CHAT_FRAME then
+        DEFAULT_CHAT_FRAME:AddMessage("|cff00ccccSpeedSplits|r: " .. tostring(msg))
+    else
+        print("SpeedSplits: " .. tostring(msg))
+    end
+end
+
+-- Debug toggle
+SpeedSplits_DebugObjectives = SpeedSplits_DebugObjectives or false
+SLASH_SPEEDSPLITSOBJ1 = "/ssobj"
+SlashCmdList.SPEEDSPLITSOBJ = function()
+    SpeedSplits_DebugObjectives = not SpeedSplits_DebugObjectives
+    SS_Print("Objective debug: " .. (SpeedSplits_DebugObjectives and "ON" or "OFF"))
+end
+
+local function FormatTime(seconds)
+    if seconds == nil then return "--:--.---" end
+    local m = math.floor(seconds / 60)
+    local s = seconds % 60
+    local ms = math.floor((s - math.floor(s)) * 1000 + 0.5)
+    return string.format("%02d:%02d.%03d", m, math.floor(s), ms)
+end
+
+local function FormatDelta(delta)
+    if delta == nil then return "" end
+    return (delta >= 0 and "+" or "-") .. FormatTime(math.abs(delta))
+end
+
+local function GetDungeonKey(mapID, difficultyID)
+    return ("%d:%d"):format(tonumber(mapID) or 0, tonumber(difficultyID) or 0)
+end
+
+local function HistoryFilterDefaults()
+    return { tier = 0, mapID = 0, dateMode = "any", sort = "recent", successOnly = false, pbOnly = false, search = "" }
+end
+
+-- =========================================================
+-- Hex color system
+-- =========================================================
+local function PackColorCode(a, r, g, b)
+    return string.format("|c%02x%02x%02x%02x",
+        math.floor(Clamp(a, 0, 1) * 255 + 0.5),
+        math.floor(Clamp(r, 0, 1) * 255 + 0.5),
+        math.floor(Clamp(g, 0, 1) * 255 + 0.5),
+        math.floor(Clamp(b, 0, 1) * 255 + 0.5))
+end
+
+local function HexToColor(hex)
+    hex = tostring(hex or "ffffffff"):gsub("#", ""):lower()
+    if #hex == 6 then hex = "ff" .. hex end
+    if #hex ~= 8 then return { a = 1, r = 1, g = 1, b = 1, argb = "ffffffff", hex = "|cffffffff" } end
+
+    local a = tonumber("0x" .. hex:sub(1, 2)) / 255
+    local r = tonumber("0x" .. hex:sub(3, 4)) / 255
+    local g = tonumber("0x" .. hex:sub(5, 6)) / 255
+    local b = tonumber("0x" .. hex:sub(7, 8)) / 255
+    return { a = a, r = r, g = g, b = b, argb = hex, hex = "|c" .. hex }
+end
+
 local Colors = {
-    green = { r = 0.20, g = 1.00, b = 0.20, a = 1 },
-    red = { r = 1.00, g = 0.25, b = 0.25, a = 1 },
-    gold = { r = 1.00, g = 0.82, b = 0.00, a = 1 },
-    goldLight = { r = 1.00, g = 0.92, b = 0.25, a = 1 },
-    orange = { r = 1.00, g = 0.65, b = 0.00, a = 1 },
-    white = { r = 1, g = 1, b = 1, a = 1 },
-    turquoise = { r = 0.0, g = 0.8, b = 0.8, a = 1 },
+    gold       = HexToColor("ffffd100"),
+    white      = HexToColor("ffffffff"),
+    turquoise  = HexToColor("ff00cccc"),
+    deepGreen  = HexToColor("ff00cc36"),
+    lightGreen = HexToColor("ff52cc73"),
+    lightRed   = HexToColor("ffff7777"),
+    darkRed    = HexToColor("ffcc1200"),
 }
+NS.Colors = Colors
+
+
+local function InterpolateColor(c1, c2, t)
+    t = Clamp(t, 0, 1)
+    local a = (c1.a or 1) + ((c2.a or 1) - (c1.a or 1)) * t
+    local r = c1.r + (c2.r - c1.r) * t
+    local g = c1.g + (c2.g - c1.g) * t
+    local b = c1.b + (c2.b - c1.b) * t
+    return r, g, b, PackColorCode(a, r, g, b)
+end
+
+local function GetPaceColor(delta, isPB)
+    if delta == nil then return 1, 1, 1, "|cffffffff" end
+    if isPB then return Colors.gold.r, Colors.gold.g, Colors.gold.b, Colors.gold.hex end
+    if delta <= 0 then return Colors.deepGreen.r, Colors.deepGreen.g, Colors.deepGreen.b, Colors.deepGreen.hex end
+    local t1, t2, t3 = 2, 6, 12
+    if delta <= t1 then
+        return InterpolateColor(Colors.deepGreen, Colors.lightGreen, delta / t1)
+    elseif delta <= t2 then
+        return InterpolateColor(Colors.lightGreen, Colors.lightRed, (delta - t1) / (t2 - t1))
+    elseif delta <= t3 then
+        return InterpolateColor(Colors.lightRed, Colors.darkRed, (delta - t2) / (t3 - t2))
+    end
+    return Colors.darkRed.r, Colors.darkRed.g, Colors.darkRed.b, Colors.darkRed.hex
+end
+NS.GetPaceColor = GetPaceColor
 
 -- =========================================================
 -- SavedVariables
@@ -50,8 +159,29 @@ local function EnsureDB()
     SpeedSplitsDB.runs = SpeedSplitsDB.runs or {}
     SpeedSplitsDB.pbBoss = SpeedSplitsDB.pbBoss or {}
     SpeedSplitsDB.pbRun = SpeedSplitsDB.pbRun or {}
+    SpeedSplitsDB.settings = SpeedSplitsDB.settings or {}
+    SpeedSplitsDB.settings.colors = SpeedSplitsDB.settings.colors or {
+        gold       = "ffffd100",
+        white      = "ffffffff",
+        turquoise  = "ff00cccc",
+        deepGreen  = "ff00cc36",
+        lightGreen = "ff52cc73",
+        lightRed   = "ffff7777",
+        darkRed    = "ffcc1200",
+    }
 
     DB = SpeedSplitsDB
+    NS.DB = DB
+end
+
+function NS.UpdateColorsFromSettings()
+    if not DB or not DB.settings or not DB.settings.colors then return end
+    local s = DB.settings.colors
+    for k, hex in pairs(s) do
+        if NS.Colors[k] then
+            NS.Colors[k] = HexToColor(hex)
+        end
+    end
 end
 
 local ScrollingTable
@@ -80,112 +210,6 @@ local function ResolveScrollingTable()
 end
 
 -- =========================================================
--- Small utilities
--- =========================================================
-local function Clamp(value, minValue, maxValue)
-    if value < minValue then
-        return minValue
-    end
-    if value > maxValue then
-        return maxValue
-    end
-    return value
-end
-
-local function ApplyResizeBounds(frame, minW, minH, maxW, maxH)
-    if not frame then return end
-    if frame.SetResizable then frame:SetResizable(true) end
-    if frame.SetResizeBounds then
-        frame:SetResizeBounds(minW, minH, maxW or minW, maxH or minH)
-        return
-    end
-    if frame.SetMinResize then frame:SetMinResize(minW, minH) end
-end
-
-local NowEpoch = time
-local NowGameTime = GetTime
-
-local function NormalizeName(text)
-    if text == nil then
-        return ""
-    end
-    if type(text) ~= "string" then
-        text = tostring(text)
-    end
-    if text == "" then
-        return ""
-    end
-    text = text:lower()
-    text = text:gsub("[%-–—:,%s%p]", "")
-    return text
-end
-
-local function SS_Print(msg)
-    if DEFAULT_CHAT_FRAME then
-        DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99SpeedSplits|r: " .. tostring(msg))
-    else
-        print("SpeedSplits: " .. tostring(msg))
-    end
-end
-
--- Debug toggle (off by default). Use /ssobj to toggle objective parsing prints.
-SpeedSplits_DebugObjectives = SpeedSplits_DebugObjectives or false
-
-SLASH_SPEEDSPLITSOBJ1 = "/ssobj"
-SlashCmdList.SPEEDSPLITSOBJ = function()
-    SpeedSplits_DebugObjectives = not SpeedSplits_DebugObjectives
-    SS_Print("Objective debug: " .. (SpeedSplits_DebugObjectives and "ON" or "OFF"))
-end
-
-local function FormatTime(seconds)
-    if seconds == nil then
-        return "--:--.---"
-    end
-    if seconds < 0 then
-        seconds = 0
-    end
-    local minutes = math.floor(seconds / 60)
-    local remainder = seconds - (minutes * 60)
-    local wholeSeconds = math.floor(remainder)
-    local milliseconds = math.floor((remainder - wholeSeconds) * 1000 + 0.5)
-    return string.format("%02d:%02d.%03d", minutes, wholeSeconds, milliseconds)
-end
-
-local function FormatDelta(deltaSeconds)
-    if deltaSeconds == nil then
-        return ""
-    end
-    local sign = deltaSeconds >= 0 and "+" or "-"
-    return sign .. FormatTime(math.abs(deltaSeconds))
-end
-
-local function GetDungeonKey(mapID, difficultyID)
-    return ("%d:%d"):format(tonumber(mapID) or 0, tonumber(difficultyID) or 0)
-end
-
-local function HistoryFilterDefaults()
-    return {
-        tier = 0,
-        mapID = 0,
-        dateMode = "any",
-        sort = "recent",
-        successOnly = false,
-        pbOnly = false,
-        search = "",
-    }
-end
-
---- Delta (seconds) -> r,g,b for display. nil-safe.
-local function DeltaToRGB(delta, isImprovement)
-    if delta == nil then return nil, nil, nil end
-    if isImprovement then return Colors.gold.r, Colors.gold.g, Colors.gold.b end
-    local a = math.abs(delta)
-    if a <= DELTA_GREEN_THRESH then return Colors.green.r, Colors.green.g, Colors.green.b end
-    if a <= DELTA_ORANGE_THRESH then return Colors.orange.r, Colors.orange.g, Colors.orange.b end
-    return Colors.red.r, Colors.red.g, Colors.red.b
-end
-
--- =========================================================
 -- Encounter Journal
 -- =========================================================
 local function ForEachEJInstance(callback)
@@ -208,7 +232,9 @@ local function FindJournalTierForInstanceID(targetID)
     if not targetID then return nil end
     local found
     ForEachEJInstance(function(ti, instanceID)
-        if tonumber(instanceID) == targetID then found = ti; return true end
+        if tonumber(instanceID) == targetID then
+            found = ti; return true
+        end
     end)
     return found
 end
@@ -218,7 +244,9 @@ local function FindJournalTierAndInstanceIDByName(instanceName)
     if wanted == "" then return nil, nil end
     local foundTier, foundID
     ForEachEJInstance(function(ti, instanceID, name)
-        if NormalizeName(name) == wanted then foundTier, foundID = ti, instanceID; return true end
+        if NormalizeName(name) == wanted then
+            foundTier, foundID = ti, instanceID; return true
+        end
     end)
     return foundTier, foundID
 end
@@ -438,7 +466,7 @@ local UI = {
     -- lib-st
     st = nil,
     cols = nil,
-    data = nil, -- array of lib-st rows
+    data = nil,         -- array of lib-st rows
     rowByBossKey = nil, -- bossKey -> realrow index in data
 
     -- Resizable widths (boss is computed as "fill remaining")
@@ -450,8 +478,8 @@ local UI = {
     _topInset = RIGHT_INSET_DEFAULT,
     _bottomInset = 34, -- Increased for Totals spacing
 
-    _colGrips = nil, -- separator grips
-    _colDrag = nil, -- active drag state
+    _colGrips = nil,   -- separator grips
+    _colDrag = nil,    -- active drag state
 
     totalFrame = nil,
     totalLabel = nil,
@@ -570,9 +598,12 @@ local function ApplyTableLayout()
     local available = math.max(w - UI._rightInset, 1)
 
     local minDelta = math.max(COL_MIN_NUM, COL_MIN_DELTA_TITLE)
-    UI._pbWidth = Clamp(UI._pbWidth, COL_MIN_NUM, math.max(available - (COL_MIN_BOSS + UI._splitWidth + minDelta), COL_MIN_NUM))
-    UI._splitWidth = Clamp(UI._splitWidth, COL_MIN_NUM, math.max(available - (COL_MIN_BOSS + UI._pbWidth + minDelta), COL_MIN_NUM))
-    UI._deltaWidth = Clamp(UI._deltaWidth, minDelta, math.max(available - (COL_MIN_BOSS + UI._pbWidth + UI._splitWidth), minDelta))
+    UI._pbWidth = Clamp(UI._pbWidth, COL_MIN_NUM,
+        math.max(available - (COL_MIN_BOSS + UI._splitWidth + minDelta), COL_MIN_NUM))
+    UI._splitWidth = Clamp(UI._splitWidth, COL_MIN_NUM,
+        math.max(available - (COL_MIN_BOSS + UI._pbWidth + minDelta), COL_MIN_NUM))
+    UI._deltaWidth = Clamp(UI._deltaWidth, minDelta,
+        math.max(available - (COL_MIN_BOSS + UI._pbWidth + UI._splitWidth), minDelta))
     local bossWidth = math.max(available - (UI._pbWidth + UI._splitWidth + UI._deltaWidth), COL_MIN_BOSS)
 
     UI.cols[1].width = bossWidth
@@ -594,7 +625,7 @@ local function ApplyTableLayout()
     local tf = UI.totalFrame
     if tf then
         local rightPad = UI._rightInset
-        
+
         -- Center UI.totalDelta in Difference column
         local midDelta = rightPad + UI._deltaWidth / 2
         UI.totalDelta:ClearAllPoints()
@@ -704,7 +735,7 @@ local function UpdateColDrag()
     local available = (UI.st.frame:GetWidth() or 0) - UI._rightInset
 
     if UI._colDrag.which == 1 then
-        -- Boundary between Boss and PB. 
+        -- Boundary between Boss and PB.
         -- BossWidth = available - (PB + Split + Diff). Cannot be less than COL_MIN_BOSS.
         local maxPB = math.max(COL_MIN_NUM, available - (UI._splitWidth + UI._deltaWidth + COL_MIN_BOSS))
         UI._pbWidth = Clamp(UI._colDrag.pb - dx, COL_MIN_NUM, math.min(COL_MAX_PB_SPLIT, maxPB))
@@ -757,7 +788,7 @@ local function EnsureColGrips()
     if UI._colGrips or not UI.st or not UI.st.frame then
         return
     end
-    UI._colGrips = {MakeGrip(UI.st.frame, 1), MakeGrip(UI.st.frame, 2), MakeGrip(UI.st.frame, 3)}
+    UI._colGrips = { MakeGrip(UI.st.frame, 1), MakeGrip(UI.st.frame, 2), MakeGrip(UI.st.frame, 3) }
 end
 
 local function StyleHeaderCell(cellFrame, align)
@@ -786,7 +817,8 @@ local function MakeCellUpdater(opts)
         cellFrame.text:SetJustifyV(opts.justifyV or "MIDDLE")
         if opts.wordWrap then cellFrame.text:SetWordWrap(true) end
         if opts.maxLines and cellFrame.text.SetMaxLines then cellFrame.text:SetMaxLines(opts.maxLines) end
-        local c = (opts.useColColor and cols[column].color) and cols[column].color(data, cols, realrow, column, stable) or cell.color
+        local c = (opts.useColColor and cols[column].color) and cols[column].color(data, cols, realrow, column, stable) or
+            cell.color
         if c then
             cellFrame.text:SetTextColor(c.r or 1, c.g or 1, c.b or 1, c.a or 1)
         else
@@ -882,10 +914,10 @@ local function IsRunPB(record)
 end
 
 local function BuildHistoryTierItems()
-    local items = {{
+    local items = { {
         text = "Any",
         value = 0
-    }}
+    } }
     if not DB or not DB.runs then
         return items
     end
@@ -911,10 +943,10 @@ local function BuildHistoryTierItems()
 end
 
 local function BuildHistoryDungeonItems()
-    local items = {{
+    local items = { {
         text = "Any",
         value = 0
-    }}
+    } }
     if not DB or not DB.runs then
         return items
     end
@@ -1025,7 +1057,7 @@ local function RefreshHistoryTable()
 
         data[i] = {
             record = r,
-            cols = {{
+            cols = { {
                 value = FormatEpochShort(r.startedAt or r.endedAt or 0)
             }, {
                 value = r.instanceName or "—"
@@ -1042,7 +1074,7 @@ local function RefreshHistoryTable()
             }, {
                 value = deltaText,
                 color = deltaColor
-            }}
+            } }
         }
     end
 
@@ -1182,7 +1214,7 @@ local function EnsureHistoryUI()
     end, "Any")
 
     local dateItems = function()
-        return {{
+        return { {
             text = "Any",
             value = "any"
         }, {
@@ -1194,7 +1226,7 @@ local function EnsureHistoryUI()
         }, {
             text = "Last 30 days",
             value = "30d"
-        }}
+        } }
     end
 
     UI.history.dateDropDown = AddDropDown("Date created", filterW - 26, dateItems, function()
@@ -1204,7 +1236,7 @@ local function EnsureHistoryUI()
     end, "Any")
 
     local sortItems = function()
-        return {{
+        return { {
             text = "Most recent",
             value = "recent"
         }, {
@@ -1216,7 +1248,7 @@ local function EnsureHistoryUI()
         }, {
             text = "Slowest",
             value = "slowest"
-        }}
+        } }
     end
 
     UI.history.sortDropDown = AddDropDown("Sort", filterW - 26, sortItems, function()
@@ -1265,7 +1297,7 @@ local function EnsureHistoryUI()
         warn:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 6, -6)
         warn:SetText("Missing LibScrollingTable (lib-st).")
     else
-        local cols = {{
+        local cols = { {
             name = "Date",
             width = 130,
             align = "LEFT",
@@ -1300,7 +1332,7 @@ local function EnsureHistoryUI()
             width = 80,
             align = "RIGHT",
             DoCellUpdate = History_DoCellUpdate
-        }}
+        } }
 
         local st = ST:CreateST(cols, 18, 18, nil, listFrame)
         if st and st.frame then
@@ -1426,7 +1458,7 @@ local function EnsureUI()
         SS_Print("Missing lib-st (ScrollingTable). Embed lib-st-v4.1.3/Core.lua and load before SpeedSplits.lua.")
     end
 
-    local cols = {{
+    local cols = { {
         name = "Boss",
         width = 220,
         align = "LEFT",
@@ -1449,7 +1481,7 @@ local function EnsureUI()
         align = "CENTER",
         DoCellUpdate = Num_DoCellUpdate,
         color = DeltaColor
-    }}
+    } }
 
     local st = ST and ST:CreateST(cols, 12, 24, nil, bossFrame)
     if st and st.frame then
@@ -1564,7 +1596,7 @@ end
 local function SetTimerText(seconds, finished)
     if not UI.timerText then return end
     UI.timerText:SetText(FormatTime(seconds))
-    local c = finished and Colors.green or Colors.white
+    local c = finished and NS.Colors.deepGreen or NS.Colors.white
     UI.timerText:SetTextColor(c.r, c.g, c.b, c.a or 1)
 end
 
@@ -1574,15 +1606,15 @@ local function SetTimerDelta(delta)
         UI.timerDeltaText:SetText("")
         return
     end
-    UI.timerDeltaText:SetText(FormatDelta(delta))
-    local r, g, b = DeltaToRGB(delta, delta < 0)
-    UI.timerDeltaText:SetTextColor(r or 1, g or 1, b or 1, 1)
+    local _, _, _, hex = GetPaceColor(delta, false)
+    UI.timerDeltaText:SetText(hex .. FormatDelta(delta) .. "|r")
+    UI.timerDeltaText:SetTextColor(1, 1, 1, 1)
 end
 
 
 local function SetKillCount(killed, total)
     local text = string.format("Boss (%d/%d)", killed or 0, total or 0)
-    
+
     -- Ensure persistence by updating the column definition
     if UI.cols and UI.cols[1] then
         UI.cols[1].name = text
@@ -1591,7 +1623,7 @@ local function SetKillCount(killed, total)
     if UI.st and UI.st.head and UI.st.head.cols and UI.st.head.cols[1] then
         local cell = UI.st.head.cols[1]
         local fs = cell.text or cell.label or (cell.GetFontString and cell:GetFontString())
-        
+
         if not fs then
             local regions = { cell:GetRegions() }
             for _, r in ipairs(regions) do
@@ -1609,34 +1641,38 @@ local function SetKillCount(killed, total)
 end
 
 
-local function SetTotals(pbTotal, splitTotal, deltaTotal, deltaR, deltaG, deltaB)
+local function SetTotals(pbTotal, splitTotal, deltaTotal, r, g, b, hex)
     if not UI.totalPB or not UI.totalSplit or not UI.totalDelta then
         return
     end
 
     UI.totalPB:SetText(FormatTime(pbTotal))
-    UI.totalPB:SetTextColor(Colors.gold.r, Colors.gold.g, Colors.gold.b, 1)
+    UI.totalPB:SetTextColor(NS.Colors.gold.r, NS.Colors.gold.g, NS.Colors.gold.b, 1)
 
-    UI.totalSplit:SetText(FormatTime(splitTotal))
-    if deltaR then
-        UI.totalSplit:SetTextColor(deltaR, deltaG, deltaB, 1)
+    if splitTotal then
+        UI.totalSplit:SetText(FormatTime(splitTotal))
+        if r and g and b then
+            UI.totalSplit:SetTextColor(r, g, b, 1)
+        else
+            UI.totalSplit:SetTextColor(1, 1, 1, 1)
+        end
     else
+        UI.totalSplit:SetText("--:--.---")
         UI.totalSplit:SetTextColor(1, 1, 1, 1)
     end
 
     if deltaTotal == nil then
         UI.totalDelta:SetText("")
-        UI.totalDelta:SetTextColor(1, 1, 1, 1)
-        return
-    end
-
-    UI.totalDelta:SetText(FormatDelta(deltaTotal))
-    if deltaR then
-        UI.totalDelta:SetTextColor(deltaR, deltaG, deltaB, 1)
     else
-        UI.totalDelta:SetTextColor(1, 1, 1, 1)
+        UI.totalDelta:SetText(FormatDelta(deltaTotal))
+        if r and g and b then
+            UI.totalDelta:SetTextColor(r, g, b, 1)
+        else
+            UI.totalDelta:SetTextColor(1, 1, 1, 1)
+        end
     end
 end
+NS.SetTotals = SetTotals
 
 
 local function ClearBossRows()
@@ -1670,9 +1706,9 @@ local function RenderBossTable(entries, pbSegments)
             key = entry.key,
             cols = {
                 { value = entry.name or "Unknown" },
-                { value = (cumulativePB > 0) and FormatTime(cumulativePB) or "--:--.---" },
+                { value = (cumulativePB > 0) and FormatTime(cumulativePB) or "--:--.---", color = NS.Colors.gold },
                 { value = "" },
-                { value = "", color = nil }
+                { value = "" }
             }
         }
         map[entry.key] = #data
@@ -1703,34 +1739,24 @@ local function GetPreviousKilledCumulativeInTableOrder(run, bossKey)
     return previous
 end
 
-local function SetRowKilled(bossKey, splitCumulative, cumulativePB, deltaSeconds, deltaR, deltaG, deltaB, isGold)
+local function SetRowKilled(bossKey, splitCumulative, cumulativePB, deltaSeconds, r, g, b, hex, isGold)
     local realrow = UI.rowByBossKey and UI.rowByBossKey[bossKey]
     local row = realrow and UI.data and UI.data[realrow]
-    if not row then
-        return
-    end
+    if not row then return end
 
-    row.cols[2].value = FormatTime(cumulativePB)
+    row.cols[2].value = (cumulativePB > 0) and FormatTime(cumulativePB) or "--:--.---"
+    row.cols[2].color = NS.Colors.gold
     row.cols[3].value = FormatTime(splitCumulative)
-    
-    if isGold then
-        row.cols[3].color = Colors.gold
-    else
-        row.cols[3].color = { r = deltaR or 1, g = deltaG or 1, b = deltaB or 1, a = 1 }
-    end
+    row.cols[3].color = isGold and NS.Colors.gold or { r = r, g = g, b = b, a = 1 }
 
     if deltaSeconds == nil then
         row.cols[4].value = ""
         row.cols[4].color = nil
     else
         row.cols[4].value = FormatDelta(deltaSeconds)
-        row.cols[4].color = { r = deltaR or 1, g = deltaG or 1, b = deltaB or 1, a = 1 }
+        row.cols[4].color = { r = r, g = g, b = b, a = 1 }
     end
 
-    if UI.st and UI.st.IsRowVisible and UI.st.Refresh and UI.st:IsRowVisible(realrow) then
-        UI.st:Refresh()
-        return
-    end
     if UI.st and UI.st.Refresh then
         UI.st:Refresh()
     end
@@ -1742,31 +1768,25 @@ end
 -- =========================================================
 local Run = {
     inInstance = false,
-
     active = false,
     waitingForMove = false,
-
     instanceName = "",
     instanceType = "",
     difficultyID = 0,
     mapID = 0,
     journalID = nil,
     tier = 0,
-
     dungeonKey = "",
-
     bossSource = "none",
     entries = {},
     remaining = {},
     remainingCount = 0,
     killedCount = 0,
     kills = {},
-
     startGameTime = 0,
     endGameTime = 0,
     startedAt = 0,
     endedAt = 0,
-
     _bossLoadTries = 0,
     _bossLoaded = false
 }
@@ -1789,8 +1809,9 @@ local function StartTimerTicker()
 end
 
 -- =========================================================
--- Run state + PB update logic
+-- Run state (Logic)
 -- =========================================================
+
 local function ResetRun()
     Run.active = false
     Run.waitingForMove = false
@@ -1843,19 +1864,24 @@ local function RefreshTotals(isFinal)
     if isFinal then
         local duration = (Run.endGameTime > 0 and Run.startGameTime > 0) and (Run.endGameTime - Run.startGameTime) or nil
         local deltaTotal = (duration and pbTotal) and (duration - pbTotal) or nil
-        local r, g, b = DeltaToRGB(deltaTotal, deltaTotal and deltaTotal < 0)
-        SetTotals(pbTotal, duration, deltaTotal, r, g, b)
+
+        local existingPB = DB.pbRun[Run.dungeonKey]
+        local isPB = false
+        if duration and duration > 0 then
+            isPB = (not existingPB or not existingPB.duration or duration < (existingPB.duration - 0.001))
+        end
+
+        local r, g, b, hex = GetPaceColor(deltaTotal, isPB)
+        SetTotals(pbTotal, duration, deltaTotal, r, g, b, hex)
         SetTimerDelta(deltaTotal)
         return
     end
 
-    -- During run: show running total (sum of splits vs sum of PBs so far)
+    -- During run: show running total based on LAST KILLED BOSS in the sequence
     local lastBossKey = nil
     for _, entry in ipairs(Run.entries) do
         if Run.kills[entry.key] then
             lastBossKey = entry.key
-        else
-            break
         end
     end
 
@@ -1867,13 +1893,47 @@ local function RefreshTotals(isFinal)
             if entry.key == lastBossKey then break end
         end
         local delta = currentDuration - currentPB
-        local r, g, b = DeltaToRGB(delta, delta < 0)
-        SetTotals(pbTotal, currentDuration, delta, r, g, b)
+        local r, g, b, hex = GetPaceColor(delta, false)
+        SetTotals(pbTotal, currentDuration, delta, r, g, b, hex)
         SetTimerDelta(delta)
     else
         SetTotals(pbTotal, nil, nil)
         SetTimerDelta(nil)
     end
+end
+NS.Run = Run
+NS.UI = UI
+
+function NS.RefreshAllUI()
+    if not UI.bossFrame then return end
+    if UI.totalLabel then
+        UI.totalLabel:SetTextColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 1)
+    end
+    if NS.Run.inInstance and NS.Run._bossLoaded then
+        local pbTable = (NS.Run.dungeonKey ~= "") and (NS.DB.pbBoss[NS.Run.dungeonKey] or {}) or {}
+        RenderBossTable(NS.Run.entries, pbTable)
+
+        local runningPBTotal = 0
+        for _, entry in ipairs(NS.Run.entries) do
+            runningPBTotal = runningPBTotal + (pbTable[entry.key] or 0)
+            local splitCumulative = NS.Run.kills[entry.key]
+            if splitCumulative then
+                local prevCumulative = GetPreviousKilledCumulativeInTableOrder(NS.Run, entry.key)
+                local segTime = prevCumulative and (splitCumulative - prevCumulative) or splitCumulative
+                local oldSegPB = pbTable[entry.key]
+                local isGold = (not oldSegPB) or (segTime < oldSegPB)
+
+                local delta = splitCumulative - runningPBTotal
+                local r, g, b, hex = NS.GetPaceColor(delta, false)
+                SetRowKilled(entry.key, splitCumulative, runningPBTotal, delta, r, g, b, hex, isGold)
+            end
+        end
+        RefreshTotals(not NS.Run.active and NS.Run.endGameTime > 0)
+    end
+    if not NS.Run.active and NS.Run.endGameTime > 0 then
+        SetTimerText(NS.Run.endGameTime - NS.Run.startGameTime, true)
+    end
+    if UI.st and UI.st.Refresh then UI.st:Refresh() end
 end
 
 local function UpdateBestRunIfNeeded(durationSeconds)
@@ -2036,9 +2096,8 @@ local function RecordBossKill(encounterID, encounterName)
     end
 
     local deltaOverall = splitCumulative - cumulativePB_Comparison
-    local r, g, b = DeltaToRGB(deltaOverall, deltaOverall < 0)
-
-    SetRowKilled(bossKey, splitCumulative, cumulativePB_Display, deltaOverall, r, g, b, isNewSegmentPB)
+    local r, g, b, hex = GetPaceColor(deltaOverall, isNewSegmentPB)
+    SetRowKilled(bossKey, splitCumulative, cumulativePB_Display, deltaOverall, r, g, b, hex, isNewSegmentPB)
 
     SetKillCount(Run.killedCount, #Run.entries)
     RefreshTotals(false)
@@ -2232,7 +2291,11 @@ App:SetScript("OnEvent", function(_, event, ...)
             return
         end
         EnsureDB()
+        NS.UpdateColorsFromSettings()
         ResetRun()
+        if NS.CreateOptionsPanel then
+            NS.CreateOptionsPanel()
+        end
         return
     end
 

@@ -10,3 +10,4 @@ Libs/CallbackHandler-1.0/CallbackHandler-1.0.lua
 Libs/lib-st-v4.1.3/lib-st/Core.lua
 
 SpeedSplits.lua
+SpeedSplitsOptions.lua

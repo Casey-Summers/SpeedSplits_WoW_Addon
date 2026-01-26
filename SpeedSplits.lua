@@ -991,6 +991,53 @@ local function SplitColor(data, cols, realrow, column)
     return cell and cell.color or nil
 end
 
+local RefreshHistoryTable -- Forward declare
+
+local function DeleteRecord(record)
+    if not DB or not DB.RunHistory then return end
+    for i, r in ipairs(DB.RunHistory) do
+        if r == record then
+            table.remove(DB.RunHistory, i)
+            RefreshHistoryTable()
+            return
+        end
+    end
+end
+
+local Delete_DoCellUpdate = function(rowFrame, cellFrame, data, cols, row, realrow, column, fShow, stable)
+    if not fShow or not realrow then
+        if cellFrame.delBtn then cellFrame.delBtn:Hide() end
+        return
+    end
+
+    if not cellFrame.delBtn then
+        local btn = CreateFrame("Button", nil, cellFrame)
+        btn:SetSize(12, 12)
+        btn:SetPoint("CENTER", cellFrame, "CENTER", 0, 0)
+        btn:SetNormalTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Up")
+        btn:SetHighlightTexture("Interface\\Buttons\\UI-GroupLoot-Pass-Highlight")
+        btn:SetScript("OnClick", function(self)
+            local d = data[realrow]
+            if d and d.record then
+                DeleteRecord(d.record)
+            end
+        end)
+        btn:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText("Delete entry", 1, 0, 0)
+            GameTooltip:Show()
+        end)
+        btn:SetScript("OnLeave", function(self) GameTooltip:Hide() end)
+        cellFrame.delBtn = btn
+    end
+
+    -- Show/Hide based on mouseover logic is hard in pure cell update w/o hook
+    -- We'll just always show it for utility, or ideally check rowFrame:IsMouseOver()
+    -- But row hover logic requires hooking OnEnter of the row.
+    -- For now, always visible but subtle.
+    cellFrame.delBtn:Show()
+end
+
 -- =========================================================
 -- Runs History UI
 -- =========================================================
@@ -1112,7 +1159,7 @@ end
 
 local History_DoCellUpdate = MakeCellUpdater {} -- uses cols[column].align, cell.color
 
-local function RefreshHistoryTable()
+RefreshHistoryTable = function()
     if not UI or not UI.history or not UI.history.st then return end
 
     -- Safe filter check
@@ -1239,6 +1286,9 @@ local function RefreshHistoryTable()
                 {
                     value = deltaVal,
                     display = deltaText
+                },
+                {
+                    value = "" -- Delete col
                 }
             }
         }
@@ -1284,7 +1334,7 @@ local function EnsureHistoryUI()
     historyFrame:SetResizable(true)
     historyFrame:RegisterForDrag("LeftButton")
 
-    ApplyResizeBounds(historyFrame, 820, 300)
+    ApplyResizeBounds(historyFrame, 780, 300)
 
     historyFrame:SetScript("OnDragStart", function(self) self:StartMoving() end)
     historyFrame:SetScript("OnDragStop", function(self)
@@ -1381,15 +1431,16 @@ local function EnsureHistoryUI()
     else
         pcall(function()
             local cols = {
-                { name = "Date",               width = 110, align = "LEFT",  DoCellUpdate = History_DoCellUpdate },
-                { name = "Dungeon",            width = 180, align = "LEFT",  DoCellUpdate = History_DoCellUpdate },
-                { name = "Expansion",          width = 120, align = "LEFT",  DoCellUpdate = History_DoCellUpdate },
-                { name = "Time",               width = 90,  align = "RIGHT", DoCellUpdate = History_DoCellUpdate },
-                { name = "Result",             width = 80,  align = "LEFT",  DoCellUpdate = History_DoCellUpdate },
-                { name = "Difference from PB", width = 120, align = "RIGHT", DoCellUpdate = History_DoCellUpdate }
+                { name = "Date",               width = 110, align = "LEFT",   DoCellUpdate = History_DoCellUpdate },
+                { name = "Dungeon",            width = 180, align = "LEFT",   DoCellUpdate = History_DoCellUpdate },
+                { name = "Expansion",          width = 120, align = "LEFT",   DoCellUpdate = History_DoCellUpdate },
+                { name = "Time",               width = 80,  align = "RIGHT",  DoCellUpdate = History_DoCellUpdate },
+                { name = "Result",             width = 80,  align = "LEFT",   DoCellUpdate = History_DoCellUpdate },
+                { name = "Difference from PB", width = 120, align = "RIGHT",  DoCellUpdate = History_DoCellUpdate },
+                { name = "",                   width = 24,  align = "CENTER", DoCellUpdate = Delete_DoCellUpdate }
             }
 
-            local st = ST:CreateST(cols, 18, 18, nil, listFrame)
+            local st = ST:CreateST(cols, 18, nil, nil, listFrame)
             if st and st.frame then
                 st.frame:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 0, 0)
                 st.frame:SetPoint("BOTTOMRIGHT", listFrame, "BOTTOMRIGHT", 0, 0)

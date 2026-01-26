@@ -22,6 +22,20 @@ local EJ_INSTANCE_INDEX_MAX = 600
 local EJ_ENCOUNTER_INDEX_MAX = 80
 local CRITERIA_MAX = 80
 
+-- History Column Widths
+local HISTORY_COL_DEFAULTS = {
+    date = 130,
+    dungeon = 220, -- Elastic, but used for fallback
+    expansion = 140,
+    time = 80,
+    result = 130,
+    diff = 120,
+    delete = 30
+}
+
+local HISTORY_MIN_COL = 40
+local HISTORY_MIN_ELASTIC = 100
+
 -- =========================================================
 -- Small utilities
 -- =========================================================
@@ -1010,8 +1024,8 @@ local Delete_DoCellUpdate = function(rowFrame, cellFrame, data, cols, row, realr
 
     if not cellFrame.delBtn then
         local btn = CreateFrame("Button", nil, cellFrame)
-        btn:SetSize(14, 14) -- Increased size for better click target
-        btn:SetPoint("CENTER", cellFrame, "CENTER", 0, 0)
+        btn:SetSize(24, 24)
+        btn:SetPoint("LEFT", cellFrame, "LEFT", 4, 0)
         btn:SetNormalTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Up")
         btn:SetHighlightTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Highlight")
         btn:SetScript("OnClick", function(self)
@@ -1157,6 +1171,20 @@ local function DateRangeToMinEpoch(mode)
 end
 
 local History_DoCellUpdate = MakeCellUpdater {} -- uses cols[column].align, cell.color
+
+local function HistoryColumnSort(st, rowA, rowB, sortCollIndex)
+    local valA = rowA.cols[sortCollIndex].value
+    local valB = rowB.cols[sortCollIndex].value
+    if valA == nil and valB == nil then return false end
+    if valA == nil then return false end
+    if valB == nil then return true end
+
+    -- Case insensitive sort for strings
+    if type(valA) == "string" and type(valB) == "string" then
+        return valA:lower() < valB:lower()
+    end
+    return valA < valB
+end
 
 UI.RefreshHistoryTable = function()
     if not UI or not UI.history or not UI.history.st then return end
@@ -1319,9 +1347,218 @@ local function InitHistoryDropDown(dropDown, buildItems, getValue, setValue)
     end)
 end
 
+
+
+-- =========================================================
+-- History Resizable Columns Logic
+-- =========================================================
+
+local function History_SaveColWidths()
+    local ui = GetUISaved()
+    if not ui or not UI.history or not UI.history.colWidths then return end
+    ui.historyCols = ui.historyCols or {}
+    for k, v in pairs(UI.history.colWidths) do
+        ui.historyCols[k] = v
+    end
+end
+
+local function History_RestoreColWidths()
+    UI.history.colWidths = {}
+    local ui = GetUISaved()
+    local saved = ui and ui.historyCols
+    for k, def in pairs(HISTORY_COL_DEFAULTS) do
+        UI.history.colWidths[k] = (saved and saved[k]) and tonumber(saved[k]) or def
+    end
+end
+
+local function History_ApplyTableLayout()
+    local h = UI.history
+    if not h.frame or not h.st or not h.st.frame or not h.colWidths then return end
+
+    -- Calculation logic
+    local frameW = h.st.frame:GetWidth() or 1
+    local inset = GetScrollBarInset(h.st)
+    local available = math.max(frameW - inset, 1)
+
+    local w = h.colWidths
+
+    -- Dungeon is elastic
+    local used = w.date + w.expansion + w.time + w.result + w.diff + w.delete
+    local dungeonW = math.max(available - used, HISTORY_MIN_ELASTIC)
+
+    local cols = h.st.cols or h.st.head.cols
+    -- Update column objects if possible (depends on lib-st version internals, but SetDisplayCols is standard)
+    -- We need to reconstruct the "cols" definitions with new widths or update them in place?
+    -- lib-st typically stores width in .width.
+    -- However, we must ensure the `cols` table passed to CreateST is accessible.
+    -- We can access h.st.cols usually.
+
+    if not h.st.cols then return end
+
+    h.st.cols[1].width = w.date
+    h.st.cols[2].width = dungeonW
+    h.st.cols[3].width = w.expansion
+    h.st.cols[4].width = w.time
+    h.st.cols[5].width = w.result
+    h.st.cols[6].width = w.diff
+    h.st.cols[7].width = w.delete
+
+    if h.st.SetDisplayCols then
+        h.st:SetDisplayCols(h.st.cols)
+    end
+    if h.st.Refresh then
+        h.st:Refresh()
+    end
+
+    -- Update Grips
+    if h.grips then
+        local gv = -HEADER_H
+        local x = 0
+
+        -- Grip 1: Date | Dungeon
+        x = x + w.date
+        h.grips[1]:ClearAllPoints()
+        h.grips[1]:SetPoint("TOPLEFT", h.st.frame, "TOPLEFT", x - GRIP_HALFWIDTH, 0)
+        h.grips[1]:SetPoint("BOTTOMRIGHT", h.st.frame, "TOPLEFT", x + GRIP_HALFWIDTH, gv)
+
+        -- Grip 2: Dungeon | Expansion
+        x = x + dungeonW
+        h.grips[2]:ClearAllPoints()
+        h.grips[2]:SetPoint("TOPLEFT", h.st.frame, "TOPLEFT", x - GRIP_HALFWIDTH, 0)
+        h.grips[2]:SetPoint("BOTTOMRIGHT", h.st.frame, "TOPLEFT", x + GRIP_HALFWIDTH, gv)
+
+        -- Grip 3: Expansion | Time
+        x = x + w.expansion
+        h.grips[3]:ClearAllPoints()
+        h.grips[3]:SetPoint("TOPLEFT", h.st.frame, "TOPLEFT", x - GRIP_HALFWIDTH, 0)
+        h.grips[3]:SetPoint("BOTTOMRIGHT", h.st.frame, "TOPLEFT", x + GRIP_HALFWIDTH, gv)
+
+        -- Grip 4: Time | Result
+        x = x + w.time
+        h.grips[4]:ClearAllPoints()
+        h.grips[4]:SetPoint("TOPLEFT", h.st.frame, "TOPLEFT", x - GRIP_HALFWIDTH, 0)
+        h.grips[4]:SetPoint("BOTTOMRIGHT", h.st.frame, "TOPLEFT", x + GRIP_HALFWIDTH, gv)
+
+        -- Grip 5: Result | Diff
+        x = x + w.result
+        h.grips[5]:ClearAllPoints()
+        h.grips[5]:SetPoint("TOPLEFT", h.st.frame, "TOPLEFT", x - GRIP_HALFWIDTH, 0)
+        h.grips[5]:SetPoint("BOTTOMRIGHT", h.st.frame, "TOPLEFT", x + GRIP_HALFWIDTH, gv)
+
+        -- Grip 6: Diff | Delete
+        x = x + w.diff
+        h.grips[6]:ClearAllPoints()
+        h.grips[6]:SetPoint("TOPLEFT", h.st.frame, "TOPLEFT", x - GRIP_HALFWIDTH, 0)
+        h.grips[6]:SetPoint("BOTTOMRIGHT", h.st.frame, "TOPLEFT", x + GRIP_HALFWIDTH, gv)
+    end
+end
+
+local function History_BeginColDrag(which, startX)
+    local w = UI.history.colWidths
+    UI.history.drag = {
+        which = which,
+        startX = startX,
+        -- Snapshot current widths
+        date = w.date,
+        expansion = w.expansion,
+        time = w.time,
+        result = w.result,
+        diff = w.diff,
+        delete = w.delete
+    }
+end
+
+local function History_EndColDrag()
+    UI.history.drag = nil
+    History_SaveColWidths()
+end
+
+local function History_UpdateColDrag()
+    local h = UI.history
+    if not h.drag or not h.st or not h.st.frame then return end
+
+    local curX = GetCursorPosition()
+    local scale = h.st.frame:GetEffectiveScale()
+    curX = curX / scale
+    local dx = curX - h.drag.startX
+
+    local d = h.drag
+    local w = h.colWidths
+
+    -- Apply changes based on which grip
+    -- Remember: Dungeon (index 2) is elastic.
+
+    if d.which == 1 then
+        -- Date | Dungeon
+        w.date = Clamp(d.date + dx, HISTORY_MIN_COL, 500)
+    elseif d.which == 2 then
+        -- Dungeon | Expansion
+        -- Moving right decreases Expansion (to make room for elastic Dungeon)
+        w.expansion = Clamp(d.expansion - dx, HISTORY_MIN_COL, 500)
+    elseif d.which == 3 then
+        -- Expansion | Time
+        -- Standard trade-off
+        w.expansion = Clamp(d.expansion + dx, HISTORY_MIN_COL, 500)
+        w.time = Clamp(d.time - dx, HISTORY_MIN_COL, 500)
+    elseif d.which == 4 then
+        -- Time | Result
+        w.time = Clamp(d.time + dx, HISTORY_MIN_COL, 500)
+        w.result = Clamp(d.result - dx, HISTORY_MIN_COL, 500)
+    elseif d.which == 5 then
+        -- Result | Diff
+        w.result = Clamp(d.result + dx, HISTORY_MIN_COL, 500)
+        w.diff = Clamp(d.diff - dx, HISTORY_MIN_COL, 500)
+    elseif d.which == 6 then
+        -- Diff | Delete
+        w.diff = Clamp(d.diff + dx, HISTORY_MIN_COL, 500)
+        w.delete = Clamp(d.delete - dx, 10, 100)
+    end
+
+    History_ApplyTableLayout()
+end
+
+local function History_MakeGrip(parent, which)
+    local grip = CreateFrame("Frame", nil, parent)
+    grip:SetFrameStrata("HIGH")
+    grip:SetFrameLevel((parent:GetFrameLevel() or 0) + 10)
+    grip:EnableMouse(true)
+    grip:SetSize(10, 14)
+    ApplyThinSeparator(grip)
+
+    grip:SetScript("OnEnter", function() SetCursor("UI_RESIZE_CURSOR") end)
+    grip:SetScript("OnLeave", function() ResetCursor() end)
+
+    grip:SetScript("OnMouseDown", function(self, button)
+        if button ~= "LeftButton" then return end
+        local x = GetCursorPosition() / (UI.history.st.frame:GetEffectiveScale() or 1)
+        History_BeginColDrag(which, x)
+        self:SetScript("OnUpdate", History_UpdateColDrag)
+    end)
+
+    grip:SetScript("OnMouseUp", function(self)
+        self:SetScript("OnUpdate", nil)
+        History_EndColDrag()
+    end)
+
+    return grip
+end
+
+local function History_EnsureColGrips()
+    if UI.history.grips or not UI.history.st or not UI.history.st.frame then return end
+    UI.history.grips = {}
+    for i = 1, 6 do
+        UI.history.grips[i] = History_MakeGrip(UI.history.st.frame, i)
+    end
+end
+
 local function EnsureHistoryUI()
-    if UI.history.frame then return end
+    if UI.history.frame then
+        -- Already created, just show it if hidden?
+        return
+    end
     UI.history.filters = UI.history.filters or HistoryFilterDefaults()
+
+    History_RestoreColWidths()
 
     local historyFrame = CreateFrame("Frame", "SpeedSplitsHistoryFrame", UIParent, "BackdropTemplate")
     UI.history.frame = historyFrame -- Set early for safety
@@ -1342,7 +1579,7 @@ local function EnsureHistoryUI()
     historyFrame:SetResizable(true)
     historyFrame:RegisterForDrag("LeftButton")
 
-    ApplyResizeBounds(historyFrame, 780, 200)
+    ApplyResizeBounds(historyFrame, 850, 200)
 
     historyFrame:SetScript("OnDragStart", function(self) self:StartMoving() end)
     historyFrame:SetScript("OnDragStop", function(self)
@@ -1350,7 +1587,7 @@ local function EnsureHistoryUI()
         SaveFrameGeom("history", self)
     end)
 
-    if not RestoreFrameGeom("history", historyFrame, 800, 500) then
+    if not RestoreFrameGeom("history", historyFrame, 850, 500) then
         historyFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     end
 
@@ -1438,14 +1675,15 @@ local function EnsureHistoryUI()
         warn:SetText("Missing LibScrollingTable (lib-st).")
     else
         pcall(function()
+            local w = UI.history.colWidths
             local cols = {
-                { name = "Date",               width = 110, align = "LEFT",   DoCellUpdate = History_DoCellUpdate },
-                { name = "Dungeon",            width = 180, align = "LEFT",   DoCellUpdate = History_DoCellUpdate },
-                { name = "Expansion",          width = 120, align = "LEFT",   DoCellUpdate = History_DoCellUpdate },
-                { name = "Time",               width = 80,  align = "RIGHT",  DoCellUpdate = History_DoCellUpdate },
-                { name = "Result",             width = 110, align = "CENTER", DoCellUpdate = History_DoCellUpdate },
-                { name = "Difference from PB", width = 120, align = "RIGHT",  DoCellUpdate = History_DoCellUpdate },
-                { name = "",                   width = 50,  align = "CENTER", DoCellUpdate = Delete_DoCellUpdate } -- Increased width for delete button
+                { name = "Date",               width = w.date,      align = "LEFT",   DoCellUpdate = History_DoCellUpdate, sort = HistoryColumnSort },
+                { name = "Dungeon",            width = w.dungeon,   align = "LEFT",   DoCellUpdate = History_DoCellUpdate, sort = HistoryColumnSort },
+                { name = "Expansion",          width = w.expansion, align = "LEFT",   DoCellUpdate = History_DoCellUpdate, sort = HistoryColumnSort },
+                { name = "Time",               width = w.time,      align = "RIGHT",  DoCellUpdate = History_DoCellUpdate, sort = HistoryColumnSort },
+                { name = "Result",             width = w.result,    align = "CENTER", DoCellUpdate = History_DoCellUpdate, sort = HistoryColumnSort },
+                { name = "Difference from PB", width = w.diff,      align = "RIGHT",  DoCellUpdate = History_DoCellUpdate, sort = HistoryColumnSort },
+                { name = "",                   width = w.delete,    align = "CENTER", DoCellUpdate = Delete_DoCellUpdate }
             }
 
             local st = ST:CreateST(cols, 12, 18, nil, listFrame)
@@ -1458,6 +1696,10 @@ local function EnsureHistoryUI()
                     end
                 end
                 UI.history.st = st
+
+                -- Initialize grips and layout
+                History_EnsureColGrips()
+                History_ApplyTableLayout()
             end
         end)
     end
@@ -1480,10 +1722,17 @@ local function EnsureHistoryUI()
 
     historyFrame:SetScript("OnSizeChanged", function(self)
         UpdateHistoryLayout()
+        History_ApplyTableLayout()
     end)
 
     UpdateHistoryLayout() -- Initial layout calculation
     UI.history.frame = historyFrame
+
+    -- Delay ensure grips until frame is somewhat ready or just do it now if ST exists
+    if UI.history.st then
+        History_EnsureColGrips()
+        History_ApplyTableLayout()
+    end
 
     historyFrame:Hide()
     if UI.RefreshHistoryTable then UI.RefreshHistoryTable() end

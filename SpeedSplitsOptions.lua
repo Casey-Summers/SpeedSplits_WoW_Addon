@@ -127,9 +127,110 @@ function NS.CreateOptionsPanel()
         table.insert(swatches, cp)
     end
 
+    -- Typography section
+    local typeTitle = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    typeTitle:SetPoint("TOPLEFT", colorsTitle, "TOPLEFT", 260, 0)
+    typeTitle:SetText("Typography")
+
+    local function CreateSlider(parent, label, minV, maxV, typeKey, field)
+        local s = CreateFrame("Slider", nil, parent, "OptionsSliderTemplate")
+        s:SetMinMaxValues(minV, maxV)
+        s:SetValueStep(1)
+        s:SetObeyStepOnDrag(true)
+        s:SetWidth(180)
+
+        local text = s:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        text:SetPoint("BOTTOM", s, "TOP", 0, 4)
+
+        local val = NS.DB.settings.fonts[typeKey][field]
+        s:SetValue(val)
+        text:SetText(string.format("%s: %d", label, val))
+
+        s:SetScript("OnValueChanged", function(self, value)
+            NS.DB.settings.fonts[typeKey][field] = math.floor(value)
+            text:SetText(string.format("%s: %d", label, value))
+            NS.RefreshAllUI()
+        end)
+        return s
+    end
+
+    local function CreateCheckbox(parent, label, typeKey, flag)
+        local cb = CreateFrame("CheckButton", nil, parent, "InterfaceOptionsCheckButtonTemplate")
+        cb.Text:SetText(label)
+        local cur = NS.DB.settings.fonts[typeKey].flags
+        cb:SetChecked(cur:find(flag) ~= nil)
+        cb:SetScript("OnClick", function(self)
+            local f = NS.DB.settings.fonts[typeKey]
+            if self:GetChecked() then
+                if not f.flags:find(flag) then
+                    f.flags = f.flags == "" and flag or (f.flags .. ", " .. flag)
+                end
+            else
+                f.flags = f.flags:gsub(",%s*" .. flag, ""):gsub(flag .. ",%s*", ""):gsub(flag, "")
+            end
+            NS.RefreshAllUI()
+        end)
+        return cb
+    end
+
+    local fonts = {
+        { name = "Friz Quadrata", path = "Fonts\\FRIZQT__.TTF" },
+        { name = "Arial Narrow",  path = "Fonts\\ARIALN.TTF" },
+        { name = "Skurri",        path = "Fonts\\skurri.ttf" },
+        { name = "Morpheus",      path = "Fonts\\MORPHEUS.ttf" },
+    }
+
+    local function CreateFontDropdown(parent, label, typeKey)
+        local f = CreateFrame("Frame", "SSFontDD" .. typeKey, parent, "UIDropDownMenuTemplate")
+        local t = f:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        t:SetPoint("BOTTOMLEFT", f, "TOPLEFT", 16, 2)
+        t:SetText(label)
+        UIDropDownMenu_SetWidth(f, 140)
+
+        local function OnClick(self)
+            UIDropDownMenu_SetSelectedValue(f, self.value)
+            UIDropDownMenu_SetText(f, self.text)
+            NS.DB.settings.fonts[typeKey].font = self.value
+            NS.RefreshAllUI()
+        end
+        UIDropDownMenu_Initialize(f, function()
+            for _, info in ipairs(fonts) do
+                local item = UIDropDownMenu_CreateInfo()
+                item.text = info.name
+                item.value = info.path
+                item.func = OnClick
+                UIDropDownMenu_AddButton(item)
+            end
+        end)
+        local cur = NS.DB.settings.fonts[typeKey].font
+        UIDropDownMenu_SetSelectedValue(f, cur)
+        for _, info in ipairs(fonts) do
+            if info.path == cur then UIDropDownMenu_SetText(f, info.name) end
+        end
+        return f
+    end
+
+    local bossSize = CreateSlider(panel, "Boss Text Size", 8, 24, "boss", "size")
+    bossSize:SetPoint("TOPLEFT", typeTitle, "BOTTOMLEFT", 8, -24)
+
+    local bossFont = CreateFontDropdown(panel, "Boss Font", "boss")
+    bossFont:SetPoint("TOPLEFT", bossSize, "BOTTOMLEFT", -16, -24)
+
+    local numSize = CreateSlider(panel, "Splits Text Size", 8, 24, "num", "size")
+    numSize:SetPoint("TOPLEFT", bossFont, "BOTTOMLEFT", 16, -32)
+
+    local numFont = CreateFontDropdown(panel, "Splits Font", "num")
+    numFont:SetPoint("TOPLEFT", numSize, "BOTTOMLEFT", -16, -24)
+
+    local bossBold = CreateCheckbox(panel, "Bold Boss Names", "boss", "THICKOUTLINE")
+    bossBold:SetPoint("TOPLEFT", numFont, "BOTTOMLEFT", 12, -8)
+
+    local numBold = CreateCheckbox(panel, "Bold Splits", "num", "THICKOUTLINE")
+    numBold:SetPoint("TOPLEFT", bossBold, "BOTTOMLEFT", 0, -4)
+
     local resetBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     resetBtn:SetSize(120, 22)
-    resetBtn:SetPoint("TOPLEFT", lastFrame, "BOTTOMLEFT", 0, -24)
+    resetBtn:SetPoint("BOTTOMLEFT", 16, 16)
     resetBtn:SetText("Reset Defaults")
     resetBtn:SetScript("OnClick", function()
         NS.DB.settings.colors = {
@@ -141,8 +242,18 @@ function NS.CreateOptionsPanel()
             lightRed   = "ffff7777",
             darkRed    = "ffcc1200",
         }
+        NS.DB.settings.fonts = {
+            boss = { size = 12, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
+            num  = { size = 11, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
+        }
         NS.UpdateColorsFromSettings()
         for _, s in ipairs(swatches) do s.UpdateSwatch() end
+        bossSize:SetValue(12)
+        numSize:SetValue(11)
+        bossBold:SetChecked(false)
+        numBold:SetChecked(false)
+        UIDropDownMenu_SetText(bossFont, "Friz Quadrata")
+        UIDropDownMenu_SetText(numFont, "Friz Quadrata")
         NS.RefreshAllUI()
     end)
 

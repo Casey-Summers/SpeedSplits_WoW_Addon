@@ -169,6 +169,10 @@ local function EnsureDB()
         lightRed   = "ffff7777",
         darkRed    = "ffcc1200",
     }
+    SpeedSplitsDB.settings.fonts = SpeedSplitsDB.settings.fonts or {
+        boss = { size = 12, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
+        num  = { size = 11, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
+    }
 
     DB = SpeedSplitsDB
     NS.DB = DB
@@ -182,6 +186,12 @@ function NS.UpdateColorsFromSettings()
             NS.Colors[k] = HexToColor(hex)
         end
     end
+end
+
+function NS.ApplyFontToFS(fs, typeKey)
+    if not fs or not NS.DB or not NS.DB.settings or not NS.DB.settings.fonts then return end
+    local f = NS.DB.settings.fonts[typeKey] or NS.DB.settings.fonts.num
+    fs:SetFont(f.font or "Fonts\\FRIZQT__.TTF", f.size or 12, f.flags or "OUTLINE")
 end
 
 local ScrollingTable
@@ -795,9 +805,7 @@ local function StyleHeaderCell(cellFrame, align)
     if not cellFrame or not cellFrame.text then return end
     cellFrame.text:SetJustifyH(align or "CENTER")
     cellFrame.text:SetJustifyV("TOP")
-    cellFrame.text:SetFontObject(GameFontNormalSmall)
-    local f, s = cellFrame.text:GetFont()
-    cellFrame.text:SetFont(f, s or 10, "OUTLINE, THICKOUTLINE")
+    NS.ApplyFontToFS(cellFrame.text, "num")
     cellFrame.text:SetTextColor(1, 0.82, 0, 1) -- Golden titles
 end
 
@@ -835,7 +843,7 @@ local Boss_DoCellUpdate = function(rowFrame, cellFrame, data, cols, row, realrow
     local cell = e and e.cols and e.cols[column]
     if not cell then return end
     cellFrame.text:SetText(cell.value or "")
-    cellFrame.text:SetFontObject(GameFontHighlight)
+    NS.ApplyFontToFS(cellFrame.text, "boss")
     cellFrame.text:SetJustifyH("LEFT")
     cellFrame.text:SetJustifyV("MIDDLE")
     cellFrame.text:SetWordWrap(false)
@@ -853,7 +861,7 @@ local Num_DoCellUpdate = function(rowFrame, cellFrame, data, cols, row, realrow,
     local cell = e and e.cols and e.cols[column]
     if not cell then return end
     cellFrame.text:SetText(cell.value or "")
-    cellFrame.text:SetFontObject(GameFontHighlightSmall)
+    NS.ApplyFontToFS(cellFrame.text, "num")
     cellFrame.text:SetJustifyH("CENTER")
     cellFrame.text:SetJustifyV("MIDDLE")
     cellFrame.text:ClearAllPoints()
@@ -1908,7 +1916,17 @@ function NS.RefreshAllUI()
     if not UI.bossFrame then return end
     if UI.totalLabel then
         UI.totalLabel:SetTextColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 1)
+        NS.ApplyFontToFS(UI.totalLabel, "num")
     end
+    if UI.totalPB then NS.ApplyFontToFS(UI.totalPB, "num") end
+    if UI.totalSplit then NS.ApplyFontToFS(UI.totalSplit, "num") end
+    if UI.totalDelta then NS.ApplyFontToFS(UI.totalDelta, "num") end
+    if UI.timerText then
+        local f = NS.DB.settings.fonts.num
+        UI.timerText:SetFont(f.font or "Fonts\\FRIZQT__.TTF", (f.size or 12) * 2, f.flags or "OUTLINE")
+    end
+    if UI.timerDeltaText then NS.ApplyFontToFS(UI.timerDeltaText, "num") end
+
     if NS.Run.inInstance and NS.Run._bossLoaded then
         local pbTable = (NS.Run.dungeonKey ~= "") and (NS.DB.pbBoss[NS.Run.dungeonKey] or {}) or {}
         RenderBossTable(NS.Run.entries, pbTable)

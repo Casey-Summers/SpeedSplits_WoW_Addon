@@ -226,7 +226,7 @@ local function EnsureDB()
     SpeedSplitsDB.Settings.fonts.timer  = SpeedSplitsDB.Settings.fonts.timer or
         { size = 30, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" }
     SpeedSplitsDB.Settings.fonts.header = SpeedSplitsDB.Settings.fonts.header or
-        { size = 12, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" }
+        { size = 14, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" }
     SpeedSplitsDB.Settings.historyScale = SpeedSplitsDB.Settings.historyScale or 1.0
     SpeedSplitsDB.Settings.titleTexture = SpeedSplitsDB.Settings.titleTexture or NS.TitleTextures[1]
 
@@ -379,13 +379,35 @@ end
 local function FindJournalTierAndInstanceIDByName(instanceName)
     local wanted = NormalizeName(instanceName)
     if wanted == "" then return nil, nil end
+
     local foundTier, foundID
+    -- Pass 1: Exact normalized match
     ForEachEJInstance(function(ti, instanceID, name)
         if NormalizeName(name) == wanted then
-            foundTier, foundID = ti, instanceID; return true
+            foundTier, foundID = ti, instanceID
+            return true
         end
     end)
-    return foundTier, foundID
+    if foundID then return foundTier, foundID end
+
+    -- Pass 2: Fuzzy matching (substrings)
+    -- We want the "closest" match to avoid AQ20 vs AQ40 confusion.
+    local bestTier, bestID, bestLen = nil, nil, 999
+    ForEachEJInstance(function(ti, instanceID, name)
+        local normalizedEJ = NormalizeName(name)
+        if normalizedEJ:find(wanted, 1, true) or wanted:find(normalizedEJ, 1, true) then
+            -- If multiple fuzzy matches exist, pick the one with the smallest length difference
+            -- or prioritize keywords like "Temple" if they exist in the target.
+            local diff = math.abs(#normalizedEJ - #wanted)
+            if diff < bestLen then
+                bestLen = diff
+                bestTier = ti
+                bestID = instanceID
+            end
+        end
+    end)
+
+    return bestTier, bestID
 end
 
 local function GetJournalTierAndInstanceIDForCurrentInstance()
@@ -939,7 +961,7 @@ local function EnsureColGrips()
     UI._colGrips = { MakeGrip(UI.st.frame, 1), MakeGrip(UI.st.frame, 2), MakeGrip(UI.st.frame, 3) }
 end
 
-local function StyleHeaderCell(cell, align, multiplier)
+local function StyleHeaderCell(cell, align, multiplier, text)
     if not cell then return end
     local fs = cell.text or cell.label or (cell.GetFontString and cell:GetFontString())
     if not fs then
@@ -952,6 +974,8 @@ local function StyleHeaderCell(cell, align, multiplier)
     end
     if not fs then return end
 
+    if text then fs:SetText(text) end
+
     fs:SetJustifyH(align or "CENTER")
     fs:SetJustifyV("MIDDLE")
 
@@ -959,10 +983,9 @@ local function StyleHeaderCell(cell, align, multiplier)
     NS.ApplyFontToFS(fs, "header", multiplier)
 
     fs:SetTextColor(1, 0.82, 0, 1)
-    fs:SetHeight(HEADER_H * (multiplier or 1))
+    fs:SetDrawLayer("OVERLAY", 7) -- Match Boss Counter's overlay priority
     fs:ClearAllPoints()
-    fs:SetPoint("LEFT", cell, "LEFT", 4, 0)
-    fs:SetPoint("RIGHT", cell, "RIGHT", -4, 0)
+    fs:SetAllPoints(cell)
 end
 
 local function Model_DoCellUpdate(rowFrame, cellFrame, data, cols, row, realrow, column, fShow, stable)
@@ -1459,14 +1482,14 @@ UI.RefreshHistoryTable = function()
                     color = rowColor
                 },
                 {
-                    value = duration,
-                    display = duration and FormatTime(duration) or "--:--.---",
-                    color = rowColor
-                },
-                {
                     value = resultOrder,
                     display = resultText,
                     color = resultColor
+                },
+                {
+                    value = duration,
+                    display = duration and FormatTime(duration) or "--:--.---",
+                    color = rowColor
                 },
                 {
                     value = deltaPB,
@@ -1838,8 +1861,8 @@ local function EnsureHistoryUI()
                 { name = "Date",               width = w.date,      align = "LEFT",   DoCellUpdate = History_DoCellUpdate, sort = HistoryColumnSort },
                 { name = "Dungeon",            width = w.dungeon,   align = "LEFT",   DoCellUpdate = History_DoCellUpdate, sort = HistoryColumnSort },
                 { name = "Expansion",          width = w.expansion, align = "LEFT",   DoCellUpdate = History_DoCellUpdate, sort = HistoryColumnSort },
-                { name = "Time",               width = w.time,      align = "RIGHT",  DoCellUpdate = History_DoCellUpdate, sort = HistoryColumnSort },
                 { name = "Result",             width = w.result,    align = "CENTER", DoCellUpdate = History_DoCellUpdate, sort = HistoryColumnSort },
+                { name = "Time",               width = w.time,      align = "CENTER", DoCellUpdate = History_DoCellUpdate, sort = HistoryColumnSort },
                 { name = "Difference from PB", width = w.diff,      align = "RIGHT",  DoCellUpdate = History_DoCellUpdate, sort = HistoryColumnSort },
                 { name = "",                   width = w.delete,    align = "CENTER", DoCellUpdate = Delete_DoCellUpdate }
             }
@@ -2084,35 +2107,60 @@ local function EnsureUI()
         color = DeltaColor
     } }
 
-    local st = ST and ST:CreateST(cols, 12, 24, nil, bossFrame)
+    -- 6 rows visible at a time to ensure scrolling works on small raids/resized frames.
+    -- We pass a width and height so the scrollframe correctly clips rows.
+    local st = ST and ST:CreateST(cols, 6, 24, nil, bossFrame)
+    if st then
+        st.frame:SetClipsChildren(true)
+    end
     UI.st = st
     if st and st.frame then
         SetHoverBackdrop(st.frame, 0.85)
-        if st.head and st.head.cols then
-            for i = 1, #cols do
-                StyleHeaderCell(st.head.cols[i], cols[i].align)
+        if st.head then
+            st.head:SetFrameStrata("HIGH") -- Absolute top-most strata for headers
+            st.head:SetFrameLevel(100)     -- Extremely high frame level
+            if st.head.cols then
+                for i = 1, #cols do
+                    StyleHeaderCell(st.head.cols[i], cols[i].align)
+                end
             end
         end
     end
 
     -- Title bar 'tab' (Header portion)
-    local titleTab = CreateFrame("Frame", nil, bossFrame, "BackdropTemplate")
-    titleTab:SetHeight(TOP_BAR_H)
-    titleTab:SetClipsChildren(true)
-    titleTab:SetBackdrop({
+    local bgFrame = CreateFrame("Frame", nil, bossFrame, "BackdropTemplate")
+    bgFrame:SetHeight(TOP_BAR_H)
+    bgFrame:SetPoint("TOPLEFT", bossFrame, "TOPLEFT", 0, 0)
+    bgFrame:SetPoint("TOPRIGHT", bossFrame, "TOPRIGHT", 0, 0)
+    bgFrame:SetFrameLevel(math.max(5, bossFrame:GetFrameLevel() + 2))
+    bgFrame:SetClipsChildren(true)
+    bgFrame:SetBackdrop({
+        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
         edgeFile = "Interface\\Buttons\\WHITE8X8",
         edgeSize = 1,
     })
-    titleTab:SetBackdropColor(0, 0, 0, 0)
-    UI.titleTab = titleTab
+    bgFrame:SetBackdropColor(0, 0, 0, 0.4) -- Translucent Frame (1)
+    UI.titleTab = bgFrame
 
-    local titleBg = titleTab:CreateTexture(nil, "BACKGROUND")
-    -- Bleed out significantly (oversize & crop) to ensure the texture fills the frame completely
-    titleBg:SetPoint("TOPLEFT", titleTab, "TOPLEFT", -200, 20)
-    titleBg:SetPoint("BOTTOMRIGHT", titleTab, "BOTTOMRIGHT", 200, -20)
+    local titleBg = bgFrame:CreateTexture(nil, "BACKGROUND", nil, -8) -- Texture Background (2)
+    titleBg:SetPoint("TOPLEFT", bgFrame, "TOPLEFT", -200, 20)
+    titleBg:SetPoint("BOTTOMRIGHT", bgFrame, "BOTTOMRIGHT", 200, -20)
     UI.titleBg = titleBg
 
-    local killCountText = titleTab:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    -- Re-parent and align the table headers to the background frame
+    if UI.st and UI.st.head then
+        UI.st.head:SetParent(bgFrame)
+        UI.st.head:SetAllPoints(bgFrame)
+        UI.st.head:SetFrameLevel(bgFrame:GetFrameLevel() + 2) -- Ensure it is above the background
+        if UI.st.head.cols then
+            for i = 1, #cols do
+                StyleHeaderCell(UI.st.head.cols[i], cols[i].align)
+            end
+        end
+    end
+
+    local killCountText = bgFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    killCountText:SetDrawLayer("OVERLAY", 7) -- Headings (3)
     killCountText:SetPoint("LEFT", 10, 0)
     NS.ApplyFontToFS(killCountText, "header", 1.25)
     UI.killCountText = killCountText
@@ -2310,9 +2358,9 @@ local function SetKillCount(killed, total)
     local displayName = (NS.Run and NS.Run.instanceName ~= "") and NS.Run.instanceName or "Boss"
     local text = string.format("%s (%d/%d)", displayName, killed or 0, total or 0)
 
-    -- Ensure persistence by updating the column definition (but remove the count from the header label)
+    -- Ensure persistence by updating the column definition
     if UI.cols and UI.cols[1] then
-        UI.cols[1].name = "" -- Remove text from table header to avoid duplication with tab
+        -- We no longer clear the name, but col 1 and 2 are usually empty anyway.
     end
 
     if UI.killCountText then
@@ -2333,8 +2381,9 @@ local function SetKillCount(killed, total)
             end
         end
 
-        if fs and fs.SetText then
-            fs:SetText("") -- Clear header to avoid overlap with titleTab
+        if fs then
+            -- We keep the first column header text empty because the Instance Name is in the titleTab
+            fs:SetText("")
         end
     end
 end
@@ -2620,6 +2669,9 @@ function NS.RefreshAllUI()
     if UI.totalFrame then
         UI.totalFrame:SetBackdropBorderColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 0.5)
     end
+    if UI.killCountText then
+        NS.ApplyFontToFS(UI.killCountText, "header", 1.25)
+    end
     if UI.totalPB then NS.ApplyFontToFS(UI.totalPB, "num") end
     if UI.totalSplit then NS.ApplyFontToFS(UI.totalSplit, "num") end
     if UI.totalDelta then NS.ApplyFontToFS(UI.totalDelta, "num") end
@@ -2637,7 +2689,7 @@ function NS.RefreshAllUI()
     -- Sync Header fonts and styles
     if UI.st and UI.st.head and UI.st.head.cols then
         for i = 1, #UI.st.head.cols do
-            StyleHeaderCell(UI.st.head.cols[i], UI.cols[i].align, 1.0)
+            StyleHeaderCell(UI.st.head.cols[i], UI.cols[i].align, 1.0, UI.cols[i].name)
         end
     end
 

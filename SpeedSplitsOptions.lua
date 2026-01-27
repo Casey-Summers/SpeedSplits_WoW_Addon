@@ -118,6 +118,8 @@ local function CreateSectionHeader(parent, text, xOfs, yOfs)
     return header
 end
 
+
+
 function NS.CreateOptionsPanel()
     local panel = CreateFrame("Frame", "SpeedSplitsOptionsPanel", UIParent)
     panel.name = "SpeedSplits"
@@ -127,8 +129,8 @@ function NS.CreateOptionsPanel()
     title:SetText("SpeedSplits | Advanced Configuration")
     title:SetScale(1.2)
 
-    -- Appearance Column (Left)
-    local appearanceHeader = CreateSectionHeader(panel, "General Aesthetics", 16, -60)
+    -- Theme Column (Left)
+    local appearanceHeader = CreateSectionHeader(panel, "Theme & Accents", 16, -60)
 
     -- Colors Section
     local colorsSub = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
@@ -164,6 +166,7 @@ function NS.CreateOptionsPanel()
     textureSub:SetText("Header Background Texture")
     textureSub:SetTextColor(0.4, 0.8, 1, 1)
 
+    -- Anchor texture previews further down if they were overlapping
     local texButtons = {}
     local function UpdateSelection()
         for _, b in ipairs(texButtons) do
@@ -307,31 +310,7 @@ function NS.CreateOptionsPanel()
     local tSize, tBold, tFont = CreateTypeRow(panel, "Main Timer", "timer", -192)
     local hSize, hBold, hFont = CreateTypeRow(panel, "Table Headers", "header", -279)
 
-    -- Universal History Scale (Bottom Typography)
-    local function CreateHistorySlider(parent, label, minV, maxV)
-        local s = CreateFrame("Slider", nil, parent, "OptionsSliderTemplate")
-        s:SetMinMaxValues(minV, maxV)
-        s:SetValueStep(0.05)
-        s:SetObeyStepOnDrag(true)
-        s:SetWidth(280)
 
-        local text = s:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-        text:SetPoint("BOTTOM", s, "TOP", 0, 4)
-
-        local val = NS.DB.Settings.historyScale or 1.0
-        s:SetValue(val)
-        text:SetText(string.format("%s: %.2f", label, val))
-
-        s:SetScript("OnValueChanged", function(self, value)
-            NS.DB.Settings.historyScale = tonumber(string.format("%.2f", value))
-            text:SetText(string.format("%s: %.2f", label, value))
-            NS.RefreshAllUI()
-        end)
-        return s
-    end
-
-    local historyScale = CreateHistorySlider(panel, "Run History Panel Overall Scale", 0.5, 2.0)
-    historyScale:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, -380)
 
     -- Action Buttons
     local resetBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
@@ -360,7 +339,7 @@ function NS.CreateOptionsPanel()
 
         bSize:SetValue(14); nSize:SetValue(17); tSize:SetValue(30); hSize:SetValue(12);
         bBold:SetChecked(false); nBold:SetChecked(false); tBold:SetChecked(false); hBold:SetChecked(false);
-        historyScale:SetValue(1.0)
+
         UpdateSelection()
         NS.RefreshAllUI()
     end)

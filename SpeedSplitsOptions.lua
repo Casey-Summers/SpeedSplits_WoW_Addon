@@ -255,6 +255,32 @@ function NS.CreateOptionsPanel()
     local headerBold = CreateCheckbox(panel, "Bold Headers", "header", "THICKOUTLINE")
     headerBold:SetPoint("TOPLEFT", timerBold, "BOTTOMLEFT", 0, -4)
 
+    -- History specific
+    local function CreateHistorySlider(parent, label, minV, maxV)
+        local s = CreateFrame("Slider", nil, parent, "OptionsSliderTemplate")
+        s:SetMinMaxValues(minV, maxV)
+        s:SetValueStep(0.05)
+        s:SetObeyStepOnDrag(true)
+        s:SetWidth(180)
+
+        local text = s:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+        text:SetPoint("BOTTOM", s, "TOP", 0, 4)
+
+        local val = NS.DB.Settings.historyScale or 1.0
+        s:SetValue(val)
+        text:SetText(string.format("%s: %.2f", label, val))
+
+        s:SetScript("OnValueChanged", function(self, value)
+            NS.DB.Settings.historyScale = tonumber(string.format("%.2f", value))
+            text:SetText(string.format("%s: %.2f", label, value))
+            NS.RefreshAllUI()
+        end)
+        return s
+    end
+
+    local historyScale = CreateHistorySlider(panel, "History Panel Scale", 0.5, 2.0)
+    historyScale:SetPoint("TOPLEFT", headerFont, "BOTTOMLEFT", 16, -32)
+
     local resetBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     resetBtn:SetSize(140, 22)
     resetBtn:SetPoint("BOTTOMLEFT", 16, 16)
@@ -274,6 +300,7 @@ function NS.CreateOptionsPanel()
             timer  = { size = 30, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
             header = { size = 12, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
         }
+        NS.DB.Settings.historyScale = 1.0
         NS.UpdateColorsFromSettings()
         for _, s in ipairs(swatches) do s.UpdateSwatch() end
 
@@ -298,6 +325,8 @@ function NS.CreateOptionsPanel()
         headerBold:SetChecked(false)
         _G.UIDropDownMenu_SetText(headerFont, "Friz Quadrata")
         _G.UIDropDownMenu_SetSelectedValue(headerFont, "Fonts\\FRIZQT__.TTF")
+
+        historyScale:SetValue(1.0)
 
         NS.RefreshAllUI()
     end)

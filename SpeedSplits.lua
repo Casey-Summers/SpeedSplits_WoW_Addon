@@ -1,29 +1,32 @@
 -- SpeedSplits.lua
 -- Retail WoW addon: instance splits with objective-first boss discovery + EJ fallback.
-local ADDON_NAME, NS = ...
-local App = CreateFrame("Frame")
-NS.App = App
+local ADDON_NAME, NS            = ...
+local App                       = CreateFrame("Frame")
+NS.App                          = App
 
 -- Constants
-local COL_MAX_PB_SPLIT = 260
-local COL_MAX_DELTA = 200
-local COL_MIN_BOSS = 20
-local COL_MIN_NUM = 85
-local COL_MIN_DELTA_TITLE = 85
-local GRIP_HALFWIDTH = 5
-local HEADER_H = 18
-local RIGHT_INSET_DEFAULT = 26
-local TOP_BAR_H = 28
-local TOP_BAR_GAP = 4
-local BOSS_LOAD_MAX_TRIES = 40
-local BOSS_LOAD_RETRY_DELAY = 0.25
-local RUNS_MAX = 200
-local EJ_INSTANCE_INDEX_MAX = 600
-local EJ_ENCOUNTER_INDEX_MAX = 80
-local CRITERIA_MAX = 80
+local COL_MAX_PB_SPLIT          = 260
+local COL_MAX_DELTA             = 200
+local COL_MIN_BOSS              = 20
+local COL_MIN_NUM               = 85
+local COL_MIN_DELTA_TITLE       = 85
+local GRIP_HALFWIDTH            = 5
+local HEADER_H                  = 18
+local RIGHT_INSET_DEFAULT       = 26
+local TOP_BAR_H                 = 28
+local TOP_BAR_GAP               = 4
+local BOSS_LOAD_MAX_TRIES       = 40
+local BOSS_LOAD_RETRY_DELAY     = 0.25
+local RUNS_MAX                  = 200
+local EJ_INSTANCE_INDEX_MAX     = 600
+local EJ_ENCOUNTER_INDEX_MAX    = 80
+local CRITERIA_MAX              = 80
+local HISTORY_ROW_PAD           = 4
+local HISTORY_ENTRY_SCALE       = 1.03
+local HISTORY_DELETE_ICON_SCALE = 1.35
 
 -- History Column Widths
-local HISTORY_COL_DEFAULTS = {
+local HISTORY_COL_DEFAULTS      = {
     date = 130,
     dungeon = 220, -- Elastic, but used for fallback
     expansion = 140,
@@ -33,8 +36,8 @@ local HISTORY_COL_DEFAULTS = {
     delete = 30
 }
 
-local HISTORY_MIN_COL = 40
-local HISTORY_MIN_ELASTIC = 100
+local HISTORY_MIN_COL           = 40
+local HISTORY_MIN_ELASTIC       = 100
 
 -- =========================================================
 -- Small utilities
@@ -213,6 +216,7 @@ local function EnsureDB()
         { size = 30, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" }
     SpeedSplitsDB.Settings.fonts.header = SpeedSplitsDB.Settings.fonts.header or
         { size = 12, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" }
+    SpeedSplitsDB.Settings.historyScale = SpeedSplitsDB.Settings.historyScale or 1.0
 
     DB                                  = SpeedSplitsDB
     NS.DB                               = DB
@@ -285,7 +289,7 @@ function NS.UpdateColorsFromSettings()
     end
 end
 
-function NS.ApplyFontToFS(fs, typeKey)
+function NS.ApplyFontToFS(fs, typeKey, multiplier)
     if not fs then return end
     local f = (NS.DB and NS.DB.Settings and NS.DB.Settings.fonts and NS.DB.Settings.fonts[typeKey])
         or (NS.DB and NS.DB.Settings and NS.DB.Settings.fonts and NS.DB.Settings.fonts.num)
@@ -294,14 +298,12 @@ function NS.ApplyFontToFS(fs, typeKey)
     local fontSize = f and f.size or 12
     local fontFlags = f and f.flags or "OUTLINE"
 
-    -- Safety: Ensure we actually set SOMETHING
-    local success = fs:SetFont(fontPath, fontSize, fontFlags)
+    multiplier = multiplier or 1
+    local finalSize = math.max(1, math.floor(fontSize * multiplier + 0.5))
+    local success = fs:SetFont(fontPath, finalSize, fontFlags)
     if not success then
-        -- Fallback to standard Blizzard fonts if custom set fails
-        fs:SetFont("Fonts\\FRIZQT__.TTF", fontSize, fontFlags)
+        fs:SetFont("Fonts\\FRIZQT__.TTF", finalSize, fontFlags)
     end
-
-    -- Ultimate fallback if still not set
     if not fs:GetFont() then
         fs:SetFontObject("GameFontHighlight")
     end
@@ -921,7 +923,7 @@ local function EnsureColGrips()
     UI._colGrips = { MakeGrip(UI.st.frame, 1), MakeGrip(UI.st.frame, 2), MakeGrip(UI.st.frame, 3) }
 end
 
-local function StyleHeaderCell(cell, align)
+local function StyleHeaderCell(cell, align, multiplier)
     if not cell then return end
     local fs = cell.text or cell.label or (cell.GetFontString and cell:GetFontString())
     if not fs then
@@ -937,13 +939,11 @@ local function StyleHeaderCell(cell, align)
     fs:SetJustifyH(align or "CENTER")
     fs:SetJustifyV("MIDDLE")
 
-    -- Force the font update to headers specifically
-    local f = (NS.DB and NS.DB.Settings and NS.DB.Settings.fonts and NS.DB.Settings.fonts.header)
-    if f then
-        fs:SetFont(f.font, f.size, f.flags)
-    end
+    -- Sync to header font settings + optional multiplier
+    NS.ApplyFontToFS(fs, "header", multiplier)
+
     fs:SetTextColor(1, 0.82, 0, 1)
-    fs:SetHeight(HEADER_H)
+    fs:SetHeight(HEADER_H * (multiplier or 1))
     fs:ClearAllPoints()
     fs:SetPoint("LEFT", cell, "LEFT", 4, 0)
     fs:SetPoint("RIGHT", cell, "RIGHT", -4, 0)
@@ -962,7 +962,11 @@ local function MakeCellUpdater(opts)
 
         local val = cell.display or cell.value or ""
         cellFrame.text:SetText(val)
-        cellFrame.text:SetFontObject(GameFontHighlightSmall)
+
+        -- Apply font with scale (non-compounding)
+        local hScale = (opts.fontScale or 1.0)
+        NS.ApplyFontToFS(cellFrame.text, "num", hScale)
+
         cellFrame.text:SetJustifyH(opts.justifyH or cols[column].align or "LEFT")
         cellFrame.text:SetJustifyV(opts.justifyV or "MIDDLE")
         if opts.wordWrap then cellFrame.text:SetWordWrap(true) end
@@ -1065,8 +1069,22 @@ local Delete_DoCellUpdate = function(rowFrame, cellFrame, data, cols, row, realr
         local btn = CreateFrame("Button", nil, cellFrame)
         btn:SetSize(24, 24)
         btn:SetPoint("LEFT", cellFrame, "LEFT", 4, 0)
-        btn:SetNormalTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Up")
-        btn:SetHighlightTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Highlight")
+
+
+        local normal = btn:GetNormalTexture()
+        if not normal then
+            normal = btn:CreateTexture(nil, "ARTWORK")
+            btn:SetNormalTexture(normal)
+        end
+        normal:SetAtlas("SCRAP-activated", true)
+
+        local highlight = btn:GetHighlightTexture()
+        if not highlight then
+            highlight = btn:CreateTexture(nil, "HIGHLIGHT")
+            btn:SetHighlightTexture(highlight)
+        end
+        highlight:SetAtlas("SCRAP-activated", true)
+        highlight:SetAlpha(0.35)
         btn:SetScript("OnClick", function(self)
             if self.record then
                 DeleteRecord(self.record)
@@ -1081,13 +1099,23 @@ local Delete_DoCellUpdate = function(rowFrame, cellFrame, data, cols, row, realr
         cellFrame.delBtn = btn
     end
 
-    -- Update record reference for this specific render pass
-    if data[realrow] then
-        cellFrame.delBtn.record = data[realrow].record
-        cellFrame.delBtn:Show()
-    else
-        cellFrame.delBtn:Hide()
-    end
+    -- Update icon size and record reference every update
+    local btn = cellFrame.delBtn
+    local hScale = (NS.DB and NS.DB.Settings and NS.DB.Settings.historyScale) or 1.0
+    local size = math.max(1, math.floor(16 * HISTORY_DELETE_ICON_SCALE * hScale + 0.5))
+
+    local normal = btn:GetNormalTexture()
+    normal:ClearAllPoints()
+    normal:SetPoint("CENTER")
+    normal:SetSize(size, size)
+
+    local highlight = btn:GetHighlightTexture()
+    highlight:ClearAllPoints()
+    highlight:SetPoint("CENTER")
+    highlight:SetSize(size, size)
+
+    btn.record = data[realrow]
+    btn:Show()
 end
 
 -- =========================================================
@@ -1231,7 +1259,11 @@ local function DateRangeToMinEpoch(mode)
     return nil
 end
 
-local History_DoCellUpdate = MakeCellUpdater {} -- uses cols[column].align, cell.color
+local History_DoCellUpdate = function(...)
+    local hScale = (NS.DB and NS.DB.Settings and NS.DB.Settings.historyScale) or 1.0
+    local updater = MakeCellUpdater { fontScale = HISTORY_ENTRY_SCALE * hScale }
+    updater(...)
+end
 
 -- NOTE:
 -- LibScrollingTable typically handles DESC sorting by swapping rowA/rowB when invoking the sort.
@@ -1764,13 +1796,19 @@ local function EnsureHistoryUI()
                 { name = "",                   width = w.delete,    align = "CENTER", DoCellUpdate = Delete_DoCellUpdate }
             }
 
-            local st = ST:CreateST(cols, 12, 18, nil, listFrame)
+            local hScale = (NS.DB and NS.DB.Settings and NS.DB.Settings.historyScale) or 1.0
+            local rowHeight = math.max(12, math.floor((18 + HISTORY_ROW_PAD) * HISTORY_ENTRY_SCALE * hScale + 0.5))
+            UI.history.rowHeight = rowHeight
+
+            local st = ST:CreateST(cols, 12, rowHeight, nil, listFrame)
+
             if st and st.frame then
                 st.frame:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 0, 0)
                 st.frame:SetPoint("BOTTOMRIGHT", listFrame, "BOTTOMRIGHT", 0, 0)
                 if st.head and st.head.cols then
+                    local hScale = (NS.DB and NS.DB.Settings and NS.DB.Settings.historyScale) or 1.0
                     for i = 1, #cols do
-                        if st.head.cols[i] then StyleHeaderCell(st.head.cols[i], cols[i].align) end
+                        if st.head.cols[i] then StyleHeaderCell(st.head.cols[i], cols[i].align, hScale) end
                     end
                 end
                 UI.history.st = st
@@ -1787,23 +1825,27 @@ local function EnsureHistoryUI()
     end)
     UI.history.resizeGrip = grip
 
-    local function UpdateHistoryLayout()
-        if UI.history.st and UI.history.st.frame and UI.history.listFrame then
+    function NS.UpdateHistoryLayout()
+        if UI and UI.history and UI.history.st and UI.history.listFrame then
+            local hScale = (NS.DB and NS.DB.Settings and NS.DB.Settings.historyScale) or 1.0
             local h = UI.history.listFrame:GetHeight()
-            local displayRows = math.floor((h - 4) / 18)
+            local rowHeight = math.max(12, math.floor((18 + HISTORY_ROW_PAD) * HISTORY_ENTRY_SCALE * hScale + 0.5))
+            UI.history.rowHeight = rowHeight
+            local displayRows = math.floor((h - 4) / rowHeight)
             if displayRows < 1 then displayRows = 1 end
-            UI.history.st:SetDisplayRows(displayRows, 18)
+            UI.history.st:SetDisplayRows(displayRows, rowHeight)
             UI.history.st:Refresh()
         end
     end
-    UI.history.UpdateLayout = UpdateHistoryLayout -- Expose for ToggleHistoryFrame
+
+    UI.history.UpdateLayout = NS.UpdateHistoryLayout -- Expose for ToggleHistoryFrame
 
     historyFrame:SetScript("OnSizeChanged", function(self)
-        UpdateHistoryLayout()
+        NS.UpdateHistoryLayout()
         History_ApplyTableLayout()
     end)
 
-    UpdateHistoryLayout() -- Initial layout calculation
+    NS.UpdateHistoryLayout() -- Initial layout calculation
     UI.history.frame = historyFrame
 
     -- Delay ensure grips until frame is somewhat ready or just do it now if ST exists
@@ -1829,6 +1871,7 @@ local function ToggleHistoryFrame()
         else
             h.frame:Show()
             if h.UpdateLayout then h.UpdateLayout() end
+            if NS.UpdateHistoryLayout then NS.UpdateHistoryLayout() end
             if UI.RefreshHistoryTable then UI.RefreshHistoryTable() end
         end
     end)
@@ -2530,7 +2573,18 @@ function NS.RefreshAllUI()
     -- Sync Header fonts and styles
     if UI.st and UI.st.head and UI.st.head.cols then
         for i = 1, #UI.st.head.cols do
-            StyleHeaderCell(UI.st.head.cols[i], UI.cols[i].align)
+            StyleHeaderCell(UI.st.head.cols[i], UI.cols[i].align, 1.0)
+        end
+    end
+
+    -- Sync History Headers
+    if UI.history and UI.history.st and UI.history.st.head and UI.history.st.head.cols then
+        local hScale = (NS.DB and NS.DB.Settings and NS.DB.Settings.historyScale) or 1.0
+        for i = 1, #UI.history.st.head.cols do
+            local hCols = UI.history.st.cols
+            if hCols and hCols[i] then
+                StyleHeaderCell(UI.history.st.head.cols[i], hCols[i].align, hScale)
+            end
         end
     end
 
@@ -2562,6 +2616,7 @@ function NS.RefreshAllUI()
         SetTimerText(NS.Run.endGameTime - NS.Run.startGameTime, true)
     end
     if UI.st and UI.st.Refresh then UI.st:Refresh() end
+    if NS.UpdateHistoryLayout then NS.UpdateHistoryLayout() end
 end
 
 local function UpdateBestRunIfNeeded(durationSeconds)

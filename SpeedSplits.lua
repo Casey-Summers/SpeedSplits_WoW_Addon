@@ -7,6 +7,7 @@ NS.App                          = App
 -- Constants
 local COL_MAX_PB_SPLIT          = 260
 local COL_MAX_DELTA             = 200
+local COL_MIN_MODEL             = 36
 local COL_MIN_BOSS              = 20
 local COL_MIN_NUM               = 85
 local COL_MIN_DELTA_TITLE       = 85
@@ -24,6 +25,16 @@ local CRITERIA_MAX              = 80
 local HISTORY_ROW_PAD           = 4
 local HISTORY_ENTRY_SCALE       = 1.03
 local HISTORY_DELETE_ICON_SCALE = 1.35
+local BOSS_MODEL_ZOOM           = 0.75
+
+NS.TitleTextures                = {
+    "dragonflight-landingpage-renownbutton-centaur-hover",
+    "dragonflight-landingpage-renownbutton-expedition-hover",
+    "dragonflight-landingpage-renownbutton-locked",
+    "dragonflight-landingpage-renownbutton-tuskarr-hover",
+    "dragonflight-landingpage-renownbutton-valdrakken-hover",
+    "dragonflight-landingpage-renownbutton-dream-hover",
+}
 
 -- History Column Widths
 local HISTORY_COL_DEFAULTS      = {
@@ -217,6 +228,7 @@ local function EnsureDB()
     SpeedSplitsDB.Settings.fonts.header = SpeedSplitsDB.Settings.fonts.header or
         { size = 12, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" }
     SpeedSplitsDB.Settings.historyScale = SpeedSplitsDB.Settings.historyScale or 1.0
+    SpeedSplitsDB.Settings.titleTexture = SpeedSplitsDB.Settings.titleTexture or NS.TitleTextures[1]
 
     DB                                  = SpeedSplitsDB
     NS.DB                               = DB
@@ -595,6 +607,7 @@ UI = {
     rowByBossKey = nil, -- bossKey -> realrow index in data
 
     -- Resizable widths (boss is computed as "fill remaining")
+    _modelWidth = 40,
     _pbWidth = 80,
     _splitWidth = 80,
     _deltaWidth = 60,
@@ -745,19 +758,20 @@ local function ApplyTableLayout()
     local w = UI.st.frame:GetWidth() or 1
     local available = math.max(w - UI._rightInset, 1)
 
-    local minDelta = COL_MIN_NUM -- Used to be max(NUM, MIN_DELTA_TITLE) but now they are same and small
+    local minDelta = COL_MIN_NUM
     UI._pbWidth = Clamp(UI._pbWidth, COL_MIN_NUM,
-        math.max(available - (COL_MIN_BOSS + UI._splitWidth + minDelta), COL_MIN_NUM))
+        math.max(available - (UI._modelWidth + COL_MIN_BOSS + UI._splitWidth + minDelta), COL_MIN_NUM))
     UI._splitWidth = Clamp(UI._splitWidth, COL_MIN_NUM,
-        math.max(available - (COL_MIN_BOSS + UI._pbWidth + minDelta), COL_MIN_NUM))
+        math.max(available - (UI._modelWidth + COL_MIN_BOSS + UI._pbWidth + minDelta), COL_MIN_NUM))
     UI._deltaWidth = Clamp(UI._deltaWidth, minDelta,
-        math.max(available - (COL_MIN_BOSS + UI._pbWidth + UI._splitWidth), minDelta))
-    local bossWidth = math.max(available - (UI._pbWidth + UI._splitWidth + UI._deltaWidth), COL_MIN_BOSS)
+        math.max(available - (UI._modelWidth + COL_MIN_BOSS + UI._pbWidth + UI._splitWidth), minDelta))
+    local bossWidth = math.max(available - (UI._modelWidth + UI._pbWidth + UI._splitWidth + UI._deltaWidth), COL_MIN_BOSS)
 
-    UI.cols[1].width = bossWidth
-    UI.cols[2].width = UI._pbWidth
-    UI.cols[3].width = UI._splitWidth
-    UI.cols[4].width = UI._deltaWidth
+    UI.cols[1].width = UI._modelWidth
+    UI.cols[2].width = bossWidth
+    UI.cols[3].width = UI._pbWidth
+    UI.cols[4].width = UI._splitWidth
+    UI.cols[5].width = UI._deltaWidth
 
     if UI.st.SetDisplayCols then
         UI.st:SetDisplayCols(UI.cols)
@@ -771,27 +785,29 @@ local function ApplyTableLayout()
     -- Totals row alignment (perfectly centered vs table columns)
     local tf = UI.totalFrame
     if tf then
+        local combinedBossWidth = UI._modelWidth + bossWidth
         UI.totalDelta:ClearAllPoints()
-        UI.totalDelta:SetPoint("RIGHT", tf, "LEFT", bossWidth + UI._pbWidth + UI._splitWidth + UI._deltaWidth / 2 + 34, 0)
+        UI.totalDelta:SetPoint("RIGHT", tf, "LEFT",
+            combinedBossWidth + UI._pbWidth + UI._splitWidth + UI._deltaWidth / 2 + 34, 0)
         UI.totalDelta:SetWidth(UI._deltaWidth)
         UI.totalDelta:SetJustifyH("RIGHT")
 
         UI.totalSplit:ClearAllPoints()
-        UI.totalSplit:SetPoint("RIGHT", tf, "LEFT", bossWidth + UI._pbWidth + UI._splitWidth / 2 + 34, 0)
+        UI.totalSplit:SetPoint("RIGHT", tf, "LEFT", combinedBossWidth + UI._pbWidth + UI._splitWidth / 2 + 34, 0)
         UI.totalSplit:SetWidth(UI._splitWidth)
         UI.totalSplit:SetJustifyH("RIGHT")
 
         UI.totalPB:ClearAllPoints()
-        UI.totalPB:SetPoint("RIGHT", tf, "LEFT", bossWidth + UI._pbWidth / 2 + 34, 0)
+        UI.totalPB:SetPoint("RIGHT", tf, "LEFT", combinedBossWidth + UI._pbWidth / 2 + 34, 0)
         UI.totalPB:SetWidth(UI._pbWidth)
         UI.totalPB:SetJustifyH("RIGHT")
     end
 
     -- Position separator grips
     if UI._colGrips then
-        local xBossRight = bossWidth
-        local xPBRight = bossWidth + UI._pbWidth
-        local xSplitRight = bossWidth + UI._pbWidth + UI._splitWidth
+        local xBossRight = UI._modelWidth + bossWidth
+        local xPBRight = UI._modelWidth + bossWidth + UI._pbWidth
+        local xSplitRight = UI._modelWidth + bossWidth + UI._pbWidth + UI._splitWidth
         local gv = -HEADER_H
         UI._colGrips[1]:ClearAllPoints()
         UI._colGrips[1]:SetPoint("TOPLEFT", UI.st.frame, "TOPLEFT", xBossRight - GRIP_HALFWIDTH, 0)
@@ -868,8 +884,8 @@ local function UpdateColDrag()
 
     if UI._colDrag.which == 1 then
         -- Boundary between Boss and PB.
-        -- BossWidth = available - (PB + Split + Diff). Cannot be less than COL_MIN_BOSS.
-        local maxPB = math.max(COL_MIN_NUM, available - (UI._splitWidth + UI._deltaWidth + COL_MIN_BOSS))
+        -- BossWidth = available - (Model + PB + Split + Diff). Cannot be less than COL_MIN_BOSS.
+        local maxPB = math.max(COL_MIN_NUM, available - (UI._modelWidth + UI._splitWidth + UI._deltaWidth + COL_MIN_BOSS))
         UI._pbWidth = Clamp(UI._colDrag.pb - dx, COL_MIN_NUM, math.min(COL_MAX_PB_SPLIT, maxPB))
     elseif UI._colDrag.which == 2 then
         UI._pbWidth = Clamp(UI._colDrag.pb + dx, COL_MIN_NUM, COL_MAX_PB_SPLIT)
@@ -949,6 +965,34 @@ local function StyleHeaderCell(cell, align, multiplier)
     fs:SetPoint("RIGHT", cell, "RIGHT", -4, 0)
 end
 
+local function Model_DoCellUpdate(rowFrame, cellFrame, data, cols, row, realrow, column, fShow, stable)
+    if not fShow or not realrow then
+        if cellFrame and cellFrame.model then cellFrame.model:Hide() end
+        return
+    end
+
+    if not cellFrame.model then
+        local m = CreateFrame("PlayerModel", nil, cellFrame)
+        m:SetAllPoints()
+        m:SetPoint("TOPLEFT", cellFrame, "TOPLEFT", 1, -1)
+        m:SetPoint("BOTTOMRIGHT", cellFrame, "BOTTOMRIGHT", -1, 1)
+        cellFrame.model = m
+    end
+
+    -- Testing IDs (first 5 bosses)
+    local displayIDs = { 52047, 6110, 52515, 52595, 31042 }
+    local id = displayIDs[realrow]
+
+    if id then
+        cellFrame.model:SetDisplayInfo(id)
+        cellFrame.model:SetKeepModelOnHide(true)
+        cellFrame.model:Show()
+        cellFrame.model:SetPortraitZoom(BOSS_MODEL_ZOOM)
+    else
+        cellFrame.model:Hide()
+    end
+end
+
 local function MakeCellUpdater(opts)
     opts = opts or {}
     return function(rowFrame, cellFrame, data, cols, row, realrow, column, fShow, stable)
@@ -987,7 +1031,7 @@ local Boss_DoCellUpdate = function(rowFrame, cellFrame, data, cols, row, realrow
     end
     cellFrame:SetClipsChildren(true)
     local e = data[realrow]
-    local cell = e and e.cols and e.cols[column]
+    local cell = e and e.cols and e.cols[1] -- Boss name is always first in data
     if not cell then return end
     cellFrame.text:SetText(cell.value or "")
     NS.ApplyFontToFS(cellFrame.text, "boss")
@@ -1006,7 +1050,8 @@ local Num_DoCellUpdate = function(rowFrame, cellFrame, data, cols, row, realrow,
     end
 
     local e = data[realrow]
-    local cell = e and e.cols and e.cols[column]
+    local dataIndex = column - 1
+    local cell = e and e.cols and e.cols[dataIndex]
     if not cell then return end
 
     local val = cell.value or ""
@@ -1024,6 +1069,7 @@ local Num_DoCellUpdate = function(rowFrame, cellFrame, data, cols, row, realrow,
     -- Remove horizontal padding constraints to allow the "Remove any padding" request
     cellFrame.text:SetWidth(0)
 
+    local dataIndex = column - 1
     local c = (cols[column].color) and cols[column].color(data, cols, realrow, column, stable) or cell.color
     if c then
         cellFrame.text:SetTextColor(c.r or 1, c.g or 1, c.b or 1, c.a or 1)
@@ -1034,7 +1080,8 @@ end
 
 local function DeltaColor(data, cols, realrow, column)
     local e = data[realrow]
-    local cell = e and e.cols and e.cols[column]
+    local dataIndex = column - 1
+    local cell = e and e.cols and e.cols[dataIndex]
     return cell and cell.color or nil
 end
 
@@ -1044,7 +1091,8 @@ end
 
 local function SplitColor(data, cols, realrow, column)
     local e = data[realrow]
-    local cell = e and e.cols and e.cols[column]
+    local dataIndex = column - 1
+    local cell = e and e.cols and e.cols[dataIndex]
     return cell and cell.color or nil
 end
 
@@ -2007,7 +2055,12 @@ local function EnsureUI()
     end
 
     local cols = { {
-        name = "Boss",
+        name = "",
+        width = UI._modelWidth,
+        align = "CENTER",
+        DoCellUpdate = Model_DoCellUpdate
+    }, {
+        name = "",
         width = 220,
         align = "LEFT",
         DoCellUpdate = Boss_DoCellUpdate
@@ -2045,16 +2098,23 @@ local function EnsureUI()
     -- Title bar 'tab' (Header portion)
     local titleTab = CreateFrame("Frame", nil, bossFrame, "BackdropTemplate")
     titleTab:SetHeight(TOP_BAR_H)
+    titleTab:SetClipsChildren(true)
     titleTab:SetBackdrop({
-        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
         edgeFile = "Interface\\Buttons\\WHITE8X8",
         edgeSize = 1,
     })
-    titleTab:SetBackdropColor(0, 0, 0, 0.95)
+    titleTab:SetBackdropColor(0, 0, 0, 0)
     UI.titleTab = titleTab
+
+    local titleBg = titleTab:CreateTexture(nil, "BACKGROUND")
+    -- Bleed out significantly (oversize & crop) to ensure the texture fills the frame completely
+    titleBg:SetPoint("TOPLEFT", titleTab, "TOPLEFT", -200, 20)
+    titleBg:SetPoint("BOTTOMRIGHT", titleTab, "BOTTOMRIGHT", 200, -20)
+    UI.titleBg = titleBg
 
     local killCountText = titleTab:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     killCountText:SetPoint("LEFT", 10, 0)
+    NS.ApplyFontToFS(killCountText, "header", 1.25)
     UI.killCountText = killCountText
 
     -- Totals 'tab' (Footer portion)
@@ -2549,6 +2609,10 @@ function NS.RefreshAllUI()
     end
     if UI.borderFrame then
         UI.borderFrame:SetBackdropBorderColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 0.8)
+    end
+    if UI.titleBg then
+        local atlas = NS.DB.Settings.titleTexture or NS.TitleTextures[1]
+        UI.titleBg:SetAtlas(atlas)
     end
     if UI.titleTab then
         UI.titleTab:SetBackdropBorderColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 0.5)

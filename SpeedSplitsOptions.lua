@@ -241,12 +241,19 @@ function NS.CreateOptionsPanel()
     local timerFont = CreateFontDropdown(panel, "Timer Font", "timer")
     timerFont:SetPoint("TOPLEFT", timerSize, "BOTTOMLEFT", -16, -24)
 
+    local headerSize = CreateSlider(panel, "Header Size", 8, 24, "header", "size")
+    headerSize:SetPoint("TOPLEFT", timerFont, "BOTTOMLEFT", 16, -32)
+    local headerFont = CreateFontDropdown(panel, "Header Font", "header")
+    headerFont:SetPoint("TOPLEFT", headerSize, "BOTTOMLEFT", -16, -24)
+
     local bossBold = CreateCheckbox(panel, "Bold Boss Names", "boss", "THICKOUTLINE")
     bossBold:SetPoint("TOPLEFT", typeTitle, "TOPLEFT", 210, -24)
     local numBold = CreateCheckbox(panel, "Bold Splits", "num", "THICKOUTLINE")
     numBold:SetPoint("TOPLEFT", bossBold, "BOTTOMLEFT", 0, -4)
     local timerBold = CreateCheckbox(panel, "Bold Timer", "timer", "THICKOUTLINE")
     timerBold:SetPoint("TOPLEFT", numBold, "BOTTOMLEFT", 0, -4)
+    local headerBold = CreateCheckbox(panel, "Bold Headers", "header", "THICKOUTLINE")
+    headerBold:SetPoint("TOPLEFT", timerBold, "BOTTOMLEFT", 0, -4)
 
     local resetBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     resetBtn:SetSize(140, 22)
@@ -262,9 +269,10 @@ function NS.CreateOptionsPanel()
             darkRed    = "ffcc0005",
         }
         NS.DB.Settings.fonts = {
-            boss  = { size = 14, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
-            num   = { size = 17, font = "Fonts\\ARIALN.TTF", flags = "OUTLINE" },
-            timer = { size = 30, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
+            boss   = { size = 14, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
+            num    = { size = 17, font = "Fonts\\ARIALN.TTF", flags = "OUTLINE" },
+            timer  = { size = 30, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
+            header = { size = 12, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
         }
         NS.UpdateColorsFromSettings()
         for _, s in ipairs(swatches) do s.UpdateSwatch() end
@@ -285,6 +293,11 @@ function NS.CreateOptionsPanel()
 
         _G.UIDropDownMenu_SetText(timerFont, "Friz Quadrata")
         _G.UIDropDownMenu_SetSelectedValue(timerFont, "Fonts\\FRIZQT__.TTF")
+
+        headerSize:SetValue(12)
+        headerBold:SetChecked(false)
+        _G.UIDropDownMenu_SetText(headerFont, "Friz Quadrata")
+        _G.UIDropDownMenu_SetSelectedValue(headerFont, "Fonts\\FRIZQT__.TTF")
 
         NS.RefreshAllUI()
     end)

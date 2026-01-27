@@ -7,9 +7,9 @@ NS.App = App
 -- Constants
 local COL_MAX_PB_SPLIT = 260
 local COL_MAX_DELTA = 200
-local COL_MIN_BOSS = 180
-local COL_MIN_NUM = 75
-local COL_MIN_DELTA_TITLE = 90
+local COL_MIN_BOSS = 20
+local COL_MIN_NUM = 85
+local COL_MIN_DELTA_TITLE = 85
 local GRIP_HALFWIDTH = 5
 local HEADER_H = 18
 local RIGHT_INSET_DEFAULT = 26
@@ -211,6 +211,8 @@ local function EnsureDB()
         { size = 17, font = "Fonts\\ARIALN.TTF", flags = "OUTLINE" }
     SpeedSplitsDB.Settings.fonts.timer  = SpeedSplitsDB.Settings.fonts.timer or
         { size = 30, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" }
+    SpeedSplitsDB.Settings.fonts.header = SpeedSplitsDB.Settings.fonts.header or
+        { size = 12, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" }
 
     DB                                  = SpeedSplitsDB
     NS.DB                               = DB
@@ -272,8 +274,13 @@ function NS.UpdateColorsFromSettings()
     if not DB or not DB.Settings or not DB.Settings.colors then return end
     local s = DB.Settings.colors
     for k, hex in pairs(s) do
+        local newC = HexToColor(hex)
         if NS.Colors[k] then
-            NS.Colors[k] = HexToColor(hex)
+            local c = NS.Colors[k]
+            c.r, c.g, c.b, c.a = newC.r, newC.g, newC.b, newC.a
+            c.argb, c.hex = newC.argb, newC.hex
+        else
+            NS.Colors[k] = newC
         end
     end
 end
@@ -590,6 +597,9 @@ UI = {
     _splitWidth = 80,
     _deltaWidth = 60,
 
+    leftBorder = nil,
+    rightBorder = nil,
+
     _rightInset = RIGHT_INSET_DEFAULT,
     _topInset = RIGHT_INSET_DEFAULT,
     _bottomInset = 34, -- Increased for Totals spacing
@@ -733,7 +743,7 @@ local function ApplyTableLayout()
     local w = UI.st.frame:GetWidth() or 1
     local available = math.max(w - UI._rightInset, 1)
 
-    local minDelta = math.max(COL_MIN_NUM, COL_MIN_DELTA_TITLE)
+    local minDelta = COL_MIN_NUM -- Used to be max(NUM, MIN_DELTA_TITLE) but now they are same and small
     UI._pbWidth = Clamp(UI._pbWidth, COL_MIN_NUM,
         math.max(available - (COL_MIN_BOSS + UI._splitWidth + minDelta), COL_MIN_NUM))
     UI._splitWidth = Clamp(UI._splitWidth, COL_MIN_NUM,
@@ -760,19 +770,19 @@ local function ApplyTableLayout()
     local tf = UI.totalFrame
     if tf then
         UI.totalDelta:ClearAllPoints()
-        UI.totalDelta:SetPoint("CENTER", tf, "LEFT", bossWidth + UI._pbWidth + UI._splitWidth + UI._deltaWidth / 2, 0)
+        UI.totalDelta:SetPoint("RIGHT", tf, "LEFT", bossWidth + UI._pbWidth + UI._splitWidth + UI._deltaWidth / 2 + 34, 0)
         UI.totalDelta:SetWidth(UI._deltaWidth)
-        UI.totalDelta:SetJustifyH("CENTER")
+        UI.totalDelta:SetJustifyH("RIGHT")
 
         UI.totalSplit:ClearAllPoints()
-        UI.totalSplit:SetPoint("CENTER", tf, "LEFT", bossWidth + UI._pbWidth + UI._splitWidth / 2, 0)
+        UI.totalSplit:SetPoint("RIGHT", tf, "LEFT", bossWidth + UI._pbWidth + UI._splitWidth / 2 + 34, 0)
         UI.totalSplit:SetWidth(UI._splitWidth)
-        UI.totalSplit:SetJustifyH("CENTER")
+        UI.totalSplit:SetJustifyH("RIGHT")
 
         UI.totalPB:ClearAllPoints()
-        UI.totalPB:SetPoint("CENTER", tf, "LEFT", bossWidth + UI._pbWidth / 2, 0)
+        UI.totalPB:SetPoint("RIGHT", tf, "LEFT", bossWidth + UI._pbWidth / 2 + 34, 0)
         UI.totalPB:SetWidth(UI._pbWidth)
-        UI.totalPB:SetJustifyH("CENTER")
+        UI.totalPB:SetJustifyH("RIGHT")
     end
 
     -- Position separator grips
@@ -874,7 +884,7 @@ end
 local function MakeGrip(parent, which)
     local grip = CreateFrame("Frame", nil, parent)
     grip:SetFrameStrata("HIGH")
-    grip:SetFrameLevel((parent:GetFrameLevel() or 0) + 10)
+    grip:SetFrameLevel((parent:GetFrameLevel() or 0) + 50) -- Above the border overlay
     grip:EnableMouse(true)
     grip:SetSize(10, 14)
 
@@ -911,12 +921,32 @@ local function EnsureColGrips()
     UI._colGrips = { MakeGrip(UI.st.frame, 1), MakeGrip(UI.st.frame, 2), MakeGrip(UI.st.frame, 3) }
 end
 
-local function StyleHeaderCell(cellFrame, align)
-    if not cellFrame or not cellFrame.text then return end
-    cellFrame.text:SetJustifyH(align or "CENTER")
-    cellFrame.text:SetJustifyV("TOP")
-    NS.ApplyFontToFS(cellFrame.text, "num")
-    cellFrame.text:SetTextColor(1, 0.82, 0, 1) -- Golden titles
+local function StyleHeaderCell(cell, align)
+    if not cell then return end
+    local fs = cell.text or cell.label or (cell.GetFontString and cell:GetFontString())
+    if not fs then
+        local regions = { cell:GetRegions() }
+        for _, r in ipairs(regions) do
+            if r and r.IsObjectType and r:IsObjectType("FontString") then
+                fs = r; break
+            end
+        end
+    end
+    if not fs then return end
+
+    fs:SetJustifyH(align or "CENTER")
+    fs:SetJustifyV("MIDDLE")
+
+    -- Force the font update to headers specifically
+    local f = (NS.DB and NS.DB.Settings and NS.DB.Settings.fonts and NS.DB.Settings.fonts.header)
+    if f then
+        fs:SetFont(f.font, f.size, f.flags)
+    end
+    fs:SetTextColor(1, 0.82, 0, 1)
+    fs:SetHeight(HEADER_H)
+    fs:ClearAllPoints()
+    fs:SetPoint("LEFT", cell, "LEFT", 4, 0)
+    fs:SetPoint("RIGHT", cell, "RIGHT", -4, 0)
 end
 
 local function MakeCellUpdater(opts)
@@ -951,6 +981,7 @@ local Boss_DoCellUpdate = function(rowFrame, cellFrame, data, cols, row, realrow
         if cellFrame and cellFrame.text then cellFrame.text:SetText("") end
         return
     end
+    cellFrame:SetClipsChildren(true)
     local e = data[realrow]
     local cell = e and e.cols and e.cols[column]
     if not cell then return end
@@ -969,18 +1000,26 @@ local Num_DoCellUpdate = function(rowFrame, cellFrame, data, cols, row, realrow,
         if cellFrame and cellFrame.text then cellFrame.text:SetText("") end
         return
     end
+
     local e = data[realrow]
     local cell = e and e.cols and e.cols[column]
     if not cell then return end
-    cellFrame.text:SetText(cell.value or "")
+
+    local val = cell.value or ""
+    cellFrame.text:SetText(val)
     NS.ApplyFontToFS(cellFrame.text, "num")
+
+    -- Request 6: Perfect Alignment of : and .
+    -- We use a right-aligned fontstring anchored to a fixed point relative to CENTER.
+    -- This ensures that for a consistent font like Arial Narrow, the separators align.
     cellFrame.text:SetJustifyH("RIGHT")
     cellFrame.text:SetJustifyV("MIDDLE")
     cellFrame.text:ClearAllPoints()
-    -- Centered right-alignment: Anchor the right of the text to the center area of the cell plus an offset
-    -- This ensures milliseconds are perfectly aligned vertically.
-    cellFrame.text:SetPoint("LEFT", cellFrame, "LEFT", 0, 0)
-    cellFrame.text:SetPoint("RIGHT", cellFrame, "CENTER", 32, 0)
+    -- Request 3 & 6: Fixed point alignment for colons/dots with padding
+    cellFrame.text:SetPoint("RIGHT", cellFrame, "CENTER", 34, 0)
+    -- Remove horizontal padding constraints to allow the "Remove any padding" request
+    cellFrame.text:SetWidth(0)
+
     local c = (cols[column].color) and cols[column].color(data, cols, realrow, column, stable) or cell.color
     if c then
         cellFrame.text:SetTextColor(c.r or 1, c.g or 1, c.b or 1, c.a or 1)
@@ -1884,10 +1923,15 @@ local function EnsureUI()
     end)
     ApplyResizeBounds(bossFrame, 450, 200, 1400, 1000)
 
-    -- Hide main background since we use tabs
-    if bossFrame.SetBackdrop then
-        bossFrame:SetBackdrop({ bgFile = nil, edgeFile = nil })
-    end
+    -- Main backdrop for the entire boss frame
+    bossFrame:SetBackdrop({
+        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+        insets = { left = 0, right = 0, top = 0, bottom = 0 }
+    })
+    bossFrame:SetBackdropColor(0, 0, 0, 0.9)
+    bossFrame:SetBackdropBorderColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 0.8)
 
     local bossRestored = RestoreFrameGeom("boss", bossFrame, 520, 320)
     if not bossRestored then
@@ -2058,6 +2102,17 @@ local function EnsureUI()
     UI.resizeGrip = bossGrip
     UI._timerResizeGrip = timerGrip
 
+    -- Wrap the whole boss frame in a high-level border frame (zero padding requested)
+    local borderFrame = CreateFrame("Frame", nil, bossFrame, "BackdropTemplate")
+    borderFrame:SetAllPoints(bossFrame)
+    borderFrame:SetFrameLevel(bossFrame:GetFrameLevel() + 30)
+    borderFrame:SetBackdrop({
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    borderFrame:EnableMouse(false)
+    UI.borderFrame = borderFrame
+
     EnsureColGrips()
     ApplyTableLayout()
     NS.RefreshAllUI()
@@ -2082,13 +2137,15 @@ local function UpdateTimerFrameBounds()
     local wR = UI.timerTextMs:GetStringWidth()
 
     -- Centering logic: Calculate pivot offset to balance asymmetrical text MM:SS.mmm
+    -- We do this dynamically in SetTimerText to ensure it's always centered regardless of content
     UI._timerPivotOffset = (wL - wR) / 2
     UI.timerTextSec:ClearAllPoints()
-    UI.timerTextSec:SetPoint("RIGHT", UI.timerFrame, "CENTER", UI._timerPivotOffset, 0)
+    UI.timerTextSec:SetPoint("RIGHT", UI.timerFrame, "CENTER", 0, 0)
+    UI.timerTextSec:SetWidth(0)
 
     local totalW = wL + wR
     local h      = UI.timerTextSec:GetStringHeight()
-    local padW   = 20
+    local padW   = 40 -- Increased padding to ensure look
     local padH   = 24
     local minW   = math.ceil(totalW + padW * 2)
     local minH   = math.ceil(h + padH * 2)
@@ -2125,6 +2182,13 @@ local function SetTimerText(seconds, finished)
     UI.timerTextMin:SetTextColor(c.r, c.g, c.b, c.a or 1)
     UI.timerTextSec:SetTextColor(c.r, c.g, c.b, c.a or 1)
     UI.timerTextMs:SetTextColor(c.r, c.g, c.b, c.a or 1)
+
+    -- Force dynamic centering for even padding
+    local wL = (UI.timerTextMin:GetStringWidth() or 0) + (UI.timerTextSec:GetStringWidth() or 0)
+    local wR = (UI.timerTextMs:GetStringWidth() or 0)
+    local offset = (wL - wR) / 2
+    UI.timerTextSec:ClearAllPoints()
+    UI.timerTextSec:SetPoint("RIGHT", UI.timerFrame, "CENTER", offset, 0)
 end
 
 local function SetTimerDelta(delta)
@@ -2437,6 +2501,12 @@ function NS.RefreshAllUI()
     if UI.logoText then
         UI.logoText:SetTextColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 1)
     end
+    if UI.bossFrame then
+        UI.bossFrame:SetBackdropBorderColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 0.8)
+    end
+    if UI.borderFrame then
+        UI.borderFrame:SetBackdropBorderColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 0.8)
+    end
     if UI.titleTab then
         UI.titleTab:SetBackdropBorderColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 0.5)
     end
@@ -2455,6 +2525,13 @@ function NS.RefreshAllUI()
         local fontSize = math.max(8, math.floor((f and f.size or 24) * 0.55))
         local fontFlags = f and f.flags or "OUTLINE"
         UI.timerDeltaText:SetFont(fontPath, fontSize, fontFlags)
+    end
+
+    -- Sync Header fonts and styles
+    if UI.st and UI.st.head and UI.st.head.cols then
+        for i = 1, #UI.st.head.cols do
+            StyleHeaderCell(UI.st.head.cols[i], UI.cols[i].align)
+        end
     end
 
     UpdateTimerFrameBounds()

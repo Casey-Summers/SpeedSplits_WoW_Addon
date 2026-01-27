@@ -8,6 +8,18 @@ local UIDropDownMenu_Initialize = _G.UIDropDownMenu_Initialize
 local UIDropDownMenu_AddButton = _G.UIDropDownMenu_AddButton
 local UIDropDownMenu_CreateInfo = _G.UIDropDownMenu_CreateInfo
 
+local function SS_CopyTable(src)
+    local dest = {}
+    for k, v in pairs(src) do
+        if type(v) == "table" then
+            dest[k] = SS_CopyTable(v)
+        else
+            dest[k] = v
+        end
+    end
+    return dest
+end
+
 -- Helper to create a color picker row
 local function CreateColorPicker(parent, label, key)
     local frame = CreateFrame("Button", nil, parent, "BackdropTemplate")
@@ -305,48 +317,102 @@ function NS.CreateOptionsPanel()
         return slider, bold, dd, sub
     end
 
-    local bSize, bBold, bFont = CreateTypeRow(panel, "Boss Names", "boss", -18)
-    local nSize, nBold, nFont = CreateTypeRow(panel, "Table Splits", "num", -105)
-    local tSize, tBold, tFont = CreateTypeRow(panel, "Main Timer", "timer", -192)
-    local hSize, hBold, hFont = CreateTypeRow(panel, "Table Headers", "header", -279)
+    local bSize, bBold, bFont = CreateTypeRow(panel, "Boss Names", "boss", -14)
+    local nSize, nBold, nFont = CreateTypeRow(panel, "Table Splits", "num", -101)
+    local cSize, cBold, cFont = CreateTypeRow(panel, "Boss Counter", "counter", -188)
+    local tSize, tBold, tFont = CreateTypeRow(panel, "Main Timer", "timer", -275)
+    local hSize, hBold, hFont = CreateTypeRow(panel, "Table Headers", "header", -362)
 
+    -- Profile & Layout Management (Bottom Area)
+    local managementHeader = CreateSectionHeader(panel, "Profile & Layout", 16, -420)
 
+    -- Style Profile buttons
+    local setDefaultsBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    setDefaultsBtn:SetSize(140, 24)
+    setDefaultsBtn:SetPoint("TOPLEFT", managementHeader, "BOTTOMLEFT", 8, -18)
+    setDefaultsBtn:SetText("Set Current as Default")
+    setDefaultsBtn:SetScript("OnClick", function()
+        if NS.DB and NS.DB.Settings then
+            NS.DB.DefaultStyle = {
+                colors = SS_CopyTable(NS.DB.Settings.colors),
+                fonts = SS_CopyTable(NS.DB.Settings.fonts),
+                titleTexture = NS.DB.Settings.titleTexture
+            }
+            if _G.SS_Print then
+                _G.SS_Print(
+                    "Current style (colors, fonts, texture) has been set as your default profile.")
+            end
+        end
+    end)
+    setDefaultsBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Sets your current appearance as the baseline used by the 'Reset Styles' button.")
+        GameTooltip:Show()
+    end)
+    setDefaultsBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-    -- Action Buttons
     local resetBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     resetBtn:SetSize(140, 24)
-    resetBtn:SetPoint("BOTTOMLEFT", 16, 20)
-    resetBtn:SetText("Reset Styles Only")
+    resetBtn:SetPoint("LEFT", setDefaultsBtn, "RIGHT", 10, 0)
+    resetBtn:SetText("Reset Styles")
     resetBtn:SetScript("OnClick", function()
-        NS.DB.Settings.colors = {
-            gold = "ffffd100",
-            white = "ffffffff",
-            turquoise = "ff00bec3",
-            deepGreen = "ff10ff00",
-            lightGreen = "ffcc2232",
-            darkRed = "ffcc0005",
-        }
-        NS.DB.Settings.fonts = {
-            boss   = { size = 14, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
-            num    = { size = 17, font = "Fonts\\ARIALN.TTF", flags = "OUTLINE" },
-            timer  = { size = 30, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
-            header = { size = 12, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
-        }
-        NS.DB.Settings.historyScale = 1.0
-        NS.DB.Settings.titleTexture = NS.TitleTextures[1]
-        NS.UpdateColorsFromSettings()
-        for _, s in ipairs(swatches) do s.UpdateSwatch() end
+        if NS.DB and NS.DB.DefaultStyle then
+            local d = NS.DB.DefaultStyle
+            NS.DB.Settings.colors = SS_CopyTable(d.colors)
+            NS.DB.Settings.fonts = SS_CopyTable(d.fonts)
+            NS.DB.Settings.titleTexture = d.titleTexture
 
-        bSize:SetValue(14); nSize:SetValue(17); tSize:SetValue(30); hSize:SetValue(12);
-        bBold:SetChecked(false); nBold:SetChecked(false); tBold:SetChecked(false); hBold:SetChecked(false);
+            NS.UpdateColorsFromSettings()
+            for _, s in ipairs(swatches) do s.UpdateSwatch() end
 
-        UpdateSelection()
-        NS.RefreshAllUI()
+            bSize:SetValue(d.fonts.boss.size); bBold:SetChecked(d.fonts.boss.flags:find("THICKOUTLINE") ~= nil);
+            nSize:SetValue(d.fonts.num.size); nBold:SetChecked(d.fonts.num.flags:find("THICKOUTLINE") ~= nil);
+            cSize:SetValue(d.fonts.counter.size); cBold:SetChecked(d.fonts.counter.flags:find("THICKOUTLINE") ~= nil);
+            tSize:SetValue(d.fonts.timer.size); tBold:SetChecked(d.fonts.timer.flags:find("THICKOUTLINE") ~= nil);
+            hSize:SetValue(d.fonts.header.size); hBold:SetChecked(d.fonts.header.flags:find("THICKOUTLINE") ~= nil);
+
+            UpdateSelection()
+            NS.RefreshAllUI()
+            if _G.SS_Print then _G.SS_Print("Styles reset to your default profile.") end
+        end
     end)
+
+    -- Layout buttons
+    local setLayoutBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    setLayoutBtn:SetSize(140, 24)
+    setLayoutBtn:SetPoint("TOPLEFT", setDefaultsBtn, "BOTTOMLEFT", 0, -10)
+    setLayoutBtn:SetText("Set/Save Layout")
+    setLayoutBtn:SetScript("OnClick", function()
+        if _G.SS_Print then _G.SS_Print("Current window positions and column widths have been saved.") end
+    end)
+    setLayoutBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Confirms the current positioning and size of all frames.")
+        GameTooltip:Show()
+    end)
+    setLayoutBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    local resetLayoutBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    resetLayoutBtn:SetSize(140, 24)
+    resetLayoutBtn:SetPoint("LEFT", setLayoutBtn, "RIGHT", 10, 0)
+    resetLayoutBtn:SetText("Reset Layout")
+    resetLayoutBtn:SetScript("OnClick", function()
+        StaticPopup_Show("SPEEDSPLITS_RESET_LAYOUT")
+    end)
+
+    StaticPopupDialogs["SPEEDSPLITS_RESET_LAYOUT"] = {
+        text = "Are you sure you want to RESET the layout (positions, sizes)? This will Reload UI.",
+        button1 = "Reset Layout",
+        button2 = "Cancel",
+        OnAccept = function() NS.ResetLayout() end,
+        timeout = 0,
+        whileDead = true,
+        hideOnEscape = true,
+    }
 
     local wipeBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     wipeBtn:SetSize(160, 24)
-    wipeBtn:SetPoint("LEFT", resetBtn, "RIGHT", 10, 0)
+    wipeBtn:SetPoint("TOPLEFT", setLayoutBtn, "BOTTOMLEFT", 0, -20)
     wipeBtn:SetText("Wipe All Records")
     wipeBtn:SetScript("OnClick", function() StaticPopup_Show("SPEEDSPLITS_WIPE_CONFIRM") end)
 

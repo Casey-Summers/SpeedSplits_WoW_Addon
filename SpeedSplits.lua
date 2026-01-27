@@ -76,13 +76,14 @@ local function NormalizeName(text)
     return text
 end
 
-local function SS_Print(msg)
+SS_Print = function(msg)
     if DEFAULT_CHAT_FRAME then
         DEFAULT_CHAT_FRAME:AddMessage("|cff00ccccSpeedSplits|r: " .. tostring(msg))
     else
         print("SpeedSplits: " .. tostring(msg))
     end
 end
+local SS_Print = SS_Print
 
 -- Debug toggle
 SpeedSplits_DebugObjectives = SpeedSplits_DebugObjectives or false
@@ -196,21 +197,21 @@ local function EnsureDB()
     end
 
     -- Human-readable structure
-    SpeedSplitsDB.RunHistory            = SpeedSplitsDB.RunHistory or SpeedSplitsDB.runs or {}
-    SpeedSplitsDB.InstancePersonalBests = SpeedSplitsDB.InstancePersonalBests or SpeedSplitsDB.PersonalBests or
+    SpeedSplitsDB.RunHistory             = SpeedSplitsDB.RunHistory or SpeedSplitsDB.runs or {}
+    SpeedSplitsDB.InstancePersonalBests  = SpeedSplitsDB.InstancePersonalBests or SpeedSplitsDB.PersonalBests or
         SpeedSplitsDB.bestSplits or {}
-    SpeedSplitsDB.Settings              = SpeedSplitsDB.Settings or SpeedSplitsDB.settings or {}
+    SpeedSplitsDB.Settings               = SpeedSplitsDB.Settings or SpeedSplitsDB.settings or {}
 
     -- Clean up old keys
-    SpeedSplitsDB.runs                  = nil
-    SpeedSplitsDB.bestSplits            = nil
-    SpeedSplitsDB.PersonalBests         = nil
-    SpeedSplitsDB.settings              = nil
-    SpeedSplitsDB.pbBoss                = nil
-    SpeedSplitsDB.pbRun                 = nil
+    SpeedSplitsDB.runs                   = nil
+    SpeedSplitsDB.bestSplits             = nil
+    SpeedSplitsDB.PersonalBests          = nil
+    SpeedSplitsDB.settings               = nil
+    SpeedSplitsDB.pbBoss                 = nil
+    SpeedSplitsDB.pbRun                  = nil
 
     -- Defaults
-    SpeedSplitsDB.Settings.colors       = SpeedSplitsDB.Settings.colors or {
+    SpeedSplitsDB.Settings.colors        = SpeedSplitsDB.Settings.colors or {
         gold       = "ffffd100",
         white      = "ffffffff",
         turquoise  = "ff00bec3",
@@ -218,20 +219,44 @@ local function EnsureDB()
         lightGreen = "ffcc2232",
         darkRed    = "ffcc0005",
     }
-    SpeedSplitsDB.Settings.fonts        = SpeedSplitsDB.Settings.fonts or {}
-    SpeedSplitsDB.Settings.fonts.boss   = SpeedSplitsDB.Settings.fonts.boss or
+    SpeedSplitsDB.Settings.fonts         = SpeedSplitsDB.Settings.fonts or {}
+    SpeedSplitsDB.Settings.fonts.boss    = SpeedSplitsDB.Settings.fonts.boss or
         { size = 14, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" }
-    SpeedSplitsDB.Settings.fonts.num    = SpeedSplitsDB.Settings.fonts.num or
+    SpeedSplitsDB.Settings.fonts.num     = SpeedSplitsDB.Settings.fonts.num or
         { size = 17, font = "Fonts\\ARIALN.TTF", flags = "OUTLINE" }
-    SpeedSplitsDB.Settings.fonts.timer  = SpeedSplitsDB.Settings.fonts.timer or
+    SpeedSplitsDB.Settings.fonts.timer   = SpeedSplitsDB.Settings.fonts.timer or
         { size = 30, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" }
-    SpeedSplitsDB.Settings.fonts.header = SpeedSplitsDB.Settings.fonts.header or
+    SpeedSplitsDB.Settings.fonts.header  = SpeedSplitsDB.Settings.fonts.header or
         { size = 14, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" }
-    SpeedSplitsDB.Settings.historyScale = SpeedSplitsDB.Settings.historyScale or 1.0
-    SpeedSplitsDB.Settings.titleTexture = SpeedSplitsDB.Settings.titleTexture or NS.TitleTextures[1]
+    SpeedSplitsDB.Settings.fonts.counter = SpeedSplitsDB.Settings.fonts.counter or
+        { size = 16, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" }
+    SpeedSplitsDB.Settings.historyScale  = SpeedSplitsDB.Settings.historyScale or 1.0
+    SpeedSplitsDB.Settings.titleTexture  = SpeedSplitsDB.Settings.titleTexture or NS.TitleTextures[1]
 
-    DB                                  = SpeedSplitsDB
-    NS.DB                               = DB
+    -- Profile for default styles (Reset Styles will use this)
+    if not SpeedSplitsDB.DefaultStyle then
+        SpeedSplitsDB.DefaultStyle = {
+            colors = {
+                gold       = "ffffd100",
+                white      = "ffffffff",
+                turquoise  = "ff00bec3",
+                deepGreen  = "ff10ff00",
+                lightGreen = "ffcc2232",
+                darkRed    = "ffcc0005",
+            },
+            fonts = {
+                boss    = { size = 14, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
+                num     = { size = 17, font = "Fonts\\ARIALN.TTF", flags = "OUTLINE" },
+                timer   = { size = 30, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
+                header  = { size = 14, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
+                counter = { size = 16, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
+            },
+            titleTexture = NS.TitleTextures[1]
+        }
+    end
+
+    DB    = SpeedSplitsDB
+    NS.DB = DB
 
     -- Ensure History filters are ready
     if UI and UI.history then
@@ -246,6 +271,14 @@ function NS.WipeDatabase()
     NS.UpdateColorsFromSettings()
     NS.RefreshAllUI()
     SS_Print("Personal Best records and Run History have been wiped.")
+end
+
+function NS.ResetLayout()
+    if SpeedSplitsDB then
+        SpeedSplitsDB.ui = nil
+        NS.RefreshAllUI()
+        ReloadUI()
+    end
 end
 
 local function GetBestSplitsSubtable(instanceName)
@@ -804,23 +837,24 @@ local function ApplyTableLayout()
         UI.st:Refresh()
     end
 
-    -- Totals row alignment (perfectly centered vs table columns)
+    -- Totals row alignment (Right aligned to columns)
     local tf = UI.totalFrame
     if tf then
         local combinedBossWidth = UI._modelWidth + bossWidth
+        local rInset = UI._rightInset + 4
+
         UI.totalDelta:ClearAllPoints()
-        UI.totalDelta:SetPoint("RIGHT", tf, "LEFT",
-            combinedBossWidth + UI._pbWidth + UI._splitWidth + UI._deltaWidth / 2 + 34, 0)
+        UI.totalDelta:SetPoint("RIGHT", tf, "RIGHT", -rInset, 0)
         UI.totalDelta:SetWidth(UI._deltaWidth)
         UI.totalDelta:SetJustifyH("RIGHT")
 
         UI.totalSplit:ClearAllPoints()
-        UI.totalSplit:SetPoint("RIGHT", tf, "LEFT", combinedBossWidth + UI._pbWidth + UI._splitWidth / 2 + 34, 0)
+        UI.totalSplit:SetPoint("RIGHT", UI.totalDelta, "LEFT", -0, 0)
         UI.totalSplit:SetWidth(UI._splitWidth)
         UI.totalSplit:SetJustifyH("RIGHT")
 
         UI.totalPB:ClearAllPoints()
-        UI.totalPB:SetPoint("RIGHT", tf, "LEFT", combinedBossWidth + UI._pbWidth / 2 + 34, 0)
+        UI.totalPB:SetPoint("RIGHT", UI.totalSplit, "LEFT", -0, 0)
         UI.totalPB:SetWidth(UI._pbWidth)
         UI.totalPB:SetJustifyH("RIGHT")
     end
@@ -2670,7 +2704,7 @@ function NS.RefreshAllUI()
         UI.totalFrame:SetBackdropBorderColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 0.5)
     end
     if UI.killCountText then
-        NS.ApplyFontToFS(UI.killCountText, "header", 1.25)
+        NS.ApplyFontToFS(UI.killCountText, "counter")
     end
     if UI.totalPB then NS.ApplyFontToFS(UI.totalPB, "num") end
     if UI.totalSplit then NS.ApplyFontToFS(UI.totalSplit, "num") end
@@ -2685,6 +2719,15 @@ function NS.RefreshAllUI()
         local fontFlags = f and f.flags or "OUTLINE"
         UI.timerDeltaText:SetFont(fontPath, fontSize, fontFlags)
     end
+
+    -- Explicitly verify font strings exist before applying
+    if UI.totalPB then NS.ApplyFontToFS(UI.totalPB, "num") end
+    if UI.totalSplit then NS.ApplyFontToFS(UI.totalSplit, "num") end
+    if UI.totalDelta then NS.ApplyFontToFS(UI.totalDelta, "num") end
+    if UI.timerTextMin then NS.ApplyFontToFS(UI.timerTextMin, "timer") end
+    if UI.timerTextSec then NS.ApplyFontToFS(UI.timerTextSec, "timer") end
+    if UI.timerTextMs then NS.ApplyFontToFS(UI.timerTextMs, "timer") end
+    if UI.killCountText then NS.ApplyFontToFS(UI.killCountText, "counter") end
 
     -- Sync Header fonts and styles
     if UI.st and UI.st.head and UI.st.head.cols then

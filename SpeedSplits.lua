@@ -35,14 +35,14 @@ NS.TitleTextures                = {
     "dragonflight-landingpage-renownbutton-dream-hover",
     "UI-Tuskarr-Reward-Slate",
     "ui-web-reward-slate",
-    "ui-ManaforgeVandals-reward-slate",
+    "UI-Valdrakken-Reward-Slate",
 }
 
 NS.TimerToastTextures           = {
-    "UI-Valdrakken-Highlight-Bottom",
-    "UI-Tuskarr-Highlight-Bottom",
-    "ui-plunderstorm-highlight-bottom",
+    "UI-Centaur-Highlight-Bottom",
     "UI-Dream-Highlight-Bottom",
+    "UI-Valdrakken-Highlight-Bottom",
+    "UI-Expedition-Highlight-Bottom",
 }
 
 -- History Column Widths
@@ -175,6 +175,30 @@ local function InterpolateColor(c1, c2, t)
     return r, g, b, PackColorCode(a, r, g, b)
 end
 
+local function GetPaceToastTexture(delta, isPB)
+    -- Order: Gold, Green, Salmon, Red
+    if delta == nil or isPB or math.abs(delta) < 0.001 then
+        return NS.TimerToastTextures[1] -- Gold
+    end
+    if delta < 0 then
+        return NS.TimerToastTextures[2] -- Green
+    end
+
+    local t1 = NS.DB.Settings.paceThreshold1 or 4
+    local t2 = NS.DB.Settings.paceThreshold2 or 12
+
+    if delta <= t1 then
+        return NS.TimerToastTextures[2] -- Still Green? (Interpolation was here, but user says Salmon is the next color)
+        -- Wait, the user said: Gold, Green, Salmon, Red.
+        -- If delta <= t1, it's the "Green" zone (gradient to Salmon).
+    end
+    if delta <= t2 then
+        return NS.TimerToastTextures[3] -- Salmon
+    end
+    return NS.TimerToastTextures[4]     -- Red
+end
+NS.GetPaceToastTexture = GetPaceToastTexture
+
 local function GetPaceColor(delta, isPB)
     if delta == nil then return 1, 1, 1, "|cffffffff" end
     -- Gold if new PB or a tie (+0.000)
@@ -184,7 +208,10 @@ local function GetPaceColor(delta, isPB)
     if delta < 0 then
         return Colors.deepGreen.r, Colors.deepGreen.g, Colors.deepGreen.b, Colors.deepGreen.hex
     end
-    local t1, t2 = 4, 12
+
+    local t1 = NS.DB.Settings.paceThreshold1 or 4
+    local t2 = NS.DB.Settings.paceThreshold2 or 12
+
     if delta <= t1 then
         return InterpolateColor(Colors.deepGreen, Colors.lightGreen, delta / t1)
     elseif delta <= t2 then
@@ -243,6 +270,8 @@ local function EnsureDB()
     SpeedSplitsDB.Settings.titleTexture      = SpeedSplitsDB.Settings.titleTexture or NS.TitleTextures[1]
     SpeedSplitsDB.Settings.timerToastTexture = SpeedSplitsDB.Settings.timerToastTexture or NS.TimerToastTextures[1]
     SpeedSplitsDB.Settings.timerToastScale   = SpeedSplitsDB.Settings.timerToastScale or 1.2
+    SpeedSplitsDB.Settings.paceThreshold1    = SpeedSplitsDB.Settings.paceThreshold1 or 4
+    SpeedSplitsDB.Settings.paceThreshold2    = SpeedSplitsDB.Settings.paceThreshold2 or 12
     SpeedSplitsDB.Settings.showTimerToast    = SpeedSplitsDB.Settings.showTimerToast == nil and true or
         SpeedSplitsDB.Settings.showTimerToast
 
@@ -267,7 +296,9 @@ local function EnsureDB()
             titleTexture = NS.TitleTextures[1],
             timerToastTexture = NS.TimerToastTextures[1],
             timerToastScale = 1.2,
-            showTimerToast = true
+            showTimerToast = true,
+            paceThreshold1 = 4,
+            paceThreshold2 = 12
         }
     end
 
@@ -328,11 +359,6 @@ local function GetBestSplitsSubtable(instanceName)
 
     DB.InstancePersonalBests[instanceName] = DB.InstancePersonalBests[instanceName] or { Segments = {}, FullRun = {} }
     return DB.InstancePersonalBests[instanceName]
-end
-
-local function GetPBTableForDungeon(instanceName)
-    local node = GetBestSplitsSubtable(instanceName)
-    return node and node.Segments
 end
 
 local function ApplyBackgroundTexture(tex, name)
@@ -2440,11 +2466,6 @@ local function SetKillCount(killed, total)
     local displayName = (NS.Run and NS.Run.instanceName ~= "") and NS.Run.instanceName or "Boss"
     local text = string.format("%s (%d/%d)", displayName, killed or 0, total or 0)
 
-    -- Ensure persistence by updating the column definition
-    if UI.cols and UI.cols[1] then
-        -- We no longer clear the name, but col 1 and 2 are usually empty anyway.
-    end
-
     if UI.killCountText then
         UI.killCountText:SetText(text)
     end
@@ -2727,8 +2748,10 @@ local function RefreshTotals(isFinal)
     end
 end
 NS.Run = Run
-local function TestPBToast()
+local function TestPBToast(manualTex)
     if not UI.timerToastBg then return end
+    local tex = manualTex or NS.DB.Settings.timerToastTexture or NS.TimerToastTextures[1]
+    ApplyBackgroundTexture(UI.timerToastBg, tex)
     UI.timerToastBg:SetAlpha(1)
     C_Timer.After(3.0, function()
         if UI.timerToastBg then
@@ -3038,27 +3061,31 @@ local function RecordBossKill(encounterID, encounterName)
     -- Update the table with the new best segment
     if isNewSegmentPB then
         pbTable[bossName] = splitSegment
+    end
 
-        -- Timer Reward Toast
-        if NS.DB.Settings.showTimerToast and UI.timerToastBg then
-            UI.timerToastBg:SetAlpha(1)
-            C_Timer.After(4.0, function()
-                if UI.timerToastBg then
-                    local f = CreateFrame("Frame")
-                    f.elapsed = 0
-                    f:SetScript("OnUpdate", function(self, elapsed)
-                        self.elapsed = self.elapsed + elapsed
-                        local alpha = 1 - (self.elapsed / 1.5)
-                        if alpha <= 0 then
-                            UI.timerToastBg:SetAlpha(0)
-                            self:SetScript("OnUpdate", nil)
-                        else
-                            UI.timerToastBg:SetAlpha(alpha)
-                        end
-                    end)
-                end
-            end)
-        end
+    -- Timer Reward Toast (Trigger on every kill if enabled)
+    if NS.DB.Settings.showTimerToast and UI.timerToastBg then
+        local deltaOverall = splitCumulative - cumulativePB_Comparison
+        local tex = NS.GetPaceToastTexture(deltaOverall, isNewSegmentPB)
+        ApplyBackgroundTexture(UI.timerToastBg, tex)
+
+        UI.timerToastBg:SetAlpha(1)
+        C_Timer.After(4.0, function()
+            if UI.timerToastBg then
+                local f = CreateFrame("Frame")
+                f.elapsed = 0
+                f:SetScript("OnUpdate", function(self, elapsed)
+                    self.elapsed = self.elapsed + elapsed
+                    local alpha = 1 - (self.elapsed / 1.5)
+                    if alpha <= 0 then
+                        UI.timerToastBg:SetAlpha(0)
+                        self:SetScript("OnUpdate", nil)
+                    else
+                        UI.timerToastBg:SetAlpha(alpha)
+                    end
+                end)
+            end
+        end)
     end
 
     -- Prepare cumulative display (sum of current best segments)

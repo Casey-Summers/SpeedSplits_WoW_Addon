@@ -139,8 +139,33 @@ function NS.CreateOptionsPanel()
 
     -- THEMES & COLOURS (COLUMN 1)
     T.Header(panel, "Themes & Colors", 16, -60)
-    local colors = { { "Ahead (PB)", "gold" }, { "Even/Fast", "deepGreen" }, { "Slow", "lightGreen" }, { "Way Behind", "darkRed" }, { "Accents", "turquoise" }, { "Text", "white" } }
-    for i, c in ipairs(colors) do T.ColorPicker(panel, c[1], c[2], 24, -75 - (i * 26)) end
+    local colors = {
+        { "Personal Best", "gold" },
+        { "On Pace",       "deepGreen",  "paceThreshold1" },
+        { "Behind Pace",   "lightGreen", "paceThreshold2" },
+        { "Slow",          "darkRed" },
+        { "UI Accents",    "turquoise" },
+        { "Text",          "white" }
+    }
+    for i, c in ipairs(colors) do
+        local y = -75 - (i * 26)
+        local cp = T.ColorPicker(panel, c[1], c[2], 24, y)
+        if c[3] then
+            local eb = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
+            eb:SetSize(35, 20); eb:SetPoint("LEFT", cp, "RIGHT", 150, 0); eb:SetAutoFocus(false); eb:SetNumeric(true)
+            eb:SetText(tostring(NS.DB.Settings[c[3]] or (c[3] == "paceThreshold1" and 4 or 12)))
+            eb:SetScript("OnEnterPressed", function(s)
+                NS.DB.Settings[c[3]] = tonumber(s:GetText()) or 0; s:ClearFocus(); NS.RefreshAllUI()
+            end)
+            eb:SetScript("OnEscapePressed", function(s)
+                s:SetText(tostring(NS.DB.Settings[c[3]] or (c[3] == "paceThreshold1" and 4 or 12))); s:ClearFocus()
+            end)
+            local lab = eb:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+            lab:SetPoint("RIGHT", eb, "LEFT", -5, 0); lab:SetText("Cut-off:")
+            local suf = eb:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+            suf:SetPoint("LEFT", eb, "RIGHT", 5, 0); suf:SetText("seconds")
+        end
+    end
 
     -- HEADER TEXTURE (COLUMN 1, BELOW COLOURS)
     T.Header(panel, "Header Texture", 16, -260)
@@ -185,7 +210,7 @@ function NS.CreateOptionsPanel()
     local testBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     testBtn:SetSize(100, 22)
     testBtn:SetPoint("LEFT", cb.Text, "RIGHT", 15, 0)
-    testBtn:SetText("Test Toast Effect")
+    testBtn:SetText("Test Toast")
     testBtn:SetScript("OnClick", function()
         if NS.TestPBToast then NS.TestPBToast() end
     end)
@@ -207,6 +232,7 @@ function NS.CreateOptionsPanel()
     texFrame:SetSize(280, 1) -- width only; height is implicit from children
 
     local toastBtns = {}
+    local toastLabels = { "Gold", "Green", "Pink", "Red" }
     for index, name in ipairs(NS.TimerToastTextures or {}) do
         local btn = CreateFrame("Button", nil, texFrame, "BackdropTemplate")
         btn:SetSize(60, 30)
@@ -225,6 +251,11 @@ function NS.CreateOptionsPanel()
         b:SetBackdropBorderColor(1, 1, 0)
         btn.border = b
 
+        local tl = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        tl:SetPoint("TOP", btn, "BOTTOM", 0, -2)
+        tl:SetText(toastLabels[index] or "")
+        tl:SetScale(0.8)
+
         b:SetShown(name == NS.DB.Settings.timerToastTexture)
         btn.texName = name
         table.insert(toastBtns, btn)
@@ -235,6 +266,7 @@ function NS.CreateOptionsPanel()
                 x.border:SetShown(x.texName == name)
             end
             NS.RefreshAllUI()
+            if NS.TestPBToast then NS.TestPBToast() end -- Test the chosen one
         end)
     end
 
@@ -251,7 +283,7 @@ function NS.CreateOptionsPanel()
         local btn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate"); btn:SetSize(140, 26); btn:SetPoint(
             "TOPLEFT", 350 + x, -440 + y); btn:SetText(label); btn:SetScript("OnClick", func); return btn
     end
-    Q("Set as Default", 0, 0,
+    Q("Set Default Styles", 0, 0,
         function()
             NS.DB.DefaultStyle = {
                 colors = SS_CopyTable(NS.DB.Settings.colors),
@@ -261,7 +293,10 @@ function NS.CreateOptionsPanel()
                 timerToastTexture = NS.DB.Settings.timerToastTexture,
                 timerToastScale =
                     NS.DB.Settings.timerToastScale,
-                showTimerToast = NS.DB.Settings.showTimerToast
+                showTimerToast = NS.DB.Settings.showTimerToast,
+                paceThreshold1 = NS.DB.Settings
+                    .paceThreshold1,
+                paceThreshold2 = NS.DB.Settings.paceThreshold2
             }; if _G.SS_Print then
                 _G
                     .SS_Print("Default profile updated.")
@@ -275,10 +310,11 @@ function NS.CreateOptionsPanel()
                     d
                     .timerToastTexture; NS.DB.Settings.timerToastScale = d.timerToastScale; NS.DB.Settings.showTimerToast =
                     d
-                    .showTimerToast; NS.UpdateColorsFromSettings(); NS.RefreshAllUI()
+                    .showTimerToast; NS.DB.Settings.paceThreshold1 = d.paceThreshold1; NS.DB.Settings.paceThreshold2 = d
+                    .paceThreshold2; NS.UpdateColorsFromSettings(); NS.RefreshAllUI()
             end
         end)
-    Q("Save Layout", 0, -35, function() if _G.SS_Print then _G.SS_Print("Layout saved.") end end)
+    Q("Save Default Layout", 0, -35, function() if _G.SS_Print then _G.SS_Print("Layout saved.") end end)
     Q("Reset Layout", 155, -35, function() StaticPopup_Show("SPEEDSPLITS_RESET_LAYOUT") end)
     Q("Wipe All Records", 0, -70, function() StaticPopup_Show("SPEEDSPLITS_WIPE_CONFIRM") end):SetWidth(295)
 

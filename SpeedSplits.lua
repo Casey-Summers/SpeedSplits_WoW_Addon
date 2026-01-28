@@ -32,8 +32,17 @@ NS.TitleTextures                = {
     "dragonflight-landingpage-renownbutton-expedition-hover",
     "dragonflight-landingpage-renownbutton-locked",
     "dragonflight-landingpage-renownbutton-tuskarr-hover",
-    "dragonflight-landingpage-renownbutton-valdrakken-hover",
     "dragonflight-landingpage-renownbutton-dream-hover",
+    "UI-Tuskarr-Reward-Slate",
+    "ui-web-reward-slate",
+    "ui-ManaforgeVandals-reward-slate",
+}
+
+NS.TimerToastTextures           = {
+    "UI-Valdrakken-Highlight-Bottom",
+    "UI-Tuskarr-Highlight-Bottom",
+    "ui-plunderstorm-highlight-bottom",
+    "UI-Dream-Highlight-Bottom",
 }
 
 -- History Column Widths
@@ -197,21 +206,21 @@ local function EnsureDB()
     end
 
     -- Human-readable structure
-    SpeedSplitsDB.RunHistory             = SpeedSplitsDB.RunHistory or SpeedSplitsDB.runs or {}
-    SpeedSplitsDB.InstancePersonalBests  = SpeedSplitsDB.InstancePersonalBests or SpeedSplitsDB.PersonalBests or
+    SpeedSplitsDB.RunHistory                 = SpeedSplitsDB.RunHistory or SpeedSplitsDB.runs or {}
+    SpeedSplitsDB.InstancePersonalBests      = SpeedSplitsDB.InstancePersonalBests or SpeedSplitsDB.PersonalBests or
         SpeedSplitsDB.bestSplits or {}
-    SpeedSplitsDB.Settings               = SpeedSplitsDB.Settings or SpeedSplitsDB.settings or {}
+    SpeedSplitsDB.Settings                   = SpeedSplitsDB.Settings or SpeedSplitsDB.settings or {}
 
     -- Clean up old keys
-    SpeedSplitsDB.runs                   = nil
-    SpeedSplitsDB.bestSplits             = nil
-    SpeedSplitsDB.PersonalBests          = nil
-    SpeedSplitsDB.settings               = nil
-    SpeedSplitsDB.pbBoss                 = nil
-    SpeedSplitsDB.pbRun                  = nil
+    SpeedSplitsDB.runs                       = nil
+    SpeedSplitsDB.bestSplits                 = nil
+    SpeedSplitsDB.PersonalBests              = nil
+    SpeedSplitsDB.settings                   = nil
+    SpeedSplitsDB.pbBoss                     = nil
+    SpeedSplitsDB.pbRun                      = nil
 
     -- Defaults
-    SpeedSplitsDB.Settings.colors        = SpeedSplitsDB.Settings.colors or {
+    SpeedSplitsDB.Settings.colors            = SpeedSplitsDB.Settings.colors or {
         gold       = "ffffd100",
         white      = "ffffffff",
         turquoise  = "ff00bec3",
@@ -219,19 +228,23 @@ local function EnsureDB()
         lightGreen = "ffcc2232",
         darkRed    = "ffcc0005",
     }
-    SpeedSplitsDB.Settings.fonts         = SpeedSplitsDB.Settings.fonts or {}
-    SpeedSplitsDB.Settings.fonts.boss    = SpeedSplitsDB.Settings.fonts.boss or
+    SpeedSplitsDB.Settings.fonts             = SpeedSplitsDB.Settings.fonts or {}
+    SpeedSplitsDB.Settings.fonts.boss        = SpeedSplitsDB.Settings.fonts.boss or
         { size = 14, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" }
-    SpeedSplitsDB.Settings.fonts.num     = SpeedSplitsDB.Settings.fonts.num or
+    SpeedSplitsDB.Settings.fonts.num         = SpeedSplitsDB.Settings.fonts.num or
         { size = 17, font = "Fonts\\ARIALN.TTF", flags = "OUTLINE" }
-    SpeedSplitsDB.Settings.fonts.timer   = SpeedSplitsDB.Settings.fonts.timer or
+    SpeedSplitsDB.Settings.fonts.timer       = SpeedSplitsDB.Settings.fonts.timer or
         { size = 30, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" }
-    SpeedSplitsDB.Settings.fonts.header  = SpeedSplitsDB.Settings.fonts.header or
+    SpeedSplitsDB.Settings.fonts.header      = SpeedSplitsDB.Settings.fonts.header or
         { size = 14, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" }
-    SpeedSplitsDB.Settings.fonts.counter = SpeedSplitsDB.Settings.fonts.counter or
+    SpeedSplitsDB.Settings.fonts.counter     = SpeedSplitsDB.Settings.fonts.counter or
         { size = 16, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" }
-    SpeedSplitsDB.Settings.historyScale  = SpeedSplitsDB.Settings.historyScale or 1.0
-    SpeedSplitsDB.Settings.titleTexture  = SpeedSplitsDB.Settings.titleTexture or NS.TitleTextures[1]
+    SpeedSplitsDB.Settings.historyScale      = SpeedSplitsDB.Settings.historyScale or 1.0
+    SpeedSplitsDB.Settings.titleTexture      = SpeedSplitsDB.Settings.titleTexture or NS.TitleTextures[1]
+    SpeedSplitsDB.Settings.timerToastTexture = SpeedSplitsDB.Settings.timerToastTexture or NS.TimerToastTextures[1]
+    SpeedSplitsDB.Settings.timerToastScale   = SpeedSplitsDB.Settings.timerToastScale or 1.2
+    SpeedSplitsDB.Settings.showTimerToast    = SpeedSplitsDB.Settings.showTimerToast == nil and true or
+        SpeedSplitsDB.Settings.showTimerToast
 
     -- Profile for default styles (Reset Styles will use this)
     if not SpeedSplitsDB.DefaultStyle then
@@ -251,7 +264,10 @@ local function EnsureDB()
                 header  = { size = 14, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
                 counter = { size = 16, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
             },
-            titleTexture = NS.TitleTextures[1]
+            titleTexture = NS.TitleTextures[1],
+            timerToastTexture = NS.TimerToastTextures[1],
+            timerToastScale = 1.2,
+            showTimerToast = true
         }
     end
 
@@ -317,6 +333,28 @@ end
 local function GetPBTableForDungeon(instanceName)
     local node = GetBestSplitsSubtable(instanceName)
     return node and node.Segments
+end
+
+local function ApplyBackgroundTexture(tex, name)
+    if not tex or not name then return end
+    tex:SetTexCoord(0, 1, 0, 1)
+
+    local lowerName = name:lower()
+    if lowerName:find("[\\/]") then
+        -- Try with/without .blp extension
+        local path = name
+        if not path:lower():find("%.blp$") and not path:lower():find("%.tga$") then
+            path = path .. ".blp"
+        end
+        tex:SetTexture(path)
+    else
+        tex:SetAtlas(name)
+    end
+
+    if lowerName:find("slate") then
+        -- Zoom in for slate textures
+        tex:SetTexCoord(0.1, 0.9, 0.1, 0.9)
+    end
 end
 
 function NS.UpdateColorsFromSettings()
@@ -678,11 +716,13 @@ UI = {
     _colDrag = nil,    -- active drag state
 
     totalFrame = nil,
+    totalBg = nil,
     totalLabel = nil,
     totalPB = nil,
     totalSplit = nil,
     totalDelta = nil,
     timerDeltaText = nil,
+    timerToastBg = nil,
 
     resizeGrip = nil,
     _timerResizeGrip = nil,
@@ -2054,6 +2094,11 @@ local function EnsureUI()
     NS.ApplyFontToFS(timerDeltaText, "num")
     timerDeltaText:SetText("")
 
+    local timerToastBg = timerFrame:CreateTexture(nil, "BACKGROUND", nil, -5)
+    timerToastBg:SetAllPoints(timerFrame)
+    timerToastBg:SetAlpha(0)
+    UI.timerToastBg = timerToastBg
+
     -- Initial pivot anchor (will be refined in RefreshAllUI)
     timerTextSec:SetPoint("RIGHT", timerFrame, "CENTER", 0, 0)
 
@@ -2203,12 +2248,15 @@ local function EnsureUI()
     local totalFrame = CreateFrame("Frame", nil, bossFrame, "BackdropTemplate")
     totalFrame:SetHeight(24)
     totalFrame:SetBackdrop({
-        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
         edgeFile = "Interface\\Buttons\\WHITE8X8",
         edgeSize = 1,
     })
-    totalFrame:SetBackdropColor(0, 0, 0, 0.95)
+    totalFrame:SetBackdropColor(0, 0, 0, 0) -- Translucent black background replaced by texture
     UI.totalFrame = totalFrame
+
+    local totalBg = totalFrame:CreateTexture(nil, "BACKGROUND", nil, -8)
+    totalBg:SetAllPoints(totalFrame)
+    UI.totalBg = totalBg
 
     local logoText = totalFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     logoText:SetPoint("LEFT", 10, 0)
@@ -2679,7 +2727,27 @@ local function RefreshTotals(isFinal)
     end
 end
 NS.Run = Run
-NS.UI = UI
+local function TestPBToast()
+    if not UI.timerToastBg then return end
+    UI.timerToastBg:SetAlpha(1)
+    C_Timer.After(3.0, function()
+        if UI.timerToastBg then
+            local f = CreateFrame("Frame")
+            f.elapsed = 0
+            f:SetScript("OnUpdate", function(self, elapsed)
+                self.elapsed = self.elapsed + elapsed
+                local alpha = 1 - (self.elapsed / 1.0)
+                if alpha <= 0 then
+                    UI.timerToastBg:SetAlpha(0)
+                    self:SetScript("OnUpdate", nil)
+                else
+                    UI.timerToastBg:SetAlpha(alpha)
+                end
+            end)
+        end
+    end)
+end
+NS.TestPBToast = TestPBToast
 
 function NS.RefreshAllUI()
     if not UI.bossFrame then return end
@@ -2694,14 +2762,18 @@ function NS.RefreshAllUI()
         UI.borderFrame:SetBackdropBorderColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 0.8)
     end
     if UI.titleBg then
-        local atlas = NS.DB.Settings.titleTexture or NS.TitleTextures[1]
-        UI.titleBg:SetAtlas(atlas)
+        local texName = NS.DB.Settings.titleTexture or NS.TitleTextures[1]
+        ApplyBackgroundTexture(UI.titleBg, texName)
     end
     if UI.titleTab then
         UI.titleTab:SetBackdropBorderColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 0.5)
     end
     if UI.totalFrame then
         UI.totalFrame:SetBackdropBorderColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 0.5)
+    end
+    if UI.totalBg then
+        UI.totalBg:SetTexture(nil)
+        UI.totalBg:SetColorTexture(0.2, 0.2, 0.2, 0.7) -- Greyish translucent background
     end
     if UI.killCountText then
         NS.ApplyFontToFS(UI.killCountText, "counter")
@@ -2712,6 +2784,20 @@ function NS.RefreshAllUI()
     if UI.timerTextMin then NS.ApplyFontToFS(UI.timerTextMin, "timer") end
     if UI.timerTextSec then NS.ApplyFontToFS(UI.timerTextSec, "timer") end
     if UI.timerTextMs then NS.ApplyFontToFS(UI.timerTextMs, "timer") end
+
+    if UI.timerToastBg then
+        local texName = NS.DB.Settings.timerToastTexture or NS.TimerToastTextures[1]
+        local scale = NS.DB.Settings.timerToastScale or 1.0
+        ApplyBackgroundTexture(UI.timerToastBg, texName)
+
+        -- Apply scale relative to timerFrame size
+        UI.timerToastBg:ClearAllPoints()
+        local parent = UI.timerToastBg:GetParent()
+        local w, h = parent:GetSize()
+        UI.timerToastBg:SetSize(w * scale, h * scale)
+        UI.timerToastBg:SetPoint("CENTER", parent, "CENTER", 0, 0)
+    end
+
     if UI.timerDeltaText then
         local f = (NS.DB and NS.DB.Settings and NS.DB.Settings.fonts and NS.DB.Settings.fonts.timer)
         local fontPath = f and f.font or "Fonts\\FRIZQT__.TTF"
@@ -2952,6 +3038,27 @@ local function RecordBossKill(encounterID, encounterName)
     -- Update the table with the new best segment
     if isNewSegmentPB then
         pbTable[bossName] = splitSegment
+
+        -- Timer Reward Toast
+        if NS.DB.Settings.showTimerToast and UI.timerToastBg then
+            UI.timerToastBg:SetAlpha(1)
+            C_Timer.After(4.0, function()
+                if UI.timerToastBg then
+                    local f = CreateFrame("Frame")
+                    f.elapsed = 0
+                    f:SetScript("OnUpdate", function(self, elapsed)
+                        self.elapsed = self.elapsed + elapsed
+                        local alpha = 1 - (self.elapsed / 1.5)
+                        if alpha <= 0 then
+                            UI.timerToastBg:SetAlpha(0)
+                            self:SetScript("OnUpdate", nil)
+                        else
+                            UI.timerToastBg:SetAlpha(alpha)
+                        end
+                    end)
+                end
+            end)
+        end
     end
 
     -- Prepare cumulative display (sum of current best segments)

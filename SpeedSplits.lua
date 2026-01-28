@@ -23,8 +23,9 @@ local EJ_INSTANCE_INDEX_MAX     = 600
 local EJ_ENCOUNTER_INDEX_MAX    = 80
 local CRITERIA_MAX              = 80
 local HISTORY_ROW_PAD           = 4
+local HISTORY_ICON_SCALE        = 0.75
 local HISTORY_ENTRY_SCALE       = 1.03
-local HISTORY_DELETE_ICON_SCALE = 1.35
+local HISTORY_DELETE_ICON_SCALE = 1.2
 local BOSS_MODEL_ZOOM           = 0.75
 
 NS.TitleTextures                = {
@@ -43,6 +44,15 @@ NS.TimerToastTextures           = {
     "UI-Dream-Highlight-Bottom",
     "UI-Valdrakken-Highlight-Bottom",
     "UI-Expedition-Highlight-Bottom",
+}
+
+NS.SoundOptions                 = {
+    { name = "None",            id = 0 },
+    { name = "Achievement",     id = 569143 },
+    { name = "Quest Complete",  id = 567439 },
+    { name = "Level up",        id = 569593 },
+    { name = "Reputation Gain", id = 568016 },
+    { name = "Trading Post",    id = 4919212 },
 }
 
 -- History Column Widths
@@ -300,6 +310,9 @@ local function EnsureDB()
     SpeedSplitsDB.Settings.showTimerToast    = SpeedSplitsDB.Settings.showTimerToast == nil and true or
         SpeedSplitsDB.Settings.showTimerToast
     SpeedSplitsDB.Settings.toastAllBosses    = SpeedSplitsDB.Settings.toastAllBosses or false
+    SpeedSplitsDB.Settings.toastSoundID      = SpeedSplitsDB.Settings.toastSoundID or 569143
+    SpeedSplitsDB.Settings.toastSoundName    = SpeedSplitsDB.Settings.toastSoundName or "Achievement"
+    SpeedSplitsDB.Settings.toastVolume       = SpeedSplitsDB.Settings.toastVolume or 0.8
 
     -- Profile for default styles (Reset Styles will use this)
     if not SpeedSplitsDB.DefaultStyle then
@@ -1273,15 +1286,17 @@ local Delete_DoCellUpdate = function(rowFrame, cellFrame, data, cols, row, realr
             normal = btn:CreateTexture(nil, "ARTWORK")
             btn:SetNormalTexture(normal)
         end
-        normal:SetAtlas("SCRAP-activated", true)
+        normal:SetAtlas("common-icon-delete", true)
+        normal:SetVertexColor(0.8, 0.2, 0.2) -- Tint red
 
         local highlight = btn:GetHighlightTexture()
         if not highlight then
             highlight = btn:CreateTexture(nil, "HIGHLIGHT")
             btn:SetHighlightTexture(highlight)
         end
-        highlight:SetAtlas("SCRAP-activated", true)
+        highlight:SetAtlas("common-icon-delete", true)
         highlight:SetAlpha(0.35)
+        highlight:SetVertexColor(0.8, 0.2, 0.2) -- Tint red
         btn:SetScript("OnClick", function(self)
             if self.record then
                 DeleteRecord(self.record)
@@ -1316,7 +1331,7 @@ local Delete_DoCellUpdate = function(rowFrame, cellFrame, data, cols, row, realr
 end
 
 -- =========================================================
--- Runs History UI
+-- Run history UI
 -- =========================================================
 local function FormatEpochShort(epoch)
     if not epoch or epoch <= 0 then
@@ -2097,6 +2112,45 @@ local function EnsureUI()
     timerFrame:SetBackdropBorderColor(1, 1, 1, 0)
 
     local timerRestored = RestoreFrameGeom("timer", timerFrame, 140, 50)
+    UI.timerFrame = timerFrame
+
+    local pbShine = timerFrame:CreateTexture(nil, "OVERLAY")
+    pbShine:SetAtlas("challenges-bannershine")
+    pbShine:SetPoint("BOTTOM", timerFrame, "TOP", 0, -20)
+    pbShine:SetSize(250, 100)
+    pbShine:SetAlpha(0)
+    UI.pbShine = pbShine
+
+    -- Keep these in sync with the toast background fade (TestPBToast uses 3.0 hold, 1.5 fade)
+    local TOAST_HOLD = 3.0
+    local TOAST_FADE = 1.5
+
+    local SHINE_IN = 0.3
+    local SHINE_HOLD = math.max(0, TOAST_HOLD - SHINE_IN)
+    local SHINE_OUT = TOAST_FADE
+
+    local shineAG = pbShine:CreateAnimationGroup()
+
+    local shineIn = shineAG:CreateAnimation("Alpha")
+    shineIn:SetFromAlpha(0)
+    shineIn:SetToAlpha(1)
+    shineIn:SetDuration(SHINE_IN)
+    shineIn:SetOrder(1)
+
+    local shineHold = shineAG:CreateAnimation("Alpha")
+    shineHold:SetFromAlpha(1)
+    shineHold:SetToAlpha(1)
+    shineHold:SetDuration(SHINE_HOLD)
+    shineHold:SetOrder(2)
+
+    local shineOut = shineAG:CreateAnimation("Alpha")
+    shineOut:SetFromAlpha(1)
+    shineOut:SetToAlpha(0)
+    shineOut:SetDuration(SHINE_OUT)
+    shineOut:SetOrder(3)
+
+    UI.pbShineAG = shineAG
+
     if not timerRestored then
         timerFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 200)
     end
@@ -2243,6 +2297,27 @@ local function EnsureUI()
     local st = ST and ST:CreateST(cols, 6, 24, nil, bossFrame)
     if st then
         st.frame:SetClipsChildren(true)
+        -- Ace3-styled Scrollbar implementation
+        if st.scrollframe then
+            local scrollbar = _G[st.scrollframe:GetName() .. "ScrollBar"]
+            if scrollbar then
+                scrollbar:SetWidth(10)
+                local up = _G[scrollbar:GetName() .. "ScrollUpButton"]
+                local down = _G[scrollbar:GetName() .. "ScrollDownButton"]
+                if up then up:Hide() end
+                if down then down:Hide() end
+
+                local thumb = scrollbar:GetThumbTexture()
+                if thumb then
+                    thumb:SetColorTexture(0.4, 0.4, 0.4, 0.8)
+                    thumb:SetWidth(8)
+                end
+
+                local bg = scrollbar:CreateTexture(nil, "BACKGROUND")
+                bg:SetAllPoints()
+                bg:SetColorTexture(0, 0, 0, 0.5)
+            end
+        end
     end
     UI.st = st
     if st and st.frame then
@@ -2315,18 +2390,35 @@ local function EnsureUI()
     logoText:SetText("SpeedSplits")
     UI.logoText = logoText
 
+    local logoShimmer = totalFrame:CreateTexture(nil, "ARTWORK", nil, 1)
+    logoShimmer:SetAtlas("bonusobjectives-bar-shine")
+    logoShimmer:SetSize(60, 24); logoShimmer:SetBlendMode("ADD"); logoShimmer:SetAlpha(0)
+    logoShimmer:SetPoint("LEFT", totalFrame, "LEFT", -60, 0)
+    UI.logoShimmer = logoShimmer
+
+    local shimAG = logoShimmer:CreateAnimationGroup()
+    local shimMove = shimAG:CreateAnimation("Translation")
+    shimMove:SetOffset(400, 0); shimMove:SetDuration(1.0); shimMove:SetSmoothing("IN_OUT")
+    local shimAlpha = shimAG:CreateAnimation("Alpha")
+    shimAlpha:SetFromAlpha(0); shimAlpha:SetToAlpha(0.8); shimAlpha:SetDuration(0.15); shimAlpha:SetOrder(1)
+    local shimAlphaOut = shimAG:CreateAnimation("Alpha")
+    shimAlphaOut:SetFromAlpha(0.8); shimAlphaOut:SetToAlpha(0); shimAlphaOut:SetDuration(0.3); shimAlphaOut
+        :SetStartDelay(0.7)
+    shimAG:SetLooping("REPEAT")
+    UI.logoShimmerAG = shimAG
+    shimAG:Play()
+
     -- History button on Footer Tab
     local historyButton = CreateFrame("Button", nil, totalFrame)
-    historyButton:SetSize(16, 16)
-    historyButton:SetPoint("LEFT", logoText, "RIGHT", 6, 0)
-    historyButton:SetNormalTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Up")
-    historyButton:SetPushedTexture("Interface\\Buttons\\UI-GuildButton-PublicNote-Down")
+    historyButton:SetSize(18 * HISTORY_ICON_SCALE, 18 * HISTORY_ICON_SCALE)
+    historyButton:SetPoint("LEFT", logoText, "RIGHT", 8, 0)
+    historyButton:SetNormalAtlas("perks-clock-large")
     historyButton:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
     UI.historyButton = historyButton
 
     historyButton:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Runs History", 1, 1, 1)
+        GameTooltip:SetText("Run history", 1, 1, 1)
         GameTooltip:Show()
     end)
     historyButton:SetScript("OnLeave", function(self)
@@ -2632,7 +2724,7 @@ local function SetRowKilled(bossKey, splitCumulative, cumulativePB, deltaSeconds
     local row = realrow and UI.data and UI.data[realrow]
     if not row then return end
 
-    row.cols[2].value = (pbSegmentForThisRow and pbSegmentForThisRow > 0) and FormatTime(cumulativePB) or "--:--.---"
+    row.cols[2].value = (cumulativePB and cumulativePB > 0) and FormatTime(cumulativePB) or "--:--.---"
     row.cols[2].color = NS.Colors.gold
     row.cols[3].value = FormatTime(splitCumulative)
     row.cols[3].color = isGold and NS.Colors.gold or { r = r, g = g, b = b, a = 1 }
@@ -2642,7 +2734,7 @@ local function SetRowKilled(bossKey, splitCumulative, cumulativePB, deltaSeconds
         row.cols[4].color = nil
     else
         row.cols[4].value = FormatDelta(deltaSeconds)
-        row.cols[4].color = { r = r, g = g, b = b, a = 1 }
+        row.cols[4].color = isGold and NS.Colors.gold or { r = r, g = g, b = b, a = 1 }
     end
 
     if UI.st and UI.st.Refresh then
@@ -2689,8 +2781,8 @@ local function ResetRun()
     Run.endGameTime = 0
     Run.startedAt = 0
     Run.endedAt = 0
-    Run.bossSource = "none"
-    Run.dungeonKey = ""
+    Run.lastDelta = 0
+    Run.lastColorR, Run.lastColorG, Run.lastColorB, Run.lastColorHex = nil, nil, nil, nil
     Run._bossLoadTries = 0
     Run._bossLoaded = false
     SetTimerText(0, false)
@@ -2749,9 +2841,9 @@ local function RefreshTotals(isFinal)
 
     if lastBossKey then
         -- Synchronize with table: pull the state directly from the last calculated split
-        SetTotals(Run.lastPBTotal, Run.lastSplitCumulative, Run.lastDelta, Run.lastColorR, Run.lastColorG, Run
-            .lastColorB,
-            Run.lastColorHex)
+        local r, g, b, hex = Run.lastColorR or 1, Run.lastColorG or 1, Run.lastColorB or 1,
+            Run.lastColorHex or "|cffffffff"
+        SetTotals(Run.lastPBTotal, Run.lastSplitCumulative, Run.lastDelta, r, g, b, hex)
         SetTimerDelta(Run.lastDelta)
     else
         SetTotals(pbTotal, nil, nil)
@@ -2763,6 +2855,17 @@ local function TestPBToast(manualTex)
     if not UI.timerToastBg then return end
     local tex = manualTex or NS.DB.Settings.timerToastTexture or NS.TimerToastTextures[1]
     ApplyBackgroundTexture(UI.timerToastBg, tex)
+
+    -- Play the selected sound
+    if NS.DB.Settings.toastSoundID and NS.DB.Settings.toastSoundID > 0 then
+        PlaySoundFile(NS.DB.Settings.toastSoundID, "SFX")
+    end
+
+    -- Trigger the banner shine ONLY if using the gold texture (first index)
+    if UI.pbShineAG and tex == NS.TimerToastTextures[1] then
+        UI.pbShineAG:Stop(); UI.pbShineAG:Play()
+    end
+
     UI.timerToastBg:SetAlpha(1)
     C_Timer.After(3.0, function()
         if UI.timerToastBg then
@@ -2770,7 +2873,7 @@ local function TestPBToast(manualTex)
             f.elapsed = 0
             f:SetScript("OnUpdate", function(self, elapsed)
                 self.elapsed = self.elapsed + elapsed
-                local alpha = 1 - (self.elapsed / 1.0)
+                local alpha = 1 - (self.elapsed / 1.5) -- Fade out a bit slower
                 if alpha <= 0 then
                     UI.timerToastBg:SetAlpha(0)
                     self:SetScript("OnUpdate", nil)
@@ -2788,6 +2891,13 @@ function NS.RefreshAllUI()
     NS.UpdateColorsFromSettings()
     if UI.logoText then
         UI.logoText:SetTextColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 1)
+    end
+    if UI.logoGlow then
+        UI.logoGlow:SetTextColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 0.6)
+    end
+    if UI.historyButton then
+        local tex = UI.historyButton:GetNormalTexture()
+        if tex then tex:SetVertexColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b) end
     end
     if UI.bossFrame then
         UI.bossFrame:SetBackdropBorderColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 0.8)
@@ -3084,6 +3194,16 @@ local function RecordBossKill(encounterID, encounterName)
             local tex = NS.GetPaceToastTexture(deltaOverallAtKill, isNewSegmentPB)
             ApplyBackgroundTexture(UI.timerToastBg, tex)
 
+            if isNewSegmentPB then
+                if NS.DB.Settings.toastSoundID and NS.DB.Settings.toastSoundID > 0 then
+                    PlaySoundFile(NS.DB.Settings.toastSoundID, "SFX")
+                end
+                -- Only show shine if the texture is "Gold" (the first one)
+                if UI.pbShineAG and NS.DB.Settings.timerToastTexture == NS.TimerToastTextures[1] then
+                    UI.pbShineAG:Stop(); UI.pbShineAG:Play()
+                end
+            end
+
             UI.timerToastBg:SetAlpha(1)
             C_Timer.After(4.0, function()
                 if UI.timerToastBg then
@@ -3104,6 +3224,33 @@ local function RecordBossKill(encounterID, encounterName)
         end
     end
 
+    -- Toast sound (best-effort "per-addon volume" by temporarily setting SFX volume)
+    local function PlayToastSoundOnce()
+        local soundID = NS.DB and NS.DB.Settings and NS.DB.Settings.toastSoundID
+        if not soundID or soundID <= 0 then return end
+
+        local toastVol = (NS.DB.Settings.toastVolume ~= nil) and Clamp(NS.DB.Settings.toastVolume, 0, 1) or nil
+        local oldSFX = tonumber(GetCVar("Sound_SFXVolume") or "1") or 1
+
+        if toastVol ~= nil then
+            SetCVar("Sound_SFXVolume", tostring(toastVol))
+        end
+
+        -- Some IDs are SoundKitIDs (PlaySound), some behave like FileIDs (PlaySoundFile).
+        local ok = pcall(PlaySound, soundID, "SFX")
+        if not ok then
+            pcall(PlaySoundFile, soundID, "SFX")
+        end
+
+        if toastVol ~= nil then
+            C_Timer.After(0.25, function()
+                SetCVar("Sound_SFXVolume", tostring(oldSFX))
+            end)
+        end
+    end
+
+    NS.PlayToastSoundOnce = PlayToastSoundOnce
+
     -- Prepare cumulative display (sum of current best segments)
     local cumulativePB_Display = 0
     for _, entry in ipairs(Run.entries) do
@@ -3116,7 +3263,7 @@ local function RecordBossKill(encounterID, encounterName)
 
     local pbTotalTableSum = ComputeSumOfBest(pbTable, Run.entries) or 0
     local deltaOverall = splitCumulative - cumulativePB_Comparison
-    local r, g, b, hex = GetPaceColor(deltaOverall, false)
+    local r, g, b, hex = GetPaceColor(deltaOverall, isNewSegmentPB)
 
     -- Store for footer/timer synchronization
     Run.lastDelta = deltaOverall

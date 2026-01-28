@@ -207,6 +207,16 @@ function NS.CreateOptionsPanel()
         NS.RefreshAllUI()
     end)
 
+    local cbAll = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
+    cbAll:SetScale(0.9)
+    cbAll.Text:SetText("Toast All Boss Kills")
+    cbAll:SetChecked(NS.DB.Settings.toastAllBosses)
+    cbAll:SetPoint("TOPLEFT", cb, "BOTTOMLEFT", 0, -4)
+    cbAll:SetScript("OnClick", function(s)
+        NS.DB.Settings.toastAllBosses = s:GetChecked()
+        NS.RefreshAllUI()
+    end)
+
     local testBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     testBtn:SetSize(100, 22)
     testBtn:SetPoint("LEFT", cb.Text, "RIGHT", 15, 0)
@@ -215,11 +225,11 @@ function NS.CreateOptionsPanel()
         if NS.TestPBToast then NS.TestPBToast() end
     end)
 
-    -- Slider (anchored under toggle)
+    -- Slider (anchored under toggles)
     local toastScaleSlider = T.CreateSlider(panel, "Toast Pulse Scale", 0.5, 3.0, "settings", "timerToastScale", 0, 0,
         180)
     toastScaleSlider:ClearAllPoints()
-    toastScaleSlider:SetPoint("TOPLEFT", cb, "BOTTOMLEFT", 0, -22)
+    toastScaleSlider:SetPoint("TOPLEFT", cbAll, "BOTTOMLEFT", 0, -22)
 
     -- Texture selection label + container (anchored under slider)
     local texLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
@@ -232,7 +242,7 @@ function NS.CreateOptionsPanel()
     texFrame:SetSize(280, 1) -- width only; height is implicit from children
 
     local toastBtns = {}
-    local toastLabels = { "Gold", "Green", "Pink", "Red" }
+    local toastLabels = { "Gold", "Green", "Purple", "Red" }
     for index, name in ipairs(NS.TimerToastTextures or {}) do
         local btn = CreateFrame("Button", nil, texFrame, "BackdropTemplate")
         btn:SetSize(60, 30)
@@ -296,7 +306,8 @@ function NS.CreateOptionsPanel()
                 showTimerToast = NS.DB.Settings.showTimerToast,
                 paceThreshold1 = NS.DB.Settings
                     .paceThreshold1,
-                paceThreshold2 = NS.DB.Settings.paceThreshold2
+                paceThreshold2 = NS.DB.Settings.paceThreshold2,
+                toastAllBosses = NS.DB.Settings.toastAllBosses
             }; if _G.SS_Print then
                 _G
                     .SS_Print("Default profile updated.")
@@ -311,7 +322,8 @@ function NS.CreateOptionsPanel()
                     .timerToastTexture; NS.DB.Settings.timerToastScale = d.timerToastScale; NS.DB.Settings.showTimerToast =
                     d
                     .showTimerToast; NS.DB.Settings.paceThreshold1 = d.paceThreshold1; NS.DB.Settings.paceThreshold2 = d
-                    .paceThreshold2; NS.UpdateColorsFromSettings(); NS.RefreshAllUI()
+                    .paceThreshold2; NS.DB.Settings.toastAllBosses = d.toastAllBosses; NS.UpdateColorsFromSettings(); NS
+                    .RefreshAllUI()
             end
         end)
     Q("Save Default Layout", 0, -35, function() if _G.SS_Print then _G.SS_Print("Layout saved.") end end)

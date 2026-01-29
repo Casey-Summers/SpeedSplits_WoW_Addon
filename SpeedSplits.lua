@@ -938,6 +938,17 @@ local function ApplyTableLayout()
     else
         UI.st.cols = UI.cols
     end
+
+    -- Update display rows based on current height to avoid empty area or static cropping
+    local h = UI.st.frame:GetHeight() or 1
+    local rowHeight = 24 -- Match initial row height from CreateST
+    local displayRows = math.floor(h / rowHeight)
+    if displayRows < 1 then displayRows = 1 end
+
+    if UI.st.SetDisplayRows then
+        UI.st:SetDisplayRows(displayRows, rowHeight)
+    end
+
     if UI.st.Refresh then
         UI.st:Refresh()
     end

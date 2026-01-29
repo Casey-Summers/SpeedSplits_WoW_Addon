@@ -356,13 +356,41 @@ local function EnsureDB()
     end
 end
 
+StaticPopupDialogs["SPEEDSPLITS_WIPE_CONFIRM"] = {
+    text = "Are you sure you want to wipe ALL Personal Bests and Run History? This cannot be undone.",
+    button1 = "Wipe Records",
+    button2 = "Cancel",
+    OnAccept = function()
+        NS.WipeDatabase()
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["SPEEDSPLITS_RESET_LAYOUT"] = {
+    text =
+    "No default layout found. Reset all frame positions and sizes to their original factory defaults? This will reload your UI.",
+    button1 = "Reset & Reload",
+    button2 = "Cancel",
+    OnAccept = function()
+        NS.ResetLayout()
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
 function NS.WipeDatabase()
     SpeedSplitsDB.InstancePersonalBests = {}
     SpeedSplitsDB.RunHistory = {}
     EnsureDB()
     NS.UpdateColorsFromSettings()
     NS.RefreshAllUI()
-    SS_Print("Personal Best records and Run History have been wiped.")
+    SS_Print("Records wiped. Reloading UI...")
+    ReloadUI()
 end
 
 function NS.ResetLayout()
@@ -1140,6 +1168,8 @@ local function StyleHeaderCell(cell, align, multiplier, text)
 
     local c = (NS.Colors and NS.Colors.turquoise) or { r = 0, g = 0.74, b = 0.76 }
     fs:SetTextColor(c.r, c.g, c.b, 1)
+    fs:GetParent().turquoiseSet = true -- Tag to prevent accidental revert
+
     fs:SetDrawLayer("OVERLAY", 7)
     fs:ClearAllPoints()
     fs:SetAllPoints(cell)
@@ -1296,7 +1326,7 @@ local Delete_DoCellUpdate = function(rowFrame, cellFrame, data, cols, row, realr
     if not cellFrame.delBtn then
         local btn = CreateFrame("Button", nil, cellFrame)
         btn:SetSize(24, 24)
-        btn:SetPoint("LEFT", cellFrame, "LEFT", 4, 0)
+        btn:SetPoint("CENTER", cellFrame, "CENTER", 0, 0)
 
 
         local normal = btn:GetNormalTexture()
@@ -1332,19 +1362,22 @@ local Delete_DoCellUpdate = function(rowFrame, cellFrame, data, cols, row, realr
     -- Update icon size and record reference every update
     local btn = cellFrame.delBtn
     local hScale = (NS.DB and NS.DB.Settings and NS.DB.Settings.historyScale) or 1.0
-    local size = math.max(1, math.floor(16 * HISTORY_DELETE_ICON_SCALE * hScale + 0.5))
+    local iconSize = math.max(1, math.floor(16 * HISTORY_DELETE_ICON_SCALE * hScale + 0.5))
+    local btnSize = math.max(20, iconSize + 4)
+
+    btn:SetSize(btnSize, btnSize)
 
     local normal = btn:GetNormalTexture()
     normal:ClearAllPoints()
     normal:SetPoint("CENTER")
-    normal:SetSize(size, size)
+    normal:SetSize(iconSize, iconSize)
 
     local highlight = btn:GetHighlightTexture()
     highlight:ClearAllPoints()
     highlight:SetPoint("CENTER")
-    highlight:SetSize(size, size)
+    highlight:SetSize(iconSize, iconSize)
 
-    btn.record = data[realrow]
+    btn.record = data[realrow].record
     btn:Show()
 end
 
@@ -1404,63 +1437,175 @@ local function IsRunPB(record)
     return math.abs(record.duration - pb.duration) < 0.001
 end
 
-local function BuildHistoryTierItems()
-    local items = { {
-        text = "Any",
-        value = 0
-    } }
-    if not DB or not DB.RunHistory then
-        return items
+local function History_GetRow(parent)
+    UI.history.rowPool = UI.history.rowPool or {}
+    local row = table.remove(UI.history.rowPool)
+    if not row then
+        row = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+        row:SetHeight(24)
+        row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+        row:SetBackdropColor(0, 0, 0, 0)
+
+        row.cols = {}
+        for i = 1, 7 do
+            local fs = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            fs:SetHeight(24)
+            row.cols[i] = fs
+            if i == 7 then -- Delete icon
+                local btn = CreateFrame("Button", nil, row)
+                btn:SetSize(20, 20)
+                btn:SetPoint("CENTER", fs, "CENTER")
+                local tex = btn:CreateTexture(nil, "ARTWORK")
+                tex:SetAtlas("common-icon-delete")
+                tex:SetVertexColor(0.8, 0.2, 0.2)
+                tex:SetAllPoints()
+                btn:SetNormalTexture(tex)
+                btn:SetScript("OnClick", function(self) if self.record then DeleteRecord(self.record) end end)
+                row.delBtn = btn
+            else
+                fs:SetWordWrap(false)
+                if fs.SetTextTruncate then fs:SetTextTruncate("REPLACE") end
+            end
+        end
+
+        row.bg = row:CreateTexture(nil, "BACKGROUND")
+        row.bg:SetAllPoints()
+        row.bg:SetColorTexture(1, 1, 1, 0.03)
+
+        row.UpdateLayout = function(self)
+            local w = UI.history.colWidths
+            local avail = UI.history.listFrame:GetWidth() - 20
+            local used = w.date + w.expansion + w.time + w.result + w.diff + w.delete
+            local dungW = math.max(avail - used, 100)
+
+            local x = 0
+            local msOff = 0
+            local function SetCol(i, width, align, pivot)
+                local c = self.cols[i]
+                c:ClearAllPoints()
+                if pivot then
+                    if msOff == 0 then
+                        local t = self:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+                        t:SetText(".000")
+                        msOff = t:GetStringWidth()
+                        t:Hide()
+                    end
+                    -- Align thousands place but center on the seconds/period
+                    -- By aligning the end of the string to (center + msWidth), the decimal point hits the center.
+                    c:SetPoint("RIGHT", self, "LEFT", x + (width / 2) + msOff, 0)
+                    c:SetPoint("LEFT", self, "LEFT", x, 0)
+                    c:SetJustifyH("RIGHT")
+                else
+                    c:SetPoint("LEFT", self, "LEFT", x, 0)
+                    c:SetWidth(width)
+                    c:SetJustifyH(align)
+                end
+                x = x + width
+            end
+            SetCol(1, w.date, "CENTER")
+            SetCol(2, dungW, "LEFT")
+            SetCol(3, w.expansion, "CENTER")
+            SetCol(4, w.result, "CENTER")
+            SetCol(5, w.time, "CENTER", true)
+            SetCol(6, w.diff, "CENTER", true)
+            SetCol(7, w.delete, "CENTER")
+        end
     end
+    row:SetParent(parent)
+    return row
+end
+
+local function History_ReleaseRow(row)
+    row:Hide()
+    table.insert(UI.history.rowPool, row)
+end
+
+UI.RefreshHistoryTable = function()
+    if not UI.history or not UI.history.frame or not UI.history.frame:IsShown() then return end
+
+    local f = UI.history.filters or HistoryFilterDefaults()
+    local search = NormalizeName(f.search or "")
+    local filterResult = f.result or "Any"
+    local filterTier = tonumber(f.tier) or 0
+
+    local filtered = {}
+    local history = DB and DB.RunHistory
+    if type(history) == "table" then
+        for i = 1, #history do
+            local r = history[i]
+            if r.instanceName then
+                local nameNorm = NormalizeName(r.instanceName)
+                local matchesSearch = (search == "" or nameNorm:find(search, 1, true))
+                local matchesTier = (filterTier == 0 or (tonumber(r.tier) == filterTier))
+
+                local isPB = IsRunPB(r)
+                local matchesResult = true
+                if filterResult == "PB" then
+                    matchesResult = isPB
+                elseif filterResult == "Completed" then
+                    matchesResult = (r.success and not isPB)
+                elseif filterResult == "Incomplete" then
+                    matchesResult = (not r.success)
+                end
+
+                if matchesSearch and matchesTier and matchesResult then
+                    table.insert(filtered, r)
+                end
+            end
+        end
+    end
+
+    -- Sorting
+    local sortCol = UI.history.sort_col or 1
+    local sortAsc = (UI.history.sort_asc ~= false)
+
+    table.sort(filtered, function(a, b)
+        local valA, valB
+        if sortCol == 1 then
+            valA, valB = tonumber(a.startedAt or 0), tonumber(b.startedAt or 0)
+        elseif sortCol == 2 then
+            valA, valB = NormalizeName(a.instanceName), NormalizeName(b.instanceName)
+        elseif sortCol == 3 then
+            valA, valB = tonumber(a.tier or 0), tonumber(b.tier or 0)
+        elseif sortCol == 4 then
+            local function gO(x) return IsRunPB(x) and 1 or (x.success and 2 or 3) end
+            valA, valB = gO(a), gO(b)
+        elseif sortCol == 5 then
+            valA, valB = tonumber(a.duration) or 999999, tonumber(b.duration) or 999999
+        elseif sortCol == 6 then
+            local function gD(x)
+                local node = GetBestSplitsSubtable(x.instanceName)
+                local pb = node and node.FullRun and node.FullRun.duration
+                return (pb and x.duration) and (x.duration - pb) or 999999
+            end
+            valA, valB = gD(a), gD(b)
+        end
+
+        if valA ~= valB then
+            if sortAsc then return valA < valB else return valA > valB end
+        end
+        -- Tie breaker: Date DESC
+        return tonumber(a.startedAt or 0) > tonumber(b.startedAt or 0)
+    end)
+
+    UI.history.filteredData = filtered
+    UI.history.UpdateScroll()
+end
+
+
+local function BuildHistoryTierItems()
+    local items = { { text = "Any", value = 0 } }
+    if not DB or not DB.RunHistory then return items end
     local seen = {}
     for _, r in ipairs(DB.RunHistory) do
         local t = tonumber(r.tier)
-        if t and t > 0 then
-            seen[t] = true
-        end
+        if t and t > 0 then seen[t] = true end
     end
     local tiers = {}
-    for t in pairs(seen) do
-        tiers[#tiers + 1] = t
-    end
+    for t in pairs(seen) do tiers[#tiers + 1] = t end
     table.sort(tiers)
     for _, t in ipairs(tiers) do
-        items[#items + 1] = {
-            text = GetTierNameSafe(t),
-            value = t
-        }
-    end
-    return items
-end
-
-local function BuildHistoryDungeonItems()
-    local items = { {
-        text = "Any",
-        value = 0
-    } }
-    if not DB or not DB.RunHistory then
-        return items
-    end
-    local seen = {}
-    for _, r in ipairs(DB.RunHistory) do
-        local mapID = tonumber(r.mapID) or 0
-        local name = r.instanceName or ("Map " .. tostring(mapID))
-        if mapID > 0 and not seen[mapID] then
-            seen[mapID] = name
-        end
-    end
-    local mapIDs = {}
-    for mapID in pairs(seen) do
-        mapIDs[#mapIDs + 1] = mapID
-    end
-    table.sort(mapIDs, function(a, b)
-        return tostring(seen[a] or a) < tostring(seen[b] or b)
-    end)
-    for _, mapID in ipairs(mapIDs) do
-        items[#items + 1] = {
-            text = seen[mapID],
-            value = mapID
-        }
+        items[#items + 1] = { text = GetTierNameSafe(t), value = t }
     end
     return items
 end
@@ -1474,204 +1619,11 @@ local function BuildHistoryResultItems()
     }
 end
 
-local function DateRangeToMinEpoch(mode)
-    mode = mode or "any"
-    if mode == "today" then
-        local now = time()
-        local t = date("*t", now)
-        t.hour, t.min, t.sec = 0, 0, 0
-        return time(t)
-    elseif mode == "7d" then
-        return time() - (7 * 24 * 60 * 60)
-    elseif mode == "30d" then
-        return time() - (30 * 24 * 60 * 60)
-    end
-    return nil
-end
-
-local History_DoCellUpdate = function(...)
-    local hScale = (NS.DB and NS.DB.Settings and NS.DB.Settings.historyScale) or 1.0
-    local updater = MakeCellUpdater { fontScale = HISTORY_ENTRY_SCALE * hScale }
-    updater(...)
-end
-
--- NOTE:
--- LibScrollingTable typically handles DESC sorting by swapping rowA/rowB when invoking the sort.
--- Therefore our comparator must be a strict ASC comparator (stable + transitive). DESC will "just work".
-local function History_NormalizeSortValue(v)
-    if v == nil then return nil end
-    local t = type(v)
-    if t == "string" then return v:lower() end
-    if t == "number" then return v end
-    if t == "boolean" then return v and 1 or 0 end
-    return tostring(v):lower()
-end
-
-local function HistoryColumnSort(st, rowA, rowB, sortCol)
-    -- Primary sort (ASC)
-    local cellA = rowA.cols and rowA.cols[sortCol]
-    local cellB = rowB.cols and rowB.cols[sortCol]
-    local valA = History_NormalizeSortValue(cellA and cellA.value)
-    local valB = History_NormalizeSortValue(cellB and cellB.value)
-
-    if valA ~= valB then
-        if valA == nil then return false end -- nil always sorts last
-        if valB == nil then return true end
-        return valA < valB
-    end
-
-    -- Tie-breaker: run timestamp (ASC)
-    local tA = tonumber(rowA.record and (rowA.record.startedAt or rowA.record.endedAt) or 0) or 0
-    local tB = tonumber(rowB.record and (rowB.record.startedAt or rowB.record.endedAt) or 0) or 0
-    if tA ~= tB then
-        return tA < tB
-    end
-
-    -- Final stability: render index (ASC)
-    local iA = tonumber(rowA.sortIndex) or 0
-    local iB = tonumber(rowB.sortIndex) or 0
-    return iA < iB
-end
-
-UI.RefreshHistoryTable = function()
-    if not UI or not UI.history or not UI.history.st then return end
-
-    -- Safe filter check
-    if not UI.history.filters then
-        UI.history.filters = HistoryFilterDefaults()
-    end
-
-    local f = UI.history.filters
-    local search = NormalizeName(f.search or "")
-    local filterResult = f.result or "Any"
-    local filterTier = f.tier or 0
-
-    local rows = {}
-    local history = DB and DB.RunHistory
-    if type(history) == "table" then
-        for i = 1, #history do
-            local r = history[i]
-            if type(r) == "table" and r.instanceName then
-                local matchesSearch = (search == "" or NormalizeName(r.instanceName):find(search, 1, true))
-                local matchesTier = (filterTier == 0 or (tonumber(r.tier) == filterTier))
-
-                -- Result filtering logic
-                local isPB = IsRunPB(r)
-                local matchesResult = true
-                if filterResult == "PB" then
-                    matchesResult = isPB
-                elseif filterResult == "Completed" then
-                    matchesResult = (r.success and not isPB)
-                elseif filterResult == "Incomplete" then
-                    matchesResult = (not r.success)
-                end
-
-                if matchesSearch and matchesTier and matchesResult then
-                    rows[#rows + 1] = r
-                end
-            end
-        end
-    end
-
-    -- Default ordering for refresh (header sorting can still override this)
-    table.sort(rows, function(a, b)
-        if f.sortMode == "time" then
-            local durA = tonumber(a and a.duration) or math.huge
-            local durB = tonumber(b and b.duration) or math.huge
-            if durA ~= durB then
-                return durA < durB
-            end
-        end
-
-        local timeA = tonumber(a and (a.startedAt or a.endedAt) or 0) or 0
-        local timeB = tonumber(b and (b.startedAt or b.endedAt) or 0) or 0
-        return timeA < timeB
-    end)
-
-    local data = {}
-    for i = 1, #rows do
-        local r = rows[i]
-        local isPB = IsRunPB(r)
-
-        -- Determine Result Status
-        local resultText = "Incomplete"
-        local resultColor = NS.Colors.darkRed
-        if isPB then
-            resultText = "PB"
-            resultColor = NS.Colors.gold
-        elseif r.success then
-            resultText = "Completed"
-            resultColor = NS.Colors.deepGreen
-        end
-
-        local node = GetBestSplitsSubtable(r.instanceName)
-        local pb = node and node.FullRun
-        local duration = tonumber(r.duration)
-        local pbDur = pb and tonumber(pb.duration)
-
-        local deltaPB = (pbDur and duration) and (duration - pbDur) or nil
-        local deltaText = "—"
-        if deltaPB then
-            local _, _, _, hex = NS.GetPaceColor(deltaPB, isPB)
-            deltaText = (hex or "|cffffffff") .. FormatDelta(deltaPB) .. "|r"
-        end
-
-        local resultOrder = isPB and 1 or (r.success and 2 or 3)
-        local startedEpoch = tonumber(r.startedAt or r.endedAt or 0) or 0
-        local tierIndex = tonumber(r.tier) or 0
-        local tierName = GetTierNameSafe(tierIndex)
-        local rowColor = isPB and NS.Colors.gold or nil
-
-        data[#data + 1] = {
-            record = r,
-            sortIndex = i,
-            cols = {
-                {
-                    value = startedEpoch,
-                    display = FormatEpochShort(startedEpoch),
-                    color = rowColor
-                },
-                {
-                    value = r.instanceName or "—",
-                    color = rowColor
-                },
-                {
-                    value = tierIndex,
-                    display = tierName,
-                    color = rowColor
-                },
-                {
-                    value = resultOrder,
-                    display = resultText,
-                    color = resultColor
-                },
-                {
-                    value = duration,
-                    display = duration and FormatTime(duration) or "--:--.---",
-                    color = rowColor
-                },
-                {
-                    value = deltaPB,
-                    display = deltaText
-                },
-                {
-                    value = "" -- Delete col
-                }
-            }
-        }
-    end
-
-    UI.history.st:SetData(data, true)
-    UI.history.st:Refresh()
-end
-
-local function InitHistoryDropDown(dropDown, buildItems, getValue, setValue)
-    if not dropDown or not UIDropDownMenu_Initialize then
-        return
-    end
-
-    UIDropDownMenu_Initialize(dropDown, function(self, level)
-        local items = buildItems()
+local function InitHistoryDropDown(dropdown, buildItems, getValue, setValue)
+    if not dropdown or not UIDropDownMenu_Initialize then return end
+    UIDropDownMenu_Initialize(dropdown, function(self, level)
+        local items = buildItems() -- Fixed potential buildltems typo
+        if not items then return end
         for _, item in ipairs(items) do
             local info = UIDropDownMenu_CreateInfo()
             info.text = item.text
@@ -1679,15 +1631,13 @@ local function InitHistoryDropDown(dropDown, buildItems, getValue, setValue)
             info.checked = (getValue() == item.value)
             info.func = function()
                 setValue(item.value)
-                UIDropDownMenu_SetText(dropDown, item.text)
+                UIDropDownMenu_SetText(dropdown, item.text)
                 if UI.RefreshHistoryTable then UI.RefreshHistoryTable() end
             end
             UIDropDownMenu_AddButton(info, level)
         end
     end)
 end
-
-
 
 -- =========================================================
 -- History Resizable Columns Logic
@@ -1713,92 +1663,52 @@ end
 
 local function History_ApplyTableLayout()
     local h = UI.history
-    if not h.frame or not h.st or not h.st.frame or not h.colWidths then return end
-
-    -- Calculation logic
-    local frameW = h.st.frame:GetWidth() or 1
-    local inset = GetScrollBarInset(h.st)
-    local available = math.max(frameW - inset, 1)
+    if not h or not h.frame or not h.listFrame or not h.colWidths then return end
 
     local w = h.colWidths
-
-    -- Dungeon is elastic
+    local avail = h.listFrame:GetWidth() - 20
     local used = w.date + w.expansion + w.time + w.result + w.diff + w.delete
-    local dungeonW = math.max(available - used, HISTORY_MIN_ELASTIC)
+    local dungW = math.max(avail - used, 100)
 
-    local cols = h.st.cols or h.st.head.cols
-    -- Update column objects if possible (depends on lib-st version internals, but SetDisplayCols is standard)
-    -- We need to reconstruct the "cols" definitions with new widths or update them in place?
-    -- lib-st typically stores width in .width.
-    -- However, we must ensure the `cols` table passed to CreateST is accessible.
-    -- We can access h.st.cols usually.
-
-    if not h.st.cols then return end
-
-    h.st.cols[1].width = w.date
-    h.st.cols[2].width = dungeonW
-    h.st.cols[3].width = w.expansion
-    h.st.cols[4].width = w.time
-    h.st.cols[5].width = w.result
-    h.st.cols[6].width = w.diff
-    h.st.cols[7].width = w.delete
-
-    if h.st.SetDisplayCols then
-        h.st:SetDisplayCols(h.st.cols)
-    end
-    if h.st.Refresh then
-        h.st:Refresh()
+    if h.rows then
+        for _, row in ipairs(h.rows) do
+            row:UpdateLayout()
+        end
     end
 
-    -- Update Grips
+    local x = 0
+    local function SetH(i, width)
+        h.headerCells[i]:ClearAllPoints()
+        h.headerCells[i]:SetPoint("LEFT", h.header, "LEFT", x, 0)
+        h.headerCells[i]:SetWidth(width)
+        x = x + width
+    end
+    SetH(1, w.date); SetH(2, dungW); SetH(3, w.expansion); SetH(4, w.result); SetH(5, w.time); SetH(6, w.diff); SetH(7,
+        w.delete)
+
     if h.grips then
-        local gv = -HEADER_H
-        local x = 0
-
-        -- Grip 1: Date | Dungeon
-        x = x + w.date
-        h.grips[1]:ClearAllPoints()
-        h.grips[1]:SetPoint("TOPLEFT", h.st.frame, "TOPLEFT", x - GRIP_HALFWIDTH, 0)
-        h.grips[1]:SetPoint("BOTTOMRIGHT", h.st.frame, "TOPLEFT", x + GRIP_HALFWIDTH, gv)
-
-        -- Grip 2: Dungeon | Expansion
-        x = x + dungeonW
-        h.grips[2]:ClearAllPoints()
-        h.grips[2]:SetPoint("TOPLEFT", h.st.frame, "TOPLEFT", x - GRIP_HALFWIDTH, 0)
-        h.grips[2]:SetPoint("BOTTOMRIGHT", h.st.frame, "TOPLEFT", x + GRIP_HALFWIDTH, gv)
-
-        -- Grip 3: Expansion | Time
-        x = x + w.expansion
-        h.grips[3]:ClearAllPoints()
-        h.grips[3]:SetPoint("TOPLEFT", h.st.frame, "TOPLEFT", x - GRIP_HALFWIDTH, 0)
-        h.grips[3]:SetPoint("BOTTOMRIGHT", h.st.frame, "TOPLEFT", x + GRIP_HALFWIDTH, gv)
-
-        -- Grip 4: Time | Result
-        x = x + w.time
-        h.grips[4]:ClearAllPoints()
-        h.grips[4]:SetPoint("TOPLEFT", h.st.frame, "TOPLEFT", x - GRIP_HALFWIDTH, 0)
-        h.grips[4]:SetPoint("BOTTOMRIGHT", h.st.frame, "TOPLEFT", x + GRIP_HALFWIDTH, gv)
-
-        -- Grip 5: Result | Diff
-        x = x + w.result
-        h.grips[5]:ClearAllPoints()
-        h.grips[5]:SetPoint("TOPLEFT", h.st.frame, "TOPLEFT", x - GRIP_HALFWIDTH, 0)
-        h.grips[5]:SetPoint("BOTTOMRIGHT", h.st.frame, "TOPLEFT", x + GRIP_HALFWIDTH, gv)
-
-        -- Grip 6: Diff | Delete
-        x = x + w.diff
-        h.grips[6]:ClearAllPoints()
-        h.grips[6]:SetPoint("TOPLEFT", h.st.frame, "TOPLEFT", x - GRIP_HALFWIDTH, 0)
-        h.grips[6]:SetPoint("BOTTOMRIGHT", h.st.frame, "TOPLEFT", x + GRIP_HALFWIDTH, gv)
+        local gH = 24
+        x = 0
+        local function SetG(i, width)
+            x = x + width
+            h.grips[i]:ClearAllPoints()
+            h.grips[i]:SetPoint("TOPLEFT", h.header, "TOPLEFT", x - 5, 0)
+            h.grips[i]:SetPoint("BOTTOMRIGHT", h.header, "TOPLEFT", x + 5, -gH)
+        end
+        SetG(1, w.date)
+        SetG(2, dungW)
+        SetG(3, w.expansion)
+        SetG(4, w.result)
+        SetG(5, w.time)
+        SetG(6, w.diff)
     end
 end
 
-local function History_BeginColDrag(which, startX)
+local function History_BeginColDrag(idx, startX)
     local w = UI.history.colWidths
     UI.history.drag = {
-        which = which,
+        idx = idx,
         startX = startX,
-        -- Snapshot current widths
         date = w.date,
         expansion = w.expansion,
         time = w.time,
@@ -1815,80 +1725,81 @@ end
 
 local function History_UpdateColDrag()
     local h = UI.history
-    if not h.drag or not h.st or not h.st.frame then return end
-
-    local curX = GetCursorPosition()
-    local scale = h.st.frame:GetEffectiveScale()
-    curX = curX / scale
+    if not h or not h.drag or not h.listFrame then return end
+    local curX = GetCursorPosition() / (h.frame:GetEffectiveScale() or 1)
     local dx = curX - h.drag.startX
-
     local d = h.drag
     local w = h.colWidths
 
-    -- Apply changes based on which grip
-    -- Remember: Dungeon (index 2) is elastic.
+    local avail = h.listFrame:GetWidth() - 20
+    local minDungeon = 100
 
-    if d.which == 1 then
-        -- Date | Dungeon
-        w.date = Clamp(d.date + dx, HISTORY_MIN_COL, 500)
-    elseif d.which == 2 then
-        -- Dungeon | Expansion
-        -- Moving right decreases Expansion (to make room for elastic Dungeon)
-        w.expansion = Clamp(d.expansion - dx, HISTORY_MIN_COL, 500)
-    elseif d.which == 3 then
-        -- Expansion | Time
-        -- Standard trade-off
-        w.expansion = Clamp(d.expansion + dx, HISTORY_MIN_COL, 500)
-        w.time = Clamp(d.time - dx, HISTORY_MIN_COL, 500)
-    elseif d.which == 4 then
-        -- Time | Result
-        w.time = Clamp(d.time + dx, HISTORY_MIN_COL, 500)
-        w.result = Clamp(d.result - dx, HISTORY_MIN_COL, 500)
-    elseif d.which == 5 then
-        -- Result | Diff
-        w.result = Clamp(d.result + dx, HISTORY_MIN_COL, 500)
-        w.diff = Clamp(d.diff - dx, HISTORY_MIN_COL, 500)
-    elseif d.which == 6 then
-        -- Diff | Delete
-        w.diff = Clamp(d.diff + dx, HISTORY_MIN_COL, 500)
-        w.delete = Clamp(d.delete - dx, 10, 100)
+    local function GetUsedExcept(idx)
+        local sum = w.date + w.expansion + w.time + w.result + w.diff + w.delete
+        if idx == 1 then
+            sum = sum - w.date
+        elseif idx == 3 then
+            sum = sum - w.expansion
+        elseif idx == 4 then
+            sum = sum - w.result
+        elseif idx == 5 then
+            sum = sum - w.time
+        elseif idx == 6 then
+            sum = sum - w.diff
+        end
+        return sum
     end
 
+    if d.idx == 1 then
+        local maxW = avail - GetUsedExcept(1) - minDungeon
+        w.date = Clamp(d.date + dx, 50, maxW)
+    elseif d.idx == 2 then
+        -- Dragging Dungeon right boundary shrinks Expansion
+        w.expansion = Clamp(d.expansion - dx, 50, 400)
+    elseif d.idx == 3 then
+        local maxW = avail - GetUsedExcept(3) - minDungeon
+        w.expansion = Clamp(d.expansion + dx, 50, maxW)
+    elseif d.idx == 4 then
+        local maxW = avail - GetUsedExcept(4) - minDungeon
+        w.result = Clamp(d.result + dx, 50, maxW)
+    elseif d.idx == 5 then
+        local maxW = avail - GetUsedExcept(5) - minDungeon
+        w.time = Clamp(d.time + dx, 50, maxW)
+    elseif d.idx == 6 then
+        local maxW = avail - GetUsedExcept(6) - minDungeon
+        w.diff = Clamp(d.diff + dx, 50, maxW)
+    end
     History_ApplyTableLayout()
 end
 
-local function History_MakeGrip(parent, which)
-    local grip = CreateFrame("Frame", nil, parent)
-    grip:SetFrameStrata("HIGH")
-    grip:SetFrameLevel((parent:GetFrameLevel() or 0) + 10)
-    grip:EnableMouse(true)
-    grip:SetSize(10, 14)
-    ApplyThinSeparator(grip)
-
-    grip:SetScript("OnEnter", function() SetCursor("UI_RESIZE_CURSOR") end)
-    grip:SetScript("OnLeave", function() ResetCursor() end)
-
-    grip:SetScript("OnMouseDown", function(self, button)
-        if button ~= "LeftButton" then return end
-        local x = GetCursorPosition() / (UI.history.st.frame:GetEffectiveScale() or 1)
-        History_BeginColDrag(which, x)
-        self:SetScript("OnUpdate", History_UpdateColDrag)
+local function History_MakeGrip(parent, i)
+    local g = CreateFrame("Frame", nil, parent)
+    g:SetSize(10, 24)
+    g:EnableMouse(true)
+    g:SetFrameLevel(parent:GetFrameLevel() + 10)
+    local tex = g:CreateTexture(nil, "OVERLAY")
+    tex:SetSize(1, 16); tex:SetPoint("CENTER"); tex:SetColorTexture(1, 1, 1, 0.2)
+    g:SetScript("OnEnter", function()
+        SetCursor("UI_RESIZE_CURSOR"); tex:SetColorTexture(1, 1, 1, 0.8)
     end)
-
-    grip:SetScript("OnMouseUp", function(self)
-        self:SetScript("OnUpdate", nil)
-        History_EndColDrag()
+    g:SetScript("OnLeave", function()
+        ResetCursor(); tex:SetColorTexture(1, 1, 1, 0.2)
     end)
-
-    return grip
+    g:SetScript("OnMouseDown", function()
+        local x = GetCursorPosition() / (UI.history.frame:GetEffectiveScale() or 1)
+        History_BeginColDrag(i, x)
+        g:SetScript("OnUpdate", History_UpdateColDrag)
+    end)
+    g:SetScript("OnMouseUp", function()
+        g:SetScript("OnUpdate", nil); History_EndColDrag()
+    end)
+    return g
 end
 
 local function History_EnsureColGrips()
-    if UI.history.grips or not UI.history.st or not UI.history.st.frame then return end
+    if UI.history.grips then return end
     UI.history.grips = {}
-    for i = 1, 6 do
-        UI.history.grips[i] = History_MakeGrip(UI.history.st.frame, i)
-    end
+    for i = 1, 6 do UI.history.grips[i] = History_MakeGrip(UI.history.header, i) end
 end
 
 local function EnsureHistoryUI()
@@ -1983,109 +1894,155 @@ local function EnsureHistoryUI()
         if UI.history.filters then UI.history.filters.result = v end
     end)
 
-    -- Sort Toggle
-    local sortBtn = CreateFrame("Button", nil, controls, "UIPanelButtonTemplate")
-    sortBtn:SetSize(120, 22)
-    sortBtn:SetPoint("LEFT", resultDropDown, "RIGHT", -12, 2)
-
-    local function UpdateSortBtn()
-        if not UI.history.filters then return end
-        local mode = UI.history.filters.sortMode
-        sortBtn:SetText("Sort by: " .. (mode == "date" and "Date" or "Time"))
-    end
-
-    sortBtn:SetScript("OnClick", function()
-        if not UI.history.filters then return end
-        UI.history.filters.sortMode = (UI.history.filters.sortMode == "date") and "time" or "date"
-        UpdateSortBtn()
-        if UI.RefreshHistoryTable then UI.RefreshHistoryTable() end
-    end)
-    UI.history.sortBtn = sortBtn
-    UpdateSortBtn()
-
-    local listFrame = CreateFrame("Frame", nil, historyFrame)
-    listFrame:SetPoint("TOPLEFT", controls, "BOTTOMLEFT", 0, -24)
-    listFrame:SetPoint("BOTTOMRIGHT", historyFrame, "BOTTOMRIGHT", -10, 10)
+    -- Scroll List
+    local listFrame = CreateFrame("Frame", nil, historyFrame, "BackdropTemplate")
+    listFrame:SetPoint("TOPLEFT", controls, "BOTTOMLEFT", 0, -34)
+    listFrame:SetPoint("BOTTOMRIGHT", historyFrame, "BOTTOMRIGHT", -26, 10)
+    listFrame:SetBackdrop({
+        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+        insets = { left = 0, right = 0, top = 0, bottom = 0 }
+    })
+    listFrame:SetBackdropColor(0, 0, 0, 0.4)
+    listFrame:SetBackdropBorderColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 0.8)
+    listFrame:SetClipsChildren(true)
     UI.history.listFrame = listFrame
 
-    local ST = ResolveScrollingTable()
-    if not ST then
-        local warn = listFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        warn:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 6, -6)
-        warn:SetText("Missing LibScrollingTable (lib-st).")
-    else
-        pcall(function()
-            local w = UI.history.colWidths
-            local cols = {
-                { name = "Date",               width = w.date,      align = "LEFT",   DoCellUpdate = History_DoCellUpdate, sort = HistoryColumnSort },
-                { name = "Dungeon",            width = w.dungeon,   align = "LEFT",   DoCellUpdate = History_DoCellUpdate, sort = HistoryColumnSort },
-                { name = "Expansion",          width = w.expansion, align = "LEFT",   DoCellUpdate = History_DoCellUpdate, sort = HistoryColumnSort },
-                { name = "Result",             width = w.result,    align = "CENTER", DoCellUpdate = History_DoCellUpdate, sort = HistoryColumnSort },
-                { name = "Time",               width = w.time,      align = "CENTER", DoCellUpdate = History_DoCellUpdate, sort = HistoryColumnSort },
-                { name = "Difference from PB", width = w.diff,      align = "RIGHT",  DoCellUpdate = History_DoCellUpdate, sort = HistoryColumnSort },
-                { name = "",                   width = w.delete,    align = "CENTER", DoCellUpdate = Delete_DoCellUpdate }
-            }
+    local scrollFrame = CreateFrame("ScrollFrame", "SpeedSplitsHistoryScroll", historyFrame, "FauxScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", listFrame, "TOPLEFT")
+    scrollFrame:SetPoint("BOTTOMRIGHT", listFrame, "BOTTOMRIGHT")
+    UI.history.scrollFrame = scrollFrame
 
-            local hScale = (NS.DB and NS.DB.Settings and NS.DB.Settings.historyScale) or 1.0
-            local rowHeight = math.max(12, math.floor((18 + HISTORY_ROW_PAD) * HISTORY_ENTRY_SCALE * hScale + 0.5))
-            UI.history.rowHeight = rowHeight
+    -- Header row
+    local header = CreateFrame("Frame", nil, historyFrame)
+    header:SetHeight(24)
+    header:SetPoint("BOTTOMLEFT", listFrame, "TOPLEFT", 0, 2)
+    header:SetPoint("BOTTOMRIGHT", listFrame, "TOPRIGHT", 0, 2)
+    UI.history.header = header
 
-            local st = ST:CreateST(cols, 12, rowHeight, nil, listFrame)
-
-            if st and st.frame then
-                st.frame:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 0, 0)
-                st.frame:SetPoint("BOTTOMRIGHT", listFrame, "BOTTOMRIGHT", 0, 0)
-                if st.head and st.head.cols then
-                    local hScale = (NS.DB and NS.DB.Settings and NS.DB.Settings.historyScale) or 1.0
-                    for i = 1, #cols do
-                        if st.head.cols[i] then StyleHeaderCell(st.head.cols[i], cols[i].align, hScale) end
-                    end
-                end
-                UI.history.st = st
-
-                -- Initialize grips and layout
-                History_EnsureColGrips()
-                History_ApplyTableLayout()
+    local hCols = { "Date", "Dungeon", "Expansion", "Result", "Time", "Difference", "" }
+    UI.history.headerCells = {}
+    for i = 1, 7 do
+        local btn = CreateFrame("Button", nil, header)
+        btn:SetHeight(24)
+        local fs = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        fs:SetText(hCols[i])
+        fs:SetAllPoints()
+        fs:SetJustifyH("CENTER")
+        fs:SetJustifyV("MIDDLE")
+        btn:SetFontString(fs)
+        StyleHeaderCell(btn, "CENTER")
+        btn:SetScript("OnClick", function()
+            if i == 7 then return end
+            if UI.history.sort_col == i then
+                UI.history.sort_asc = not UI.history.sort_asc
+            else
+                UI.history.sort_col = i
+                UI.history.sort_asc = (i == 5 or i == 6) -- ASC for time/diff, DESC for others
             end
+            UI.RefreshHistoryTable()
         end)
+        UI.history.headerCells[i] = btn
     end
 
-    local grip = SetupSizeGrip(historyFrame, function()
-        SaveFrameGeom("history", historyFrame)
-    end)
-    UI.history.resizeGrip = grip
-
-    function NS.UpdateHistoryLayout()
-        if UI and UI.history and UI.history.st and UI.history.listFrame then
-            local hScale = (NS.DB and NS.DB.Settings and NS.DB.Settings.historyScale) or 1.0
-            local h = UI.history.listFrame:GetHeight()
-            local rowHeight = math.max(12, math.floor((18 + HISTORY_ROW_PAD) * HISTORY_ENTRY_SCALE * hScale + 0.5))
-            UI.history.rowHeight = rowHeight
-            local displayRows = math.floor((h - 4) / rowHeight)
-            if displayRows < 1 then displayRows = 1 end
-            UI.history.st:SetDisplayRows(displayRows, rowHeight)
-            UI.history.st:Refresh()
+    UI.history.rows = {}
+    local function UpdateHistoryRows()
+        local h = UI.history
+        local availH = listFrame:GetHeight()
+        local rowH = 24
+        local count = math.ceil(availH / rowH)
+        for i = 1, math.max(count, #h.rows) do
+            if i <= count then
+                if not h.rows[i] then
+                    h.rows[i] = History_GetRow(listFrame)
+                    h.rows[i]:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 0, -(i - 1) * rowH)
+                    h.rows[i]:SetPoint("TOPRIGHT", listFrame, "TOPRIGHT", 0, -(i - 1) * rowH)
+                end
+                h.rows[i]:Show()
+                h.rows[i]:UpdateLayout()
+            elseif h.rows[i] then
+                h.rows[i]:Hide()
+            end
         end
     end
 
-    UI.history.UpdateLayout = NS.UpdateHistoryLayout -- Expose for ToggleHistoryFrame
+    UI.history.UpdateScroll = function()
+        local h = UI.history
+        local data = h.filteredData or {}
+        local rowH = 24
+        local numRows = #h.rows
+        FauxScrollFrame_Update(h.scrollFrame, #data, numRows, rowH)
+        local offset = FauxScrollFrame_GetOffset(h.scrollFrame)
+        for i = 1, numRows do
+            local r = h.rows[i]
+            local idx = i + offset
+            local d = data[idx]
+            if d then
+                local isPB = IsRunPB(d)
+                local resText, resColor = "Incomplete", NS.Colors.darkRed
+                if isPB then
+                    resText, resColor = "PB", NS.Colors.gold
+                elseif d.success then
+                    resText, resColor = "Completed", NS.Colors.deepGreen
+                end
 
-    historyFrame:SetScript("OnSizeChanged", function(self)
-        NS.UpdateHistoryLayout()
-        History_ApplyTableLayout()
-    end)
+                local node = GetBestSplitsSubtable(d.instanceName)
+                local pb = node and node.FullRun and node.FullRun.duration
+                local diff = (pb and d.duration) and (d.duration - pb) or nil
 
-    NS.UpdateHistoryLayout() -- Initial layout calculation
-    UI.history.frame = historyFrame
+                r.cols[1]:SetText(FormatEpochShort(d.startedAt))
+                r.cols[2]:SetText(d.instanceName or "—")
+                r.cols[3]:SetText(GetTierNameSafe(d.tier))
+                r.cols[4]:SetText(resText)
+                r.cols[4]:SetTextColor(resColor.r, resColor.g, resColor.b)
+                r.cols[5]:SetText(d.duration and FormatTime(d.duration) or "--:--.---")
 
-    -- Delay ensure grips until frame is somewhat ready or just do it now if ST exists
-    if UI.history.st then
-        History_EnsureColGrips()
-        History_ApplyTableLayout()
+                if diff then
+                    local _, _, _, hex = NS.GetPaceColor(diff, isPB)
+                    r.cols[6]:SetText(hex .. FormatDelta(diff) .. "|r")
+                else
+                    r.cols[6]:SetText("—")
+                end
+
+                r.delBtn.record = d
+                r.bg:SetShown(idx % 2 == 0)
+                r:Show()
+            else
+                r:Hide()
+            end
+        end
     end
 
+    scrollFrame:SetScript("OnVerticalScroll", function(self, offset)
+        FauxScrollFrame_OnVerticalScroll(self, offset, 24, UI.history.UpdateScroll)
+    end)
+
+    historyFrame:SetScript("OnSizeChanged", function()
+        UpdateHistoryRows()
+        History_ApplyTableLayout()
+        UI.history.UpdateScroll()
+    end)
+
+    -- Resizer
+    local grip = SetupSizeGrip(historyFrame, function()
+        SaveFrameGeom("history", historyFrame)
+        History_ApplyTableLayout()
+    end)
+    UI.history.resizeGrip = grip
+
+    UI.history.sort_col = 1
+    UI.history.sort_asc = false
+
+    C_Timer.After(0.1, function()
+        UpdateHistoryRows()
+        History_EnsureColGrips()
+        History_ApplyTableLayout()
+        UI.RefreshHistoryTable()
+    end)
+
+    UI.history.frame = historyFrame
     historyFrame:Hide()
-    if UI.RefreshHistoryTable then UI.RefreshHistoryTable() end
 end
 
 local function ToggleHistoryFrame()

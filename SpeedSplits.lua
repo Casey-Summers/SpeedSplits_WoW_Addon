@@ -1162,37 +1162,6 @@ local function Model_DoCellUpdate(rowFrame, cellFrame, data, cols, row, realrow,
     end
 end
 
-local function MakeCellUpdater(opts)
-    opts = opts or {}
-    return function(rowFrame, cellFrame, data, cols, row, realrow, column, fShow, stable)
-        if not fShow or not realrow then
-            if cellFrame and cellFrame.text then cellFrame.text:SetText("") end
-            return
-        end
-        local e = data[realrow]
-        local cell = e and e.cols and e.cols[column]
-        if not cell then return end
-
-        local val = cell.display or cell.value or ""
-        cellFrame.text:SetText(val)
-
-        -- Apply font with scale (non-compounding)
-        local hScale = (opts.fontScale or 1.0)
-        NS.ApplyFontToFS(cellFrame.text, "num", hScale)
-
-        cellFrame.text:SetJustifyH(opts.justifyH or cols[column].align or "LEFT")
-        cellFrame.text:SetJustifyV(opts.justifyV or "MIDDLE")
-        if opts.wordWrap then cellFrame.text:SetWordWrap(true) end
-        if opts.maxLines and cellFrame.text.SetMaxLines then cellFrame.text:SetMaxLines(opts.maxLines) end
-        local c = (opts.useColColor and cols[column].color) and cols[column].color(data, cols, realrow, column, stable) or
-            cell.color
-        if c then
-            cellFrame.text:SetTextColor(c.r or 1, c.g or 1, c.b or 1, c.a or 1)
-        else
-            cellFrame.text:SetTextColor(1, 1, 1, 1)
-        end
-    end
-end
 local Boss_DoCellUpdate = function(rowFrame, cellFrame, data, cols, row, realrow, column, fShow, stable)
     if not fShow or not realrow then
         if cellFrame and cellFrame.text then cellFrame.text:SetText("") end
@@ -1395,11 +1364,6 @@ local function History_GetRow(parent)
     end
     row:SetParent(parent)
     return row
-end
-
-local function History_ReleaseRow(row)
-    row:Hide()
-    table.insert(UI.history.rowPool, row)
 end
 
 UI.RefreshHistoryTable = function()

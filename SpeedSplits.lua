@@ -1138,9 +1138,9 @@ local function StyleHeaderCell(cell, align, multiplier, text)
     -- Sync to header font settings + optional multiplier
     NS.ApplyFontToFS(fs, "header", multiplier)
 
-    local c = NS.Colors.turquoise
+    local c = (NS.Colors and NS.Colors.turquoise) or { r = 0, g = 0.74, b = 0.76 }
     fs:SetTextColor(c.r, c.g, c.b, 1)
-    fs:SetDrawLayer("OVERLAY", 7) -- Match Boss Counter's overlay priority
+    fs:SetDrawLayer("OVERLAY", 7)
     fs:ClearAllPoints()
     fs:SetAllPoints(cell)
 end
@@ -2514,6 +2514,11 @@ local function EnsureUI()
 
     timerFrame:Hide()
     bossFrame:Hide()
+
+    -- Delayed refresh to ensure LibScrollingTable is fully ready to be styled
+    C_Timer.After(0.5, function()
+        if NS.RefreshAllUI then NS.RefreshAllUI() end
+    end)
 end
 
 local function UpdateTimerFrameBounds()
@@ -3000,13 +3005,15 @@ function NS.UpdateFontsOnly()
         UI.timerDeltaText:SetFont(fontPath, fontSize, fontFlags)
     end
 
+    if UI.st and UI.st.Refresh then
+        UI.st:Refresh()
+    end
+
     if UI.st and UI.st.head and UI.st.head.cols then
         for i = 1, #UI.st.head.cols do
             StyleHeaderCell(UI.st.head.cols[i], UI.cols[i].align, 1.0, UI.cols[i].name)
         end
     end
-
-    if UI.st and UI.st.Refresh then UI.st:Refresh() end
 end
 
 function NS.RefreshAllUI()

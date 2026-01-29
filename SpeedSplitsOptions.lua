@@ -193,16 +193,36 @@ function NS.CreateOptionsPanel()
 
         if c[3] then
             local eb = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
-            eb:SetSize(35, 20); eb:SetPoint("LEFT", cp, "RIGHT", 150, 0); eb:SetAutoFocus(false); eb:SetNumeric(true)
+            eb:SetSize(45, 22)
+            eb:SetPoint("LEFT", cp, "RIGHT", 160, 0)
+            eb:SetAutoFocus(false)
+            eb:SetNumeric(true)
+            eb:SetFontObject("GameFontHighlightSmall")
+
+            local bg = eb:CreateTexture(nil, "BACKGROUND")
+            bg:SetAllPoints()
+            bg:SetColorTexture(0, 0, 0, 0.5)
+
             local currentVal = NS.DB.Settings[c[3]]
             if currentVal == nil then
                 currentVal = (c[3] == "paceThreshold1" and 4 or 12)
                 NS.DB.Settings[c[3]] = currentVal
             end
             eb:SetText(tostring(currentVal))
-            eb:SetScript("OnEnterPressed", function(s)
+            eb:SetTextColor(1, 1, 1, 1)
+            eb:SetCursorPosition(0)
+
+            local function SaveValue(s)
                 local val = tonumber(s:GetText()) or 0
-                NS.DB.Settings[c[3]] = val; s:ClearFocus(); NS.RefreshAllUI()
+                NS.DB.Settings[c[3]] = val
+                NS.RefreshAllUI()
+            end
+
+            eb:SetScript("OnEnterPressed", function(s)
+                SaveValue(s); s:ClearFocus()
+            end)
+            eb:SetScript("OnEditFocusLost", function(s)
+                SaveValue(s)
             end)
             eb:SetScript("OnEscapePressed", function(s)
                 s:SetText(tostring(NS.DB.Settings[c[3]] or (c[3] == "paceThreshold1" and 4 or 12))); s:ClearFocus()

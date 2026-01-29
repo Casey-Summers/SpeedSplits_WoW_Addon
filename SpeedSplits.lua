@@ -7,7 +7,6 @@ NS.App                          = App
 -- Constants
 local COL_MAX_PB_SPLIT          = 260
 local COL_MAX_DELTA             = 200
-local COL_MIN_MODEL             = 36
 local COL_MIN_BOSS              = 20
 local COL_MIN_NUM               = 85
 local COL_MIN_DELTA_TITLE       = 85
@@ -27,6 +26,8 @@ local HISTORY_ICON_SCALE        = 0.75
 local HISTORY_ENTRY_SCALE       = 1.03
 local HISTORY_DELETE_ICON_SCALE = 1.2
 local BOSS_MODEL_ZOOM           = 0.75
+local PB_SHINE_WIDTH            = 150
+local PB_SHINE_HEIGHT           = 50
 
 NS.TitleTextures                = {
     "dragonflight-landingpage-renownbutton-centaur-hover",
@@ -186,24 +187,29 @@ local function InterpolateColor(c1, c2, t)
 end
 
 local function GetPaceToastTexture(delta, isPB)
-    -- delta < 0 : Gold (Ahead)
-    -- 0 <= delta <= t1 : Green (On Pace)
-    -- t1 < delta <= t2 : Purple (Behind Pace)
-    -- delta > t2 : Red (Slow)
+    -- index 1: Gold (PB)
+    -- index 2: Green (Ahead / On Pace)
+    -- index 3: Purple/Salmon (Behind Pace)
+    -- index 4: Red (Slow)
 
-    if delta == nil then return NS.TimerToastTextures[1] end
+    if isPB then
+        return NS.TimerToastTextures[1]
+    end
+
+    if delta == nil or delta < 0 then
+        return NS.TimerToastTextures[2] -- Ahead is always Green
+    end
 
     local t1 = NS.DB.Settings.paceThreshold1 or 4
     local t2 = NS.DB.Settings.paceThreshold2 or 12
 
-    if delta < 0 then
-        return NS.TimerToastTextures[1] -- Gold
-    elseif delta <= t1 then
-        return NS.TimerToastTextures[2] -- Green
+    -- Mirroring GetPaceColor logic logic transitions
+    if delta <= t1 then
+        return NS.TimerToastTextures[2] -- Still Green-ish (On Pace)
     elseif delta <= t2 then
-        return NS.TimerToastTextures[3] -- Purple / Salmon
+        return NS.TimerToastTextures[3] -- Purple/Salmon (Behind)
     else
-        return NS.TimerToastTextures[4] -- Red
+        return NS.TimerToastTextures[4] -- Red (Slow)
     end
 end
 NS.GetPaceToastTexture = GetPaceToastTexture
@@ -1132,7 +1138,8 @@ local function StyleHeaderCell(cell, align, multiplier, text)
     -- Sync to header font settings + optional multiplier
     NS.ApplyFontToFS(fs, "header", multiplier)
 
-    fs:SetTextColor(1, 0.82, 0, 1)
+    local c = NS.Colors.turquoise
+    fs:SetTextColor(c.r, c.g, c.b, 1)
     fs:SetDrawLayer("OVERLAY", 7) -- Match Boss Counter's overlay priority
     fs:ClearAllPoints()
     fs:SetAllPoints(cell)
@@ -2128,7 +2135,7 @@ local function EnsureUI()
     local pbShine = timerFrame:CreateTexture(nil, "OVERLAY")
     pbShine:SetAtlas("challenges-bannershine")
     pbShine:SetPoint("BOTTOM", timerFrame, "TOP", 0, -20)
-    pbShine:SetSize(250, 100)
+    pbShine:SetSize(PB_SHINE_WIDTH, PB_SHINE_HEIGHT)
     pbShine:SetAlpha(0)
     UI.pbShine = pbShine
 
@@ -2586,15 +2593,25 @@ local function SetTimerText(seconds, finished)
     UI.timerTextSec:SetPoint("RIGHT", UI.timerFrame, "CENTER", offset, 0)
 end
 
-local function SetTimerDelta(delta)
+local function SetTimerDelta(delta, isPB)
     if not UI.timerDeltaText then return end
     if delta == nil then
         UI.timerDeltaText:SetText("")
+        if UI.timerToastBg then
+            UI.timerToastBg:SetAlpha(0)
+        end
         return
     end
-    local _, _, _, hex = GetPaceColor(delta, false)
+
+    local _, _, _, hex = GetPaceColor(delta, isPB)
     UI.timerDeltaText:SetText(hex .. FormatDelta(delta) .. "|r")
     UI.timerDeltaText:SetTextColor(1, 1, 1, 1)
+
+    -- Update mirror texture without forcing alpha
+    if UI.timerToastBg then
+        local tex = GetPaceToastTexture(delta, isPB)
+        ApplyBackgroundTexture(UI.timerToastBg, tex)
+    end
 end
 
 
@@ -2836,8 +2853,9 @@ local function RefreshTotals(isFinal)
 
         local r, g, b, hex = GetPaceColor(deltaTotal, isPB)
         Run.lastColorR, Run.lastColorG, Run.lastColorB, Run.lastColorHex = r, g, b, hex
+        Run.lastIsPB = isPB
         SetTotals(pbTotal, duration, deltaTotal, r, g, b, hex)
-        SetTimerDelta(deltaTotal)
+        SetTimerDelta(deltaTotal, isPB)
         SetTimerText(duration, true) -- Update timer color to match final pace
         return
     end
@@ -2855,21 +2873,23 @@ local function RefreshTotals(isFinal)
         local r, g, b, hex = Run.lastColorR or 1, Run.lastColorG or 1, Run.lastColorB or 1,
             Run.lastColorHex or "|cffffffff"
         SetTotals(Run.lastPBTotal, Run.lastSplitCumulative, Run.lastDelta, r, g, b, hex)
-        SetTimerDelta(Run.lastDelta)
+        SetTimerDelta(Run.lastDelta, Run.lastIsPB)
     else
         SetTotals(pbTotal, nil, nil)
-        SetTimerDelta(nil)
+        SetTimerDelta(nil, false)
     end
 end
 NS.Run = Run
 local function TestPBToast(manualTex)
     if not UI.timerToastBg then return end
-    local tex = manualTex or NS.DB.Settings.timerToastTexture or NS.TimerToastTextures[1]
+    local tex = manualTex or NS.TimerToastTextures[1] -- Use Gold by default for test if no manual tex
     ApplyBackgroundTexture(UI.timerToastBg, tex)
 
-    -- Play the selected sound
-    if NS.DB.Settings.toastSoundID and NS.DB.Settings.toastSoundID > 0 then
-        PlaySoundFile(NS.DB.Settings.toastSoundID, "SFX")
+    -- Play the selected sound ONLY if it's the Gold texture (as per user request for test button)
+    if tex == NS.TimerToastTextures[1] then
+        if NS.DB.Settings.toastSoundID and NS.DB.Settings.toastSoundID > 0 then
+            PlaySoundFile(NS.DB.Settings.toastSoundID, "SFX")
+        end
     end
 
     -- Trigger the banner shine ONLY if using the gold texture (first index)
@@ -2884,12 +2904,16 @@ local function TestPBToast(manualTex)
             f.elapsed = 0
             f:SetScript("OnUpdate", function(self, elapsed)
                 self.elapsed = self.elapsed + elapsed
-                local alpha = 1 - (self.elapsed / 1.5) -- Fade out a bit slower
+                local alpha = 1 - (self.elapsed / 1.5)
                 if alpha <= 0 then
                     UI.timerToastBg:SetAlpha(0)
+                    if UI.pbShine then UI.pbShine:SetAlpha(0) end
                     self:SetScript("OnUpdate", nil)
                 else
                     UI.timerToastBg:SetAlpha(alpha)
+                    if UI.pbShine and tex == NS.TimerToastTextures[1] then
+                        UI.pbShine:SetAlpha(alpha)
+                    end
                 end
             end)
         end
@@ -2897,11 +2921,30 @@ local function TestPBToast(manualTex)
 end
 NS.TestPBToast = TestPBToast
 
-function NS.RefreshAllUI()
+function NS.UpdateToastLayout()
+    if not UI.timerToastBg then return end
+    local scale = NS.DB.Settings.timerToastScale or 1.0
+
+    -- Apply scale relative to timerFrame size
+    UI.timerToastBg:ClearAllPoints()
+    local parent = UI.timerToastBg:GetParent()
+    local w, h = parent:GetSize()
+    UI.timerToastBg:SetSize(w * scale, h * scale)
+    UI.timerToastBg:SetPoint("CENTER", parent, "CENTER", 0, 0)
+
+    -- Sync PB shine if it exists
+    if UI.pbShine then
+        UI.pbShine:SetSize(PB_SHINE_WIDTH * scale, PB_SHINE_HEIGHT * scale)
+    end
+end
+
+function NS.UpdateColorsOnly()
     if not UI.bossFrame then return end
-    NS.UpdateColorsFromSettings()
     if UI.logoText then
         UI.logoText:SetTextColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 1)
+    end
+    if UI.killCountText then
+        UI.killCountText:SetTextColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 1)
     end
     if UI.logoGlow then
         UI.logoGlow:SetTextColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 0.6)
@@ -2916,10 +2959,6 @@ function NS.RefreshAllUI()
     if UI.borderFrame then
         UI.borderFrame:SetBackdropBorderColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 0.8)
     end
-    if UI.titleBg then
-        local texName = NS.DB.Settings.titleTexture or NS.TitleTextures[1]
-        ApplyBackgroundTexture(UI.titleBg, texName)
-    end
     if UI.titleTab then
         UI.titleTab:SetBackdropBorderColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 0.5)
     end
@@ -2930,28 +2969,28 @@ function NS.RefreshAllUI()
         UI.totalBg:SetTexture(nil)
         UI.totalBg:SetColorTexture(0.2, 0.2, 0.2, 0.7) -- Greyish translucent background
     end
-    if UI.killCountText then
-        NS.ApplyFontToFS(UI.killCountText, "counter")
+    if UI.titleBg then
+        local texName = NS.DB.Settings.titleTexture or NS.TitleTextures[1]
+        ApplyBackgroundTexture(UI.titleBg, texName)
     end
+
+    -- Update header colors in tables
+    if UI.st and UI.st.head and UI.st.head.cols then
+        for i = 1, #UI.st.head.cols do
+            StyleHeaderCell(UI.st.head.cols[i], UI.cols[i].align, 1.0, UI.cols[i].name)
+        end
+    end
+end
+
+function NS.UpdateFontsOnly()
+    if not UI.bossFrame then return end
+    if UI.killCountText then NS.ApplyFontToFS(UI.killCountText, "counter") end
     if UI.totalPB then NS.ApplyFontToFS(UI.totalPB, "num") end
     if UI.totalSplit then NS.ApplyFontToFS(UI.totalSplit, "num") end
     if UI.totalDelta then NS.ApplyFontToFS(UI.totalDelta, "num") end
     if UI.timerTextMin then NS.ApplyFontToFS(UI.timerTextMin, "timer") end
     if UI.timerTextSec then NS.ApplyFontToFS(UI.timerTextSec, "timer") end
     if UI.timerTextMs then NS.ApplyFontToFS(UI.timerTextMs, "timer") end
-
-    if UI.timerToastBg then
-        local texName = NS.DB.Settings.timerToastTexture or NS.TimerToastTextures[1]
-        local scale = NS.DB.Settings.timerToastScale or 1.0
-        ApplyBackgroundTexture(UI.timerToastBg, texName)
-
-        -- Apply scale relative to timerFrame size
-        UI.timerToastBg:ClearAllPoints()
-        local parent = UI.timerToastBg:GetParent()
-        local w, h = parent:GetSize()
-        UI.timerToastBg:SetSize(w * scale, h * scale)
-        UI.timerToastBg:SetPoint("CENTER", parent, "CENTER", 0, 0)
-    end
 
     if UI.timerDeltaText then
         local f = (NS.DB and NS.DB.Settings and NS.DB.Settings.fonts and NS.DB.Settings.fonts.timer)
@@ -2961,19 +3000,27 @@ function NS.RefreshAllUI()
         UI.timerDeltaText:SetFont(fontPath, fontSize, fontFlags)
     end
 
-    -- Explicitly verify font strings exist before applying
-    if UI.totalPB then NS.ApplyFontToFS(UI.totalPB, "num") end
-    if UI.totalSplit then NS.ApplyFontToFS(UI.totalSplit, "num") end
-    if UI.totalDelta then NS.ApplyFontToFS(UI.totalDelta, "num") end
-    if UI.timerTextMin then NS.ApplyFontToFS(UI.timerTextMin, "timer") end
-    if UI.timerTextSec then NS.ApplyFontToFS(UI.timerTextSec, "timer") end
-    if UI.timerTextMs then NS.ApplyFontToFS(UI.timerTextMs, "timer") end
-    if UI.killCountText then NS.ApplyFontToFS(UI.killCountText, "counter") end
-
-    -- Sync Header fonts and styles
     if UI.st and UI.st.head and UI.st.head.cols then
         for i = 1, #UI.st.head.cols do
             StyleHeaderCell(UI.st.head.cols[i], UI.cols[i].align, 1.0, UI.cols[i].name)
+        end
+    end
+
+    if UI.st and UI.st.Refresh then UI.st:Refresh() end
+end
+
+function NS.RefreshAllUI()
+    if not UI.bossFrame then return end
+    NS.UpdateColorsFromSettings()
+    NS.UpdateColorsOnly()
+    NS.UpdateFontsOnly()
+    NS.UpdateToastLayout()
+
+    if UI.timerToastBg then
+        if Run.inInstance then
+            UI.timerToastBg:SetAlpha(0.15)
+        else
+            UI.timerToastBg:SetAlpha(0)
         end
     end
 
@@ -2989,11 +3036,15 @@ function NS.RefreshAllUI()
     end
 
     UpdateTimerFrameBounds()
+    if NS.UpdateHistoryLayout then NS.UpdateHistoryLayout() end
 
+    -- Handle table content rendering
     if NS.Run.entries and #NS.Run.entries > 0 then
         local node = GetBestSplitsSubtable()
         local pbTable = node and node.Segments or {}
-        RenderBossTable(NS.Run.entries, pbTable)
+        if #UI.data ~= #NS.Run.entries then
+            RenderBossTable(NS.Run.entries, pbTable)
+        end
 
         local runningPBTotal = 0
         for _, entry in ipairs(NS.Run.entries) do
@@ -3016,7 +3067,6 @@ function NS.RefreshAllUI()
         SetTimerText(NS.Run.endGameTime - NS.Run.startGameTime, true)
     end
     if UI.st and UI.st.Refresh then UI.st:Refresh() end
-    if NS.UpdateHistoryLayout then NS.UpdateHistoryLayout() end
 end
 
 local function UpdateBestRunIfNeeded(durationSeconds)
@@ -3225,9 +3275,14 @@ local function RecordBossKill(encounterID, encounterName)
                         local alpha = 1 - (self.elapsed / 1.5)
                         if alpha <= 0 then
                             UI.timerToastBg:SetAlpha(0)
+                            if UI.pbShine then UI.pbShine:SetAlpha(0) end
                             self:SetScript("OnUpdate", nil)
                         else
                             UI.timerToastBg:SetAlpha(alpha)
+                            -- Sync PB shine with toast fade if it was active
+                            if UI.pbShine and UI.pbShine:GetAlpha() > 0 then
+                                UI.pbShine:SetAlpha(alpha)
+                            end
                         end
                     end)
                 end
@@ -3281,6 +3336,7 @@ local function RecordBossKill(encounterID, encounterName)
     Run.lastPBTotal = pbTotalTableSum
     Run.lastSplitCumulative = splitCumulative
     Run.lastColorR, Run.lastColorG, Run.lastColorB, Run.lastColorHex = r, g, b, hex
+    Run.lastIsPB = isNewSegmentPB
 
     SetRowKilled(bossKey, splitCumulative, cumulativePB_Display, deltaOverall, r, g, b, hex, isNewSegmentPB,
         pbTable[bossName])

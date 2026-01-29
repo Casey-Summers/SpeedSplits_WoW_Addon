@@ -18,10 +18,10 @@ end
 -- Template Library
 local T = {}
 
--- Never use absolute positioning for settings sections, only relative.
 -- Each section should anchor to the one above it or a column anchor point.
+T.Registry = {}
 
-function T.CreateSlider(parent, label, minV, maxV, typeKey, field, width)
+function T.CreateSlider(parent, label, minV, maxV, typeKey, field, width, callback)
     local s = CreateFrame("Slider", nil, parent, "OptionsSliderTemplate")
     s:SetMinMaxValues(minV, maxV)
     s:SetValueStep(0.05)
@@ -42,14 +42,22 @@ function T.CreateSlider(parent, label, minV, maxV, typeKey, field, width)
             NS.DB.Settings.fonts[typeKey][field] = math.floor(value)
         end
         text:SetText(label .. ": " .. (typeKey == "settings" and string.format("%.2f", value) or math.floor(value)))
-        NS.RefreshAllUI()
+        if callback then callback(value) end
     end)
+
+    table.insert(T.Registry, function()
+        local val = (typeKey == "settings") and NS.DB.Settings[field] or NS.DB.Settings.fonts[typeKey][field]
+        s:SetValue(val)
+        text:SetText(label .. ": " .. (typeKey == "settings" and string.format("%.2f", val) or math.floor(val)))
+    end)
+
     return s
 end
 
-function T.FontRow(parent, label, typeKey)
+function T.VisualScalingSection(parent, label, typeKey)
     local container = CreateFrame("Frame", nil, parent)
-    container:SetSize(300, 65)
+    container:SetSize(320, 70)
+    container:SetScale(1.05) -- Slightly increased overall scale
 
     local sub = container:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     sub:SetPoint("TOPLEFT", 0, 0); sub:SetText(label); sub:SetTextColor(0.4, 0.8, 1)
@@ -62,12 +70,12 @@ function T.FontRow(parent, label, typeKey)
     local val = NS.DB.Settings.fonts[typeKey].size; slider:SetValue(val); sText:SetText("Size: " .. val)
     slider:SetScript("OnValueChanged",
         function(self, v)
-            NS.DB.Settings.fonts[typeKey].size = math.floor(v); sText:SetText("Size: " .. math.floor(v)); NS
-                .RefreshAllUI()
+            NS.DB.Settings.fonts[typeKey].size = math.floor(v); sText:SetText("Size: " .. math.floor(v));
+            if NS.UpdateFontsOnly then NS.UpdateFontsOnly() end
         end)
 
     local dd = CreateFrame("Frame", "SSFontDD" .. typeKey, container, "UIDropDownMenuTemplate")
-    dd:SetPoint("LEFT", slider, "RIGHT", -5, -2); UIDropDownMenu_SetWidth(dd, 100); dd:SetScale(0.9)
+    dd:SetPoint("LEFT", slider, "RIGHT", -15, -2); UIDropDownMenu_SetWidth(dd, 80); dd:SetScale(0.95) -- Reduced width, slightly larger scale
     local function OnClick(self)
         UIDropDownMenu_SetSelectedValue(dd, self.value); UIDropDownMenu_SetText(dd, self.text); NS.DB.Settings.fonts[typeKey].font =
             self.value; NS.RefreshAllUI()
@@ -80,15 +88,28 @@ function T.FontRow(parent, label, typeKey)
         end
     end)
     UIDropDownMenu_SetSelectedValue(dd, NS.DB.Settings.fonts[typeKey].font)
+    UIDropDownMenu_SetText(dd,
+        (NS.DB.Settings.fonts[typeKey].font:find("FRIZQT") and "Friz" or (NS.DB.Settings.fonts[typeKey].font:find("ARIAL") and "Arial" or (NS.DB.Settings.fonts[typeKey].font:find("skurri") and "Skurri" or "Morph"))))
 
     local bold = CreateFrame("CheckButton", nil, container, "InterfaceOptionsCheckButtonTemplate")
-    bold:SetPoint("LEFT", dd, "RIGHT", -5, 2); bold:SetScale(0.85); bold.Text:SetText("Bold")
+    bold:SetPoint("LEFT", dd, "RIGHT", -5, 2); bold:SetScale(0.9); bold.Text:SetText("Bold")
     bold:SetChecked(NS.DB.Settings.fonts[typeKey].flags:find("THICKOUTLINE") ~= nil)
     bold:SetScript("OnClick", function(self)
         local f = NS.DB.Settings.fonts[typeKey]
         if self:GetChecked() then f.flags = "THICKOUTLINE" else f.flags = "OUTLINE" end
         NS.RefreshAllUI()
     end)
+
+    table.insert(T.Registry, function()
+        local f = NS.DB.Settings.fonts[typeKey]
+        slider:SetValue(f.size)
+        sText:SetText("Size: " .. f.size)
+        UIDropDownMenu_SetSelectedValue(dd, f.font)
+        local name = (f.font:find("FRIZQT") and "Friz" or (f.font:find("ARIAL") and "Arial" or (f.font:find("skurri") and "Skurri" or "Morph")))
+        UIDropDownMenu_SetText(dd, name)
+        bold:SetChecked(f.flags:find("THICKOUTLINE") ~= nil)
+    end)
+
     return container
 end
 
@@ -139,6 +160,9 @@ function T.ColorPicker(parent, label, key)
             end
         })
     end)
+
+    table.insert(T.Registry, UpdateSwatch)
+
     UpdateSwatch(); return f
 end
 
@@ -170,9 +194,15 @@ function NS.CreateOptionsPanel()
         if c[3] then
             local eb = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
             eb:SetSize(35, 20); eb:SetPoint("LEFT", cp, "RIGHT", 150, 0); eb:SetAutoFocus(false); eb:SetNumeric(true)
-            eb:SetText(tostring(NS.DB.Settings[c[3]] or (c[3] == "paceThreshold1" and 4 or 12)))
+            local currentVal = NS.DB.Settings[c[3]]
+            if currentVal == nil then
+                currentVal = (c[3] == "paceThreshold1" and 4 or 12)
+                NS.DB.Settings[c[3]] = currentVal
+            end
+            eb:SetText(tostring(currentVal))
             eb:SetScript("OnEnterPressed", function(s)
-                NS.DB.Settings[c[3]] = tonumber(s:GetText()) or 0; s:ClearFocus(); NS.RefreshAllUI()
+                local val = tonumber(s:GetText()) or 0
+                NS.DB.Settings[c[3]] = val; s:ClearFocus(); NS.RefreshAllUI()
             end)
             eb:SetScript("OnEscapePressed", function(s)
                 s:SetText(tostring(NS.DB.Settings[c[3]] or (c[3] == "paceThreshold1" and 4 or 12))); s:ClearFocus()
@@ -181,6 +211,10 @@ function NS.CreateOptionsPanel()
             lab:SetPoint("RIGHT", eb, "LEFT", -5, 0); lab:SetText("Cut-off:")
             local suf = eb:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
             suf:SetPoint("LEFT", eb, "RIGHT", 5, 0); suf:SetText("seconds")
+
+            table.insert(T.Registry, function()
+                eb:SetText(tostring(NS.DB.Settings[c[3]] or (c[3] == "paceThreshold1" and 4 or 12)))
+            end)
         end
         lastColorElem = cp
     end
@@ -227,8 +261,9 @@ function NS.CreateOptionsPanel()
 
     -- Column 1: Toggles + Test Button
     local cb = CreateFrame("CheckButton", nil, rewardRow, "InterfaceOptionsCheckButtonTemplate")
-    cb:SetScale(0.9)
+    cb:SetScale(1.0) -- Reduced scale back to normal
     cb.Text:SetText("Enable Toast Effect")
+    cb.Text:SetFont("Fonts\\FRIZQT__.TTF", 10)
     cb:SetChecked(NS.DB.Settings.showTimerToast)
     cb:SetPoint("TOPLEFT", rewardRow, "TOPLEFT", col1X, -4)
     cb:SetScript("OnClick", function(s)
@@ -237,13 +272,19 @@ function NS.CreateOptionsPanel()
     end)
 
     local cbAll = CreateFrame("CheckButton", nil, rewardRow, "InterfaceOptionsCheckButtonTemplate")
-    cbAll:SetScale(0.9)
+    cbAll:SetScale(1.0) -- Reduced scale back to normal
     cbAll.Text:SetText("Toast All Boss Kills")
+    cbAll.Text:SetFont("Fonts\\FRIZQT__.TTF", 10)
     cbAll:SetChecked(NS.DB.Settings.toastAllBosses)
-    cbAll:SetPoint("TOPLEFT", cb, "BOTTOMLEFT", 0, -4)
+    cbAll:SetPoint("TOPLEFT", cb, "BOTTOMLEFT", 0, -4) -- Reduced padding
     cbAll:SetScript("OnClick", function(s)
         NS.DB.Settings.toastAllBosses = s:GetChecked()
         NS.RefreshAllUI()
+    end)
+
+    table.insert(T.Registry, function()
+        cb:SetChecked(NS.DB.Settings.showTimerToast)
+        cbAll:SetChecked(NS.DB.Settings.toastAllBosses)
     end)
 
     local testBtn = CreateFrame("Button", nil, rewardRow, "UIPanelButtonTemplate")
@@ -279,6 +320,8 @@ function NS.CreateOptionsPanel()
         UIDropDownMenu_SetSelectedValue(soundDD, id)
         UIDropDownMenu_SetText(soundDD, name)
     end
+
+    table.insert(T.Registry, UpdateSoundDD)
 
     local function OnSoundClick(self)
         local id = self.value or 0
@@ -331,7 +374,9 @@ function NS.CreateOptionsPanel()
     scaleLabel:SetText("Toast Scale")
     scaleLabel:SetTextColor(0.4, 0.8, 1)
 
-    local toastScaleSlider = T.CreateSlider(rewardRow, "Scale", 0.5, 3.0, "settings", "timerToastScale", 130)
+    local toastScaleSlider = T.CreateSlider(rewardRow, "Scale", 0.5, 3.0, "settings", "timerToastScale", 130, function()
+        if NS.UpdateToastLayout then NS.UpdateToastLayout() end
+    end)
     toastScaleSlider:SetScale(0.85)
     toastScaleSlider:SetPoint("TOPLEFT", scaleLabel, "BOTTOMLEFT", 0, -18)
 
@@ -346,15 +391,15 @@ function NS.CreateOptionsPanel()
     texFrame:SetSize(280, 1) -- width only; height is implicit from children
 
     local toastBtns = {}
-    local toastLabels = { "Gold", "Green", "Purple", "Red" }
+    local toastLabels = { "PB", "On Pace", "Behind Pace", "Slow" }
 
     for index, name in ipairs(NS.TimerToastTextures or {}) do
         local btn = CreateFrame("Button", nil, texFrame, "BackdropTemplate")
-        btn:SetSize(60, 30)
+        btn:SetSize(70, 40)
 
         local col = (index - 1) % 4
         local rowIndex = math.floor((index - 1) / 4)
-        btn:SetPoint("TOPLEFT", texFrame, "TOPLEFT", col * 65, -rowIndex * 35)
+        btn:SetPoint("TOPLEFT", texFrame, "TOPLEFT", col * 75, -rowIndex * 45)
 
         local t = btn:CreateTexture(nil, "BACKGROUND")
         t:SetAllPoints()
@@ -371,17 +416,15 @@ function NS.CreateOptionsPanel()
         tl:SetText(toastLabels[index] or "")
         tl:SetScale(0.8)
 
-        b:SetShown(name == NS.DB.Settings.timerToastTexture)
+        b:Hide() -- Hide by default, selection is just for testing
         btn.texName = name
         table.insert(toastBtns, btn)
 
         btn:SetScript("OnClick", function()
-            NS.DB.Settings.timerToastTexture = name
-            for _, x in ipairs(toastBtns) do
-                x.border:SetShown(x.texName == name)
-            end
-            NS.RefreshAllUI()
-            if NS.TestPBToast then NS.TestPBToast() end
+            -- Purely for testing: show border momentarily and trigger test toast
+            for _, x in ipairs(toastBtns) do x.border:Hide() end
+            btn.border:Show()
+            if NS.TestPBToast then NS.TestPBToast(name) end
         end)
     end
 
@@ -389,21 +432,21 @@ function NS.CreateOptionsPanel()
     local fontsHeader = T.Header(panel, "Visual Scaling & Fonts")
     fontsHeader:SetPoint("TOPLEFT", 340, -16)
 
-    local bossRow = T.FontRow(panel, "Boss Names", "boss")
+    local bossRow = T.VisualScalingSection(panel, "Boss Names", "boss")
     bossRow:SetPoint("TOPLEFT", fontsHeader, "BOTTOMLEFT", 10, -10)
 
-    local numRow = T.FontRow(panel, "Splits / Numbers", "num")
+    local numRow = T.VisualScalingSection(panel, "Splits / Numbers", "num")
     numRow:SetPoint("TOPLEFT", bossRow, "BOTTOMLEFT", 0, -10)
 
-    local headerRow = T.FontRow(panel, "Counter / Headers", "header")
+    local headerRow = T.VisualScalingSection(panel, "Counter / Headers", "header")
     headerRow:SetPoint("TOPLEFT", numRow, "BOTTOMLEFT", 0, -10)
 
-    local timerRow = T.FontRow(panel, "Main Timer", "timer")
+    local timerRow = T.VisualScalingSection(panel, "Main Timer", "timer")
     timerRow:SetPoint("TOPLEFT", headerRow, "BOTTOMLEFT", 0, -10)
 
     -- MANAGEMENT (COLUMN 2, BOTTOM)
     local managementHeader = T.Header(panel, "Management")
-    managementHeader:SetPoint("TOPLEFT", fontsHeader, "BOTTOMLEFT", 0, -320)
+    managementHeader:SetPoint("TOPLEFT", fontsHeader, "BOTTOMLEFT", 0, -360) -- Increased spacing
 
     local function Q(label, func)
         local btn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate"); btn:SetSize(140, 26); btn:SetText(label); btn
@@ -415,36 +458,60 @@ function NS.CreateOptionsPanel()
             colors = SS_CopyTable(NS.DB.Settings.colors),
             fonts = SS_CopyTable(NS.DB.Settings.fonts),
             titleTexture = NS.DB.Settings.titleTexture,
-            timerToastTexture = NS.DB.Settings.timerToastTexture,
             timerToastScale = NS.DB.Settings.timerToastScale,
             showTimerToast = NS.DB.Settings.showTimerToast,
             paceThreshold1 = NS.DB.Settings.paceThreshold1,
             paceThreshold2 = NS.DB.Settings.paceThreshold2,
             toastAllBosses = NS.DB.Settings.toastAllBosses,
             toastSoundID = NS.DB.Settings.toastSoundID,
-            toastSoundName = NS.DB.Settings.toastSoundName
+            toastSoundName = NS.DB.Settings.toastSoundName,
+            toastVolume = NS.DB.Settings.toastVolume
         }
-        if _G.SS_Print then _G.SS_Print("Default profile updated.") end
+        if _G.SS_Print then _G.SS_Print("Default styles saved.") end
     end)
     defBtn:SetPoint("TOPLEFT", managementHeader, "BOTTOMLEFT", 10, -20)
 
     local resetBtn = Q("Reset Styles", function()
         if NS.DB.DefaultStyle then
-            local d = NS.DB.DefaultStyle; NS.DB.Settings.colors = SS_CopyTable(d.colors); NS.DB.Settings.fonts =
-                SS_CopyTable(d.fonts); NS.DB.Settings.titleTexture = d.titleTexture; NS.DB.Settings.timerToastTexture =
-                d.timerToastTexture; NS.DB.Settings.timerToastScale = d.timerToastScale; NS.DB.Settings.showTimerToast =
-                d.showTimerToast; NS.DB.Settings.paceThreshold1 = d.paceThreshold1; NS.DB.Settings.paceThreshold2 = d
-                .paceThreshold2; NS.DB.Settings.toastAllBosses = d.toastAllBosses; NS.DB.Settings.toastSoundID = d
-                .toastSoundID; NS.DB.Settings.toastSoundName = d.toastSoundName; NS.UpdateColorsFromSettings(); NS
-                .RefreshAllUI()
+            local d = NS.DB.DefaultStyle
+            NS.DB.Settings.colors = SS_CopyTable(d.colors)
+            NS.DB.Settings.fonts = SS_CopyTable(d.fonts)
+            NS.DB.Settings.titleTexture = d.titleTexture
+            NS.DB.Settings.timerToastScale = d.timerToastScale
+            NS.DB.Settings.showTimerToast = d.showTimerToast
+            NS.DB.Settings.paceThreshold1 = d.paceThreshold1
+            NS.DB.Settings.paceThreshold2 = d.paceThreshold2
+            NS.DB.Settings.toastAllBosses = d.toastAllBosses
+            NS.DB.Settings.toastSoundID = d.toastSoundID
+            NS.DB.Settings.toastSoundName = d.toastSoundName
+            NS.DB.Settings.toastVolume = d.toastVolume or 0.8
+            NS.UpdateColorsFromSettings()
+
+            -- Refresh Options UI
+            for _, refresh in ipairs(T.Registry) do refresh() end
+
+            NS.RefreshAllUI()
+            if _G.SS_Print then _G.SS_Print("Styles reset to defaults.") end
         end
     end)
     resetBtn:SetPoint("LEFT", defBtn, "RIGHT", 15, 0)
 
-    local layoutBtn = Q("Save Default Layout", function() if _G.SS_Print then _G.SS_Print("Layout saved.") end end)
+    local layoutBtn = Q("Save Default Layout", function()
+        NS.DB.DefaultLayout = {
+            ui = SS_CopyTable(NS.DB.ui or {})
+        }
+        if _G.SS_Print then _G.SS_Print("Default layout saved.") end
+    end)
     layoutBtn:SetPoint("TOPLEFT", defBtn, "BOTTOMLEFT", 0, -10)
 
-    local resetLayoutBtn = Q("Reset Layout", function() StaticPopup_Show("SPEEDSPLITS_RESET_LAYOUT") end)
+    local resetLayoutBtn = Q("Reset Layout", function()
+        if NS.DB.DefaultLayout and NS.DB.DefaultLayout.ui then
+            NS.DB.ui = SS_CopyTable(NS.DB.DefaultLayout.ui)
+            ReloadUI() -- Reloading is safest to ensure all frames restore correctly
+        else
+            StaticPopup_Show("SPEEDSPLITS_RESET_LAYOUT")
+        end
+    end)
     resetLayoutBtn:SetPoint("LEFT", layoutBtn, "RIGHT", 15, 0)
 
     local wipeBtn = Q("Wipe All Records", function() StaticPopup_Show("SPEEDSPLITS_WIPE_CONFIRM") end)

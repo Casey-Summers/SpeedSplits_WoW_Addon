@@ -1,35 +1,22 @@
 -- SpeedSplits.lua
 -- Retail WoW addon: instance splits with objective-first boss discovery + EJ fallback.
-local ADDON_NAME, NS            = ...
-local App                       = CreateFrame("Frame")
-NS.App                          = App
+local ADDON_NAME, NS                                 = ...
+local App                                            = CreateFrame("Frame")
+NS.App                                               = App
 
 -- Constants
-local COL_MAX_PB_SPLIT          = 260
-local COL_MAX_DELTA             = 200
-local COL_MIN_BOSS              = 20
-local COL_MIN_NUM               = 85
-local COL_MIN_DELTA_TITLE       = 85
-local GRIP_HALFWIDTH            = 5
-local HEADER_H                  = 18
-local RIGHT_INSET_DEFAULT       = 26
-local TOP_BAR_H                 = 28
-local TOP_BAR_GAP               = 4
-local BOSS_LOAD_MAX_TRIES       = 40
-local BOSS_LOAD_RETRY_DELAY     = 0.25
-local RUNS_MAX                  = 200
-local EJ_INSTANCE_INDEX_MAX     = 600
-local EJ_ENCOUNTER_INDEX_MAX    = 80
-local CRITERIA_MAX              = 80
-local HISTORY_ROW_PAD           = 4
-local HISTORY_ICON_SCALE        = 0.75
-local HISTORY_ENTRY_SCALE       = 1.03
-local HISTORY_DELETE_ICON_SCALE = 1.2
-local BOSS_MODEL_ZOOM           = 0.75
-local PB_SHINE_WIDTH            = 150
-local PB_SHINE_HEIGHT           = 50
+local COL_MAX_PB_SPLIT, COL_MAX_DELTA                = 260, 200
+local COL_MIN_BOSS, COL_MIN_NUM, COL_MIN_DELTA_TITLE = 20, 85, 85
+local GRIP_HALFWIDTH, HEADER_H                       = 5, 18
+local RIGHT_INSET_DEFAULT, TOP_BAR_H, TOP_BAR_GAP    = 26, 28, 4
+local BOSS_LOAD_MAX_TRIES, BOSS_LOAD_RETRY_DELAY     = 40, 0.25
+local EJ_INSTANCE_INDEX_MAX, EJ_ENCOUNTER_INDEX_MAX  = 600, 80
+local RUNS_MAX, CRITERIA_MAX                         = 200, 80
+local HISTORY_ICON_SCALE                             = 0.75
+local BOSS_MODEL_ZOOM                                = 0.75
+local PB_SHINE_WIDTH, PB_SHINE_HEIGHT                = 150, 50
 
-NS.TitleTextures                = {
+NS.TitleTextures                                     = {
     "dragonflight-landingpage-renownbutton-centaur-hover",
     "dragonflight-landingpage-renownbutton-expedition-hover",
     "dragonflight-landingpage-renownbutton-locked",
@@ -40,14 +27,14 @@ NS.TitleTextures                = {
     "UI-Valdrakken-Reward-Slate",
 }
 
-NS.TimerToastTextures           = {
+NS.TimerToastTextures                                = {
     "UI-Centaur-Highlight-Bottom",
     "UI-Dream-Highlight-Bottom",
     "UI-Valdrakken-Highlight-Bottom",
     "UI-Expedition-Highlight-Bottom",
 }
 
-NS.SoundOptions                 = {
+NS.SoundOptions                                      = {
     { name = "None",            id = 0 },
     { name = "Achievement",     id = 569143 },
     { name = "Quest Complete",  id = 567439 },
@@ -57,18 +44,9 @@ NS.SoundOptions                 = {
 }
 
 -- History Column Widths
-local HISTORY_COL_DEFAULTS      = {
-    date = 130,
-    dungeon = 220, -- Elastic, but used for fallback
-    expansion = 140,
-    time = 80,
-    result = 130,
-    diff = 120,
-    delete = 30
+local HISTORY_COL_DEFAULTS                           = {
+    date = 130, dungeon = 220, expansion = 140, time = 80, result = 130, diff = 120, delete = 30
 }
-
-local HISTORY_MIN_COL           = 40
-local HISTORY_MIN_ELASTIC       = 100
 
 -- =========================================================
 -- Small utilities
@@ -103,7 +81,6 @@ SS_Print = function(msg)
         print("SpeedSplits: " .. tostring(msg))
     end
 end
-local SS_Print = SS_Print
 
 -- Debug toggle
 SpeedSplits_DebugObjectives = SpeedSplits_DebugObjectives or false
@@ -147,11 +124,8 @@ end
 -- Hex color system
 -- =========================================================
 local function PackColorCode(a, r, g, b)
-    return string.format("|c%02x%02x%02x%02x",
-        math.floor(Clamp(a, 0, 1) * 255 + 0.5),
-        math.floor(Clamp(r, 0, 1) * 255 + 0.5),
-        math.floor(Clamp(g, 0, 1) * 255 + 0.5),
-        math.floor(Clamp(b, 0, 1) * 255 + 0.5))
+    local function f(v) return math.floor(Clamp(v, 0, 1) * 255 + 0.5) end
+    return string.format("|c%02x%02x%02x%02x", f(a), f(r), f(g), f(b))
 end
 
 local function HexToColor(hex)
@@ -167,12 +141,12 @@ local function HexToColor(hex)
 end
 
 local Colors = {
-    gold       = HexToColor("ffffd100"),
-    white      = HexToColor("ffffffff"),
-    turquoise  = HexToColor("ff00bec3"),
-    deepGreen  = HexToColor("ff10ff00"),
-    lightGreen = HexToColor("ffcc2232"),
-    darkRed    = HexToColor("ffcc0005"),
+    gold      = HexToColor("ffffd100"),
+    white     = HexToColor("ffffffff"),
+    turquoise = HexToColor("ff00bec3"),
+    deepGreen = HexToColor("ff10ff00"),
+    redFade   = HexToColor("ffcc2232"),
+    darkRed   = HexToColor("ffcc0005"),
 }
 NS.Colors = Colors
 
@@ -187,30 +161,16 @@ local function InterpolateColor(c1, c2, t)
 end
 
 local function GetPaceToastTexture(delta, isPB)
-    -- index 1: Gold (PB)
-    -- index 2: Green (Ahead / On Pace)
-    -- index 3: Purple/Salmon (Behind Pace)
-    -- index 4: Red (Slow)
-
-    if isPB then
-        return NS.TimerToastTextures[1]
-    end
-
-    if delta == nil or delta < 0 then
-        return NS.TimerToastTextures[2] -- Ahead is always Green
-    end
-
-    local t1 = NS.DB.Settings.paceThreshold1 or 4
-    local t2 = NS.DB.Settings.paceThreshold2 or 12
-
-    -- Mirroring GetPaceColor logic logic transitions
+    if isPB then return NS.TimerToastTextures[1] end
+    if delta == nil or delta < 0 then return NS.TimerToastTextures[2] end
+    local t1, t2 = (NS.DB.Settings.paceThreshold1 or 4), (NS.DB.Settings.paceThreshold2 or 12)
     if delta <= t1 then
-        return NS.TimerToastTextures[2] -- Still Green-ish (On Pace)
+        return NS.TimerToastTextures[2] -- On Pace (Green)
     elseif delta <= t2 then
-        return NS.TimerToastTextures[3] -- Purple/Salmon (Behind)
+        return NS.TimerToastTextures[3] -- Behind (Purple)
     else
-        return NS.TimerToastTextures[4] -- Red (Slow)
-    end
+        return NS.TimerToastTextures[4]
+    end -- Slow (Red)
 end
 NS.GetPaceToastTexture = GetPaceToastTexture
 
@@ -497,11 +457,10 @@ local function ResolveScrollingTable()
     if ScrollingTable and type(ScrollingTable.CreateST) == "function" then
         return ScrollingTable
     end
-    local candidates = { _G["lib-st-v4.1.3"], _G["lib-st"], _G.LibST, _G.libst, _G.LibScrollingTable, _G.ScrollingTable }
+    local candidates = { _G["lib-st-v4.1.3"], _G["lib-st"], _G.LibScrollingTable, _G.ScrollingTable }
     for _, lib in ipairs(candidates) do
         if lib and type(lib.CreateST) == "function" then
-            ScrollingTable = lib
-            return lib
+            ScrollingTable = lib; return lib
         end
     end
     if LibStub then
@@ -1288,21 +1247,15 @@ local Num_DoCellUpdate = function(rowFrame, cellFrame, data, cols, row, realrow,
     end
 end
 
+local function PBColor() return Colors.gold end
 local function DeltaColor(data, cols, realrow, column)
     local e = data[realrow]
-    local dataIndex = column - 1
-    local cell = e and e.cols and e.cols[dataIndex]
+    local cell = e and e.cols and e.cols[column - 1]
     return cell and cell.color or nil
 end
-
-local function PBColor()
-    return Colors.gold
-end
-
 local function SplitColor(data, cols, realrow, column)
     local e = data[realrow]
-    local dataIndex = column - 1
-    local cell = e and e.cols and e.cols[dataIndex]
+    local cell = e and e.cols and e.cols[column - 1]
     return cell and cell.color or nil
 end
 
@@ -1317,78 +1270,11 @@ local function DeleteRecord(record)
     end
 end
 
-local Delete_DoCellUpdate = function(rowFrame, cellFrame, data, cols, row, realrow, column, fShow, stable)
-    if not fShow or not realrow then
-        if cellFrame.delBtn then cellFrame.delBtn:Hide() end
-        return
-    end
-
-    if not cellFrame.delBtn then
-        local btn = CreateFrame("Button", nil, cellFrame)
-        btn:SetSize(24, 24)
-        btn:SetPoint("CENTER", cellFrame, "CENTER", 0, 0)
-
-
-        local normal = btn:GetNormalTexture()
-        if not normal then
-            normal = btn:CreateTexture(nil, "ARTWORK")
-            btn:SetNormalTexture(normal)
-        end
-        normal:SetAtlas("common-icon-delete", true)
-        normal:SetVertexColor(0.8, 0.2, 0.2) -- Tint red
-
-        local highlight = btn:GetHighlightTexture()
-        if not highlight then
-            highlight = btn:CreateTexture(nil, "HIGHLIGHT")
-            btn:SetHighlightTexture(highlight)
-        end
-        highlight:SetAtlas("common-icon-delete", true)
-        highlight:SetAlpha(0.35)
-        highlight:SetVertexColor(0.8, 0.2, 0.2) -- Tint red
-        btn:SetScript("OnClick", function(self)
-            if self.record then
-                DeleteRecord(self.record)
-            end
-        end)
-        btn:SetScript("OnEnter", function(self)
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:SetText("Delete entry", 1, 0, 0)
-            GameTooltip:Show()
-        end)
-        btn:SetScript("OnLeave", function(self) GameTooltip:Hide() end)
-        cellFrame.delBtn = btn
-    end
-
-    -- Update icon size and record reference every update
-    local btn = cellFrame.delBtn
-    local hScale = (NS.DB and NS.DB.Settings and NS.DB.Settings.historyScale) or 1.0
-    local iconSize = math.max(1, math.floor(16 * HISTORY_DELETE_ICON_SCALE * hScale + 0.5))
-    local btnSize = math.max(20, iconSize + 4)
-
-    btn:SetSize(btnSize, btnSize)
-
-    local normal = btn:GetNormalTexture()
-    normal:ClearAllPoints()
-    normal:SetPoint("CENTER")
-    normal:SetSize(iconSize, iconSize)
-
-    local highlight = btn:GetHighlightTexture()
-    highlight:ClearAllPoints()
-    highlight:SetPoint("CENTER")
-    highlight:SetSize(iconSize, iconSize)
-
-    btn.record = data[realrow].record
-    btn:Show()
-end
-
 -- =========================================================
 -- Run history UI
 -- =========================================================
 local function FormatEpochShort(epoch)
-    if not epoch or epoch <= 0 then
-        return "—"
-    end
-    return date("%H:%M %d/%m/%Y", epoch)
+    return (not epoch or epoch <= 0) and "—" or date("%H:%M %d/%m/%Y", epoch)
 end
 
 local function GetTierNameSafe(tierIndex)
@@ -1449,16 +1335,12 @@ local function History_GetRow(parent)
         row.cols = {}
         for i = 1, 7 do
             local fs = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            fs:SetHeight(24)
-            row.cols[i] = fs
-            if i == 7 then -- Delete icon
+            fs:SetHeight(24); row.cols[i] = fs
+            if i == 7 then
                 local btn = CreateFrame("Button", nil, row)
-                btn:SetSize(20, 20)
-                btn:SetPoint("CENTER", fs, "CENTER")
+                btn:SetSize(20, 20); btn:SetPoint("CENTER", fs, "CENTER")
                 local tex = btn:CreateTexture(nil, "ARTWORK")
-                tex:SetAtlas("common-icon-delete")
-                tex:SetVertexColor(0.8, 0.2, 0.2)
-                tex:SetAllPoints()
+                tex:SetAtlas("common-icon-delete"); tex:SetVertexColor(0.8, 0.2, 0.2); tex:SetAllPoints()
                 btn:SetNormalTexture(tex)
                 btn:SetScript("OnClick", function(self) if self.record then DeleteRecord(self.record) end end)
                 row.delBtn = btn
@@ -1622,17 +1504,16 @@ end
 local function InitHistoryDropDown(dropdown, buildItems, getValue, setValue)
     if not dropdown or not UIDropDownMenu_Initialize then return end
     UIDropDownMenu_Initialize(dropdown, function(self, level)
-        local items = buildItems() -- Fixed potential buildltems typo
+        local items = buildItems()
         if not items then return end
         for _, item in ipairs(items) do
             local info = UIDropDownMenu_CreateInfo()
-            info.text = item.text
-            info.value = item.value
+            info.text, info.value = item.text, item.value
             info.checked = (getValue() == item.value)
             info.func = function()
                 setValue(item.value)
                 UIDropDownMenu_SetText(dropdown, item.text)
-                if UI.RefreshHistoryTable then UI.RefreshHistoryTable() end
+                UI.RefreshHistoryTable()
             end
             UIDropDownMenu_AddButton(info, level)
         end

@@ -102,8 +102,7 @@ function T.VisualScalingSection(parent, label, typeKey)
 
     table.insert(T.Registry, function()
         local f = NS.DB.Settings.fonts[typeKey]
-        slider:SetValue(f.size)
-        sText:SetText("Size: " .. f.size)
+        slider:SetValue(f.size); sText:SetText("Size: " .. f.size)
         UIDropDownMenu_SetSelectedValue(dd, f.font)
         local name = (f.font:find("FRIZQT") and "Friz" or (f.font:find("ARIAL") and "Arial" or (f.font:find("skurri") and "Skurri" or "Morph")))
         UIDropDownMenu_SetText(dd, name)
@@ -369,15 +368,6 @@ function NS.CreateOptionsPanel()
         end
     end)
 
-    UpdateSoundDD()
-
-    UIDropDownMenu_Initialize(soundDD, function()
-        for _, info in ipairs(NS.SoundOptions or {}) do
-            local item = UIDropDownMenu_CreateInfo()
-            item.text = info.name; item.value = info.id; item.func = OnSoundClick
-            UIDropDownMenu_AddButton(item)
-        end
-    end)
     UpdateSoundDD()
 
     local volLabel = rewardRow:CreateFontString(nil, "ARTWORK", "GameFontNormal")

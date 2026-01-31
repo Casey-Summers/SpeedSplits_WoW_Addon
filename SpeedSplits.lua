@@ -1311,6 +1311,14 @@ local function History_GetRow(parent)
                 local tex = btn:CreateTexture(nil, "ARTWORK")
                 tex:SetAtlas("common-icon-delete"); tex:SetVertexColor(0.8, 0.2, 0.2); tex:SetAllPoints()
                 btn:SetNormalTexture(tex)
+                btn:SetHighlightAtlas("common-icon-delete")
+                btn:GetHighlightTexture():SetAlpha(0.4)
+                btn:SetScript("OnEnter", function(self)
+                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                    GameTooltip:SetText("Delete", 1, 0, 0)
+                    GameTooltip:Show()
+                end)
+                btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
                 btn:SetScript("OnClick", function(self) if self.record then DeleteRecord(self.record) end end)
                 row.delBtn = btn
             else
@@ -1510,8 +1518,13 @@ local function History_ApplyTableLayout()
     local h = UI.history
     if not h or not h.frame or not h.listFrame or not h.colWidths then return end
 
+    local scrollFrame = h.scrollFrame
+    local scrollbar = scrollFrame and _G[scrollFrame:GetName() .. "ScrollBar"]
+    local isShown = scrollbar and scrollbar:IsShown()
+    local scrollWidth = isShown and 20 or 4
+
     local w = h.colWidths
-    local avail = h.listFrame:GetWidth() - 20
+    local avail = h.listFrame:GetWidth() - scrollWidth
     local used = w.date + w.expansion + w.time + w.result + w.diff + w.delete
     local dungW = math.max(avail - used, 100)
 
@@ -1742,7 +1755,7 @@ local function EnsureHistoryUI()
     -- Scroll List
     local listFrame = CreateFrame("Frame", nil, historyFrame, "BackdropTemplate")
     listFrame:SetPoint("TOPLEFT", controls, "BOTTOMLEFT", 0, -34)
-    listFrame:SetPoint("BOTTOMRIGHT", historyFrame, "BOTTOMRIGHT", -26, 10)
+    listFrame:SetPoint("BOTTOMRIGHT", historyFrame, "BOTTOMRIGHT", -12, 10)
     listFrame:SetBackdrop({
         bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
         edgeFile = "Interface\\Buttons\\WHITE8X8",
@@ -1754,10 +1767,35 @@ local function EnsureHistoryUI()
     listFrame:SetClipsChildren(true)
     UI.history.listFrame = listFrame
 
-    local scrollFrame = CreateFrame("ScrollFrame", "SpeedSplitsHistoryScroll", historyFrame, "FauxScrollFrameTemplate")
+    local scrollFrame = CreateFrame("ScrollFrame", "SpeedSplitsHistoryScroll", listFrame, "FauxScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", listFrame, "TOPLEFT")
     scrollFrame:SetPoint("BOTTOMRIGHT", listFrame, "BOTTOMRIGHT")
     UI.history.scrollFrame = scrollFrame
+
+    -- Style the scrollbar to match Splits table (Ace3 style)
+    local scrollbar = _G[scrollFrame:GetName() .. "ScrollBar"]
+    if scrollbar then
+        scrollbar:SetWidth(10)
+        local up = _G[scrollbar:GetName() .. "ScrollUpButton"]
+        local down = _G[scrollbar:GetName() .. "ScrollDownButton"]
+        if up then up:Hide() end
+        if down then down:Hide() end
+
+        local thumb = scrollbar:GetThumbTexture()
+        if thumb then
+            thumb:SetColorTexture(0.4, 0.4, 0.4, 0.8)
+            thumb:SetWidth(8)
+        end
+
+        local bg = scrollbar:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints()
+        bg:SetColorTexture(0, 0, 0, 0.5)
+
+        scrollbar:ClearAllPoints()
+        scrollbar:SetPoint("TOPRIGHT", listFrame, "TOPRIGHT", -2, -1)
+        scrollbar:SetPoint("BOTTOMRIGHT", listFrame, "BOTTOMRIGHT", -2, 1)
+    end
+    UI.history.scrollBar = scrollbar
 
     -- Header row
     local header = CreateFrame("Frame", nil, historyFrame)
@@ -1796,7 +1834,8 @@ local function EnsureHistoryUI()
         local h = UI.history
         local availH = listFrame:GetHeight()
         local rowH = 24
-        local count = math.ceil(availH / rowH)
+        local count = math.floor(availH / rowH)
+        h.visibleCount = count
         for i = 1, math.max(count, #h.rows) do
             if i <= count then
                 if not h.rows[i] then
@@ -1816,47 +1855,52 @@ local function EnsureHistoryUI()
         local h = UI.history
         local data = h.filteredData or {}
         local rowH = 24
-        local numRows = #h.rows
+        local numRows = h.visibleCount or 0
         FauxScrollFrame_Update(h.scrollFrame, #data, numRows, rowH)
         local offset = FauxScrollFrame_GetOffset(h.scrollFrame)
-        for i = 1, numRows do
+        for i = 1, #h.rows do
             local r = h.rows[i]
-            local idx = i + offset
-            local d = data[idx]
-            if d then
-                local isPB = IsRunPB(d)
-                local resText, resColor = "Incomplete", NS.Colors.darkRed
-                if isPB then
-                    resText, resColor = "PB", NS.Colors.gold
-                elseif d.success then
-                    resText, resColor = "Completed", NS.Colors.deepGreen
-                end
+            if i <= numRows then
+                local idx = i + offset
+                local d = data[idx]
+                if d then
+                    local isPB = IsRunPB(d)
+                    local resText, resColor = "Incomplete", NS.Colors.darkRed
+                    if isPB then
+                        resText, resColor = "PB", NS.Colors.gold
+                    elseif d.success then
+                        resText, resColor = "Completed", NS.Colors.deepGreen
+                    end
 
-                local node = GetBestSplitsSubtable(d.instanceName)
-                local pb = node and node.FullRun and node.FullRun.duration
-                local diff = (pb and d.duration) and (d.duration - pb) or nil
+                    local node = GetBestSplitsSubtable(d.instanceName)
+                    local pb = node and node.FullRun and node.FullRun.duration
+                    local diff = (pb and d.duration) and (d.duration - pb) or nil
 
-                r.cols[1]:SetText(FormatEpochShort(d.startedAt))
-                r.cols[2]:SetText(d.instanceName or "—")
-                r.cols[3]:SetText(GetTierNameSafe(d.tier))
-                r.cols[4]:SetText(resText)
-                r.cols[4]:SetTextColor(resColor.r, resColor.g, resColor.b)
-                r.cols[5]:SetText(d.duration and FormatTime(d.duration) or "--:--.---")
+                    r.cols[1]:SetText(FormatEpochShort(d.startedAt))
+                    r.cols[2]:SetText(d.instanceName or "—")
+                    r.cols[3]:SetText(GetTierNameSafe(d.tier))
+                    r.cols[4]:SetText(resText)
+                    r.cols[4]:SetTextColor(resColor.r, resColor.g, resColor.b)
+                    r.cols[5]:SetText(d.duration and FormatTime(d.duration) or "--:--.---")
 
-                if diff then
-                    local _, _, _, hex = NS.GetPaceColor(diff, isPB)
-                    r.cols[6]:SetText(hex .. FormatDelta(diff) .. "|r")
+                    if diff then
+                        local _, _, _, hex = NS.GetPaceColor(diff, isPB)
+                        r.cols[6]:SetText(hex .. FormatDelta(diff) .. "|r")
+                    else
+                        r.cols[6]:SetText("—")
+                    end
+
+                    r.delBtn.record = d
+                    r.bg:SetShown(idx % 2 == 0)
+                    r:Show()
                 else
-                    r.cols[6]:SetText("—")
+                    r:Hide()
                 end
-
-                r.delBtn.record = d
-                r.bg:SetShown(idx % 2 == 0)
-                r:Show()
             else
                 r:Hide()
             end
         end
+        History_ApplyTableLayout()
     end
 
     scrollFrame:SetScript("OnVerticalScroll", function(self, offset)
@@ -1865,8 +1909,8 @@ local function EnsureHistoryUI()
 
     historyFrame:SetScript("OnSizeChanged", function()
         UpdateHistoryRows()
-        History_ApplyTableLayout()
         UI.history.UpdateScroll()
+        History_ApplyTableLayout()
     end)
 
     -- Resizer
@@ -2024,6 +2068,15 @@ local function EnsureUI()
     timerToastBg:SetAllPoints(timerFrame)
     timerToastBg:SetAlpha(0)
     UI.timerToastBg = timerToastBg
+
+    local toastAG = timerToastBg:CreateAnimationGroup()
+    local toastIn = toastAG:CreateAnimation("Alpha")
+    toastIn:SetFromAlpha(0); toastIn:SetToAlpha(1); toastIn:SetDuration(0.2); toastIn:SetOrder(1)
+    local toastHold = toastAG:CreateAnimation("Alpha")
+    toastHold:SetFromAlpha(1); toastHold:SetToAlpha(1); toastHold:SetDuration(3.0); toastHold:SetOrder(2)
+    local toastOut = toastAG:CreateAnimation("Alpha")
+    toastOut:SetFromAlpha(1); toastOut:SetToAlpha(0); toastOut:SetDuration(1.5); toastOut:SetOrder(3)
+    UI.timerToastAG = toastAG
 
     -- Initial pivot anchor (will be refined in RefreshAllUI)
     timerTextSec:SetPoint("RIGHT", timerFrame, "CENTER", 0, 0)
@@ -2410,7 +2463,7 @@ local function SetTimerDelta(delta, isPB)
         return
     end
 
-    local _, _, _, hex = GetPaceColor(delta, isPB)
+    local hex = Run.lastColorHex or Colors.white.hex
     UI.timerDeltaText:SetText(hex .. FormatDelta(delta) .. "|r")
     UI.timerDeltaText:SetTextColor(1, 1, 1, 1)
 
@@ -2687,44 +2740,31 @@ local function RefreshTotals(isFinal)
     end
 end
 NS.Run = Run
-local function TestPBToast(manualTex)
-    if not UI.timerToastBg then return end
-    local tex = manualTex or NS.TimerToastTextures[1] -- Use Gold by default for test if no manual tex
+function NS.ShowToast(tex, isNewPB)
+    if not UI.timerToastBg or not UI.timerToastAG then return end
+
+    UI.timerToastAG:Stop()
+    if UI.pbShineAG then UI.pbShineAG:Stop() end
+
     ApplyBackgroundTexture(UI.timerToastBg, tex)
 
-    -- Play the selected sound ONLY if it's the Gold texture (as per user request for test button)
-    if tex == NS.TimerToastTextures[1] then
+    -- Play sound if it's a new PB/Gold or if we're in test mode for Gold
+    if isNewPB then
         if NS.DB.Settings.toastSoundID and NS.DB.Settings.toastSoundID > 0 then
             PlaySoundFile(NS.DB.Settings.toastSoundID, "SFX")
         end
-    end
-
-    -- Trigger the banner shine ONLY if using the gold texture (first index)
-    if UI.pbShineAG and tex == NS.TimerToastTextures[1] then
-        UI.pbShineAG:Stop(); UI.pbShineAG:Play()
-    end
-
-    UI.timerToastBg:SetAlpha(1)
-    C_Timer.After(3.0, function()
-        if UI.timerToastBg then
-            local f = CreateFrame("Frame")
-            f.elapsed = 0
-            f:SetScript("OnUpdate", function(self, elapsed)
-                self.elapsed = self.elapsed + elapsed
-                local alpha = 1 - (self.elapsed / 1.5)
-                if alpha <= 0 then
-                    UI.timerToastBg:SetAlpha(0)
-                    if UI.pbShine then UI.pbShine:SetAlpha(0) end
-                    self:SetScript("OnUpdate", nil)
-                else
-                    UI.timerToastBg:SetAlpha(alpha)
-                    if UI.pbShine and tex == NS.TimerToastTextures[1] then
-                        UI.pbShine:SetAlpha(alpha)
-                    end
-                end
-            end)
+        -- Trigger the banner shine ONLY if using the gold texture (first index)
+        if UI.pbShineAG and tex == NS.TimerToastTextures[1] then
+            UI.pbShineAG:Play()
         end
-    end)
+    end
+
+    UI.timerToastAG:Play()
+end
+
+local function TestPBToast(manualTex)
+    local tex = manualTex or NS.TimerToastTextures[1]
+    NS.ShowToast(tex, tex == NS.TimerToastTextures[1])
 end
 NS.TestPBToast = TestPBToast
 
@@ -3056,46 +3096,13 @@ local function RecordBossKill(encounterID, encounterName)
     end
 
     -- Timer Reward Toast
-    if NS.DB.Settings.showTimerToast and UI.timerToastBg then
+    if NS.DB.Settings.showTimerToast then
         local isLastBoss = (Run.remainingCount or 0) == 0 and #Run.entries > 0
         local shouldToast = NS.DB.Settings.toastAllBosses or isLastBoss
 
         if shouldToast then
             local tex = NS.GetPaceToastTexture(deltaOverallAtKill, isNewSegmentPB)
-            ApplyBackgroundTexture(UI.timerToastBg, tex)
-
-            if isNewSegmentPB then
-                if NS.DB.Settings.toastSoundID and NS.DB.Settings.toastSoundID > 0 then
-                    PlaySoundFile(NS.DB.Settings.toastSoundID, "SFX")
-                end
-                -- Only show shine if the texture is "Gold" (the first one)
-                if UI.pbShineAG and NS.DB.Settings.timerToastTexture == NS.TimerToastTextures[1] then
-                    UI.pbShineAG:Stop(); UI.pbShineAG:Play()
-                end
-            end
-
-            UI.timerToastBg:SetAlpha(1)
-            C_Timer.After(4.0, function()
-                if UI.timerToastBg then
-                    local f = CreateFrame("Frame")
-                    f.elapsed = 0
-                    f:SetScript("OnUpdate", function(self, elapsed)
-                        self.elapsed = self.elapsed + elapsed
-                        local alpha = 1 - (self.elapsed / 1.5)
-                        if alpha <= 0 then
-                            UI.timerToastBg:SetAlpha(0)
-                            if UI.pbShine then UI.pbShine:SetAlpha(0) end
-                            self:SetScript("OnUpdate", nil)
-                        else
-                            UI.timerToastBg:SetAlpha(alpha)
-                            -- Sync PB shine with toast fade if it was active
-                            if UI.pbShine and UI.pbShine:GetAlpha() > 0 then
-                                UI.pbShine:SetAlpha(alpha)
-                            end
-                        end
-                    end)
-                end
-            end)
+            NS.ShowToast(tex, isNewSegmentPB)
         end
     end
 

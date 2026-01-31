@@ -240,7 +240,7 @@ function NS.CreateOptionsPanel()
 
     -- HEADER TEXTURE (COLUMN 1, BELOW COLOURS)
     local textureHeader = T.Header(panel, "Header Texture")
-    textureHeader:SetPoint("TOPLEFT", themesHeader, "BOTTOMLEFT", 0, -170)
+    textureHeader:SetPoint("TOPLEFT", lastColorElem, "BOTTOMLEFT", -8, -12)
 
     local texButtons = {}
     for i, name in ipairs(NS.TitleTextures) do
@@ -268,12 +268,12 @@ function NS.CreateOptionsPanel()
 
     -- PB REWARD TOAST (COLUMN 1, BOTTOM)
     local toastHeader = T.Header(panel, "PB Reward Toast")
-    toastHeader:SetPoint("TOPLEFT", textureHeader, "BOTTOMLEFT", 0, -100)
+    toastHeader:SetPoint("TOPLEFT", textureHeader, "BOTTOMLEFT", 0, -110)
 
     -- Dual column container for toggles/sound/scale
     local rewardRow = CreateFrame("Frame", nil, panel)
     rewardRow:SetPoint("TOPLEFT", toastHeader, "BOTTOMLEFT", 0, -10)
-    rewardRow:SetSize(300, 150)
+    rewardRow:SetSize(300, 110)
 
     local col1X = 8
     local col2X = 150
@@ -370,17 +370,8 @@ function NS.CreateOptionsPanel()
 
     UpdateSoundDD()
 
-    local volLabel = rewardRow:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    volLabel:SetPoint("TOPLEFT", soundDD, "BOTTOMLEFT", 15, -4)
-    volLabel:SetText("Toast Volume")
-    volLabel:SetTextColor(0.4, 0.8, 1)
-
-    local volSlider = T.CreateSlider(rewardRow, "Vol", 0.0, 1.0, "settings", "toastVolume", 130)
-    volSlider:SetScale(0.85)
-    volSlider:SetPoint("TOPLEFT", volLabel, "BOTTOMLEFT", 0, -18)
-
     local scaleLabel = rewardRow:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    scaleLabel:SetPoint("TOPLEFT", volSlider, "BOTTOMLEFT", 0, -10)
+    scaleLabel:SetPoint("TOPLEFT", soundDD, "BOTTOMLEFT", 15, -4)
     scaleLabel:SetText("Toast Scale")
     scaleLabel:SetTextColor(0.4, 0.8, 1)
 

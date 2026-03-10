@@ -56,14 +56,14 @@ end
 
 function T.VisualScalingSection(parent, label, typeKey)
     local container = CreateFrame("Frame", nil, parent)
-    container:SetSize(320, 70)
-    container:SetScale(1.05) -- Slightly increased overall scale
+    container:SetSize(320, 50)
+    container:SetScale(1.0) -- Reduced from 1.05 to save space
 
     local sub = container:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     sub:SetPoint("TOPLEFT", 0, 0); sub:SetText(label); sub:SetTextColor(0.4, 0.8, 1)
 
     local slider = CreateFrame("Slider", nil, container, "OptionsSliderTemplate")
-    slider:SetPoint("TOPLEFT", sub, "BOTTOMLEFT", 10, -20); slider:SetWidth(120); slider:SetScale(0.9); slider
+    slider:SetPoint("TOPLEFT", sub, "BOTTOMLEFT", 10, -14); slider:SetWidth(120); slider:SetScale(0.85); slider
         :SetMinMaxValues(8, 48); slider:SetValueStep(1); slider:SetObeyStepOnDrag(true)
     local sText = slider:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall"); sText:SetPoint("BOTTOMLEFT", slider,
         "TOPLEFT", 0, 2)
@@ -82,14 +82,19 @@ function T.VisualScalingSection(parent, label, typeKey)
     end
     UIDropDownMenu_Initialize(dd, function()
         local fonts = { { name = "Friz", path = "Fonts\\FRIZQT__.TTF" }, { name = "Arial", path = "Fonts\\ARIALN.TTF" }, { name = "Skurri", path = "Fonts\\skurri.ttf" }, { name = "Morph", path = "Fonts\\MORPHEUS.ttf" } }
+        local current = NS.DB.Settings.fonts[typeKey].font
         for _, info in ipairs(fonts) do
-            local item = UIDropDownMenu_CreateInfo(); item.text = info.name; item.value = info.path; item.func = OnClick; UIDropDownMenu_AddButton(
-                item)
+            local item = UIDropDownMenu_CreateInfo()
+            item.text = info.name
+            item.value = info.path
+            item.func = OnClick
+            item.checked = (info.path == current)
+            UIDropDownMenu_AddButton(item)
         end
     end)
     UIDropDownMenu_SetSelectedValue(dd, NS.DB.Settings.fonts[typeKey].font)
-    UIDropDownMenu_SetText(dd,
-        (NS.DB.Settings.fonts[typeKey].font:find("FRIZQT") and "Friz" or (NS.DB.Settings.fonts[typeKey].font:find("ARIAL") and "Arial" or (NS.DB.Settings.fonts[typeKey].font:find("skurri") and "Skurri" or "Morph"))))
+    local name = (NS.DB.Settings.fonts[typeKey].font:find("FRIZQT") and "Friz" or (NS.DB.Settings.fonts[typeKey].font:find("ARIAL") and "Arial" or (NS.DB.Settings.fonts[typeKey].font:find("skurri") and "Skurri" or "Morph")))
+    UIDropDownMenu_SetText(dd, name)
 
     local bold = CreateFrame("CheckButton", nil, container, "InterfaceOptionsCheckButtonTemplate")
     bold:SetPoint("LEFT", dd, "RIGHT", -5, 2); bold:SetScale(0.9); bold.Text:SetText("Bold")
@@ -107,6 +112,54 @@ function T.VisualScalingSection(parent, label, typeKey)
         local name = (f.font:find("FRIZQT") and "Friz" or (f.font:find("ARIAL") and "Arial" or (f.font:find("skurri") and "Skurri" or "Morph")))
         UIDropDownMenu_SetText(dd, name)
         bold:SetChecked(f.flags:find("THICKOUTLINE") ~= nil)
+    end)
+
+    return container
+end
+
+function T.VisibilityRow(parent, label, field)
+    local container = CreateFrame("Frame", nil, parent)
+    container:SetSize(320, 32)
+
+    local sub = container:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    sub:SetPoint("LEFT", 0, 0); sub:SetText(label)
+    sub:SetWidth(120); sub:SetJustifyH("LEFT")
+
+    local dd = CreateFrame("Frame", "SSVisibilityDD" .. field, container, "UIDropDownMenuTemplate")
+    dd:SetPoint("LEFT", sub, "RIGHT", 10, -2); UIDropDownMenu_SetWidth(dd, 120); dd:SetScale(0.95)
+
+    local function OnClick(self)
+        UIDropDownMenu_SetSelectedValue(dd, self.value); UIDropDownMenu_SetText(dd, self.text)
+        NS.DB.Settings.visibility[field] = self.value
+        if NS.RefreshVisibility then NS.RefreshVisibility() end
+    end
+
+    UIDropDownMenu_Initialize(dd, function()
+        local opts = {
+            { name = "Instance Only", value = "instance" },
+            { name = "Outdoor Only",  value = "outdoor" },
+            { name = "Both",          value = "both" }
+        }
+        local current = NS.DB.Settings.visibility[field] or "instance"
+        for _, info in ipairs(opts) do
+            local item = UIDropDownMenu_CreateInfo()
+            item.text = info.name
+            item.value = info.value
+            item.func = OnClick
+            item.checked = (info.value == current)
+            UIDropDownMenu_AddButton(item)
+        end
+    end)
+
+    local val = NS.DB.Settings.visibility[field] or "instance"
+    UIDropDownMenu_SetSelectedValue(dd, val)
+    local text = (val == "instance" and "Instance Only" or (val == "outdoor" and "Outdoor Only" or "Both"))
+    UIDropDownMenu_SetText(dd, text)
+
+    table.insert(T.Registry, function()
+        local v = NS.DB.Settings.visibility[field] or "instance"
+        UIDropDownMenu_SetSelectedValue(dd, v)
+        UIDropDownMenu_SetText(dd, (v == "instance" and "Instance Only" or (v == "outdoor" and "Outdoor Only" or "Both")))
     end)
 
     return container
@@ -359,11 +412,13 @@ function NS.CreateOptionsPanel()
     end
 
     UIDropDownMenu_Initialize(soundDD, function()
+        local current = NS.DB.Settings.toastSoundID or 0
         for _, info in ipairs(NS.SoundOptions or {}) do
             local item = UIDropDownMenu_CreateInfo()
             item.text = info.name
             item.value = info.id
             item.func = OnSoundClick
+            item.checked = (info.id == current)
             UIDropDownMenu_AddButton(item)
         end
     end)
@@ -437,17 +492,27 @@ function NS.CreateOptionsPanel()
     bossRow:SetPoint("TOPLEFT", fontsHeader, "BOTTOMLEFT", 10, -10)
 
     local numRow = T.VisualScalingSection(panel, "Splits / Numbers", "num")
-    numRow:SetPoint("TOPLEFT", bossRow, "BOTTOMLEFT", 0, -10)
+    numRow:SetPoint("TOPLEFT", bossRow, "BOTTOMLEFT", 0, -5)
 
     local headerRow = T.VisualScalingSection(panel, "Counter / Headers", "header")
-    headerRow:SetPoint("TOPLEFT", numRow, "BOTTOMLEFT", 0, -10)
+    headerRow:SetPoint("TOPLEFT", numRow, "BOTTOMLEFT", 0, -5)
 
     local timerRow = T.VisualScalingSection(panel, "Main Timer", "timer")
-    timerRow:SetPoint("TOPLEFT", headerRow, "BOTTOMLEFT", 0, -10)
+    timerRow:SetPoint("TOPLEFT", headerRow, "BOTTOMLEFT", 0, -5)
+
+    -- UI VISIBILITY
+    local visibilityHeader = T.Header(panel, "UI Visibility")
+    visibilityHeader:SetPoint("TOPLEFT", timerRow, "BOTTOMLEFT", -10, -15)
+
+    local vTimer = T.VisibilityRow(panel, "Timer Frame", "timer")
+    vTimer:SetPoint("TOPLEFT", visibilityHeader, "BOTTOMLEFT", 10, -10)
+
+    local vSplits = T.VisibilityRow(panel, "Splits Table", "splits")
+    vSplits:SetPoint("TOPLEFT", vTimer, "BOTTOMLEFT", 0, -5)
 
     -- MANAGEMENT (COLUMN 2, BOTTOM)
     local managementHeader = T.Header(panel, "Management")
-    managementHeader:SetPoint("TOPLEFT", fontsHeader, "BOTTOMLEFT", 0, -360) -- Increased spacing
+    managementHeader:SetPoint("TOPLEFT", vSplits, "BOTTOMLEFT", -10, -25)
 
     local function Q(label, func)
         local btn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate"); btn:SetSize(140, 26); btn:SetText(label); btn
@@ -463,10 +528,9 @@ function NS.CreateOptionsPanel()
             showTimerToast = NS.DB.Settings.showTimerToast,
             paceThreshold1 = NS.DB.Settings.paceThreshold1,
             paceThreshold2 = NS.DB.Settings.paceThreshold2,
-            toastAllBosses = NS.DB.Settings.toastAllBosses,
-            toastSoundID = NS.DB.Settings.toastSoundID,
             toastSoundName = NS.DB.Settings.toastSoundName,
-            toastVolume = NS.DB.Settings.toastVolume
+            toastVolume = NS.DB.Settings.toastVolume,
+            visibility = SS_CopyTable(NS.DB.Settings.visibility)
         }
         if _G.SS_Print then _G.SS_Print("Default styles saved.") end
     end)
@@ -486,6 +550,7 @@ function NS.CreateOptionsPanel()
             NS.DB.Settings.toastSoundID = d.toastSoundID
             NS.DB.Settings.toastSoundName = d.toastSoundName
             NS.DB.Settings.toastVolume = d.toastVolume or 0.8
+            NS.DB.Settings.visibility = SS_CopyTable(d.visibility or {})
             NS.UpdateColorsFromSettings()
 
             -- Refresh Options UI
@@ -508,9 +573,9 @@ function NS.CreateOptionsPanel()
     local resetLayoutBtn = Q("Reset Layout", function()
         if NS.DB.DefaultLayout and NS.DB.DefaultLayout.ui then
             NS.DB.ui = SS_CopyTable(NS.DB.DefaultLayout.ui)
-            ReloadUI() -- Reloading is safest to ensure all frames restore correctly
+            ReloadUI()
         else
-            StaticPopup_Show("SPEEDSPLITS_RESET_LAYOUT")
+            StaticPopup_Show("SPEEDSPLITS_FACTORY_RESET")
         end
     end)
     resetLayoutBtn:SetPoint("LEFT", layoutBtn, "RIGHT", 15, 0)
@@ -519,9 +584,27 @@ function NS.CreateOptionsPanel()
     wipeBtn:SetSize(295, 26)
     wipeBtn:SetPoint("TOPLEFT", layoutBtn, "BOTTOMLEFT", 0, -10)
 
+    local factoryBtn = Q("Reset to Factory Settings", function() StaticPopup_Show("SPEEDSPLITS_FACTORY_RESET") end)
+    factoryBtn:SetSize(295, 26)
+    factoryBtn:SetPoint("TOPLEFT", wipeBtn, "BOTTOMLEFT", 0, -10)
+
     if Settings and Settings.RegisterCanvasLayoutCategory then
-        Settings.RegisterAddOnCategory(Settings.RegisterCanvasLayoutCategory(panel, panel.name))
+        local category, layout = Settings.RegisterCanvasLayoutCategory(panel, panel.name)
+        Settings.RegisterAddOnCategory(category)
+        NS.SettingsCategoryID = category:GetID()
     else
         InterfaceOptions_AddCategory(panel)
+    end
+end
+
+function NS.OpenOptions()
+    if Settings and Settings.OpenToCategory then
+        if NS.SettingsCategoryID then
+            Settings.OpenToCategory(NS.SettingsCategoryID)
+        else
+            Settings.OpenToCategory("SpeedSplits")
+        end
+    else
+        InterfaceOptionsFrame_OpenToCategory("SpeedSplits")
     end
 end

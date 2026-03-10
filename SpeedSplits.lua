@@ -228,6 +228,98 @@ local Run = {
 }
 NS.Run = Run
 
+-- =========================================================
+-- Factory Defaults
+-- =========================================================
+NS.FactoryDefaults = {
+    Settings = {
+        colors            = {
+            darkRed    = "ffcc0005",
+            deepGreen  = "ff10ff00",
+            gold       = "ffffd100",
+            lightGreen = "ffff5b67",
+            turquoise  = "ff00e3d6",
+            white      = "ffffffff",
+        },
+        fonts             = {
+            boss    = { size = 12, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
+            num     = { size = 18, font = "Fonts\\ARIALN.TTF", flags = "OUTLINE" },
+            timer   = { size = 30, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
+            header  = { size = 14, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
+            counter = { size = 15, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
+            history = { size = 12, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
+        },
+        history           = {
+            entryScale = 1,
+        },
+        historyScale      = 0.95,
+        titleTexture      = "dragonflight-landingpage-renownbutton-dream-hover",
+        timerToastTexture = "UI-Centaur-Highlight-Bottom",
+        timerToastScale   = 1.6,
+        paceThreshold1    = 5,
+        paceThreshold2    = 10,
+        showTimerToast    = true,
+        toastAllBosses    = true,
+        toastSoundID      = 569143,
+        toastSoundName    = "Achievement",
+        toastVolume       = 0.8,
+        visibility        = {
+            timer  = "instance", -- "instance", "outdoor", "both"
+            splits = "instance",
+        },
+    },
+    ui = {
+        cols = {
+            pb = 85,
+            split = 85,
+            delta = 85,
+        },
+        frames = {
+            boss = {
+                w = 450,
+                h = 200,
+                point = "CENTER",
+                relPoint = "CENTER",
+                x = -7,
+                y = -12,
+            },
+            history = {
+                w = 850,
+                h = 321,
+                point = "CENTER",
+                relPoint = "CENTER",
+                x = 38,
+                y = 4.5,
+            },
+            timer = {
+                w = 245,
+                h = 78,
+                point = "CENTER",
+                relPoint = "CENTER",
+                x = -6.5,
+                y = 131,
+            },
+        },
+        historyCols = {
+            date      = 140,
+            dungeon   = 220,
+            expansion = 114,
+            result    = 162,
+            time      = 74,
+            diff      = 107,
+            delete    = 30,
+        },
+    }
+}
+
+local function CopyTable(src)
+    local dest = {}
+    for k, v in pairs(src) do
+        if type(v) == "table" then dest[k] = CopyTable(v) else dest[k] = v end
+    end
+    return dest
+end
+
 local function EnsureDB()
     if SpeedSplitsDB == nil then
         SpeedSplitsDB = {}
@@ -248,63 +340,38 @@ local function EnsureDB()
     SpeedSplitsDB.pbRun                      = nil
 
     -- Defaults
-    SpeedSplitsDB.Settings.colors            = SpeedSplitsDB.Settings.colors or {
-        gold       = "ffffd100",
-        white      = "ffffffff",
-        turquoise  = "ff00bec3",
-        deepGreen  = "ff10ff00",
-        lightGreen = "ffcc2232",
-        darkRed    = "ffcc0005",
-    }
-    SpeedSplitsDB.Settings.fonts             = SpeedSplitsDB.Settings.fonts or {}
-    SpeedSplitsDB.Settings.fonts.boss        = SpeedSplitsDB.Settings.fonts.boss or
-        { size = 14, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" }
-    SpeedSplitsDB.Settings.fonts.num         = SpeedSplitsDB.Settings.fonts.num or
-        { size = 17, font = "Fonts\\ARIALN.TTF", flags = "OUTLINE" }
-    SpeedSplitsDB.Settings.fonts.timer       = SpeedSplitsDB.Settings.fonts.timer or
-        { size = 30, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" }
-    SpeedSplitsDB.Settings.fonts.header      = SpeedSplitsDB.Settings.fonts.header or
-        { size = 14, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" }
-    SpeedSplitsDB.Settings.fonts.counter     = SpeedSplitsDB.Settings.fonts.counter or
-        { size = 16, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" }
-    SpeedSplitsDB.Settings.historyScale      = SpeedSplitsDB.Settings.historyScale or 1.0
-    SpeedSplitsDB.Settings.titleTexture      = SpeedSplitsDB.Settings.titleTexture or NS.TitleTextures[1]
-    SpeedSplitsDB.Settings.timerToastTexture = SpeedSplitsDB.Settings.timerToastTexture or NS.TimerToastTextures[1]
-    SpeedSplitsDB.Settings.timerToastScale   = SpeedSplitsDB.Settings.timerToastScale or 1.2
-    SpeedSplitsDB.Settings.paceThreshold1    = SpeedSplitsDB.Settings.paceThreshold1 or 4
-    SpeedSplitsDB.Settings.paceThreshold2    = SpeedSplitsDB.Settings.paceThreshold2 or 12
-    SpeedSplitsDB.Settings.showTimerToast    = SpeedSplitsDB.Settings.showTimerToast == nil and true or
-        SpeedSplitsDB.Settings.showTimerToast
-    SpeedSplitsDB.Settings.toastAllBosses    = SpeedSplitsDB.Settings.toastAllBosses or false
-    SpeedSplitsDB.Settings.toastSoundID      = SpeedSplitsDB.Settings.toastSoundID or 569143
-    SpeedSplitsDB.Settings.toastSoundName    = SpeedSplitsDB.Settings.toastSoundName or "Achievement"
-    SpeedSplitsDB.Settings.toastVolume       = SpeedSplitsDB.Settings.toastVolume or 0.8
+    local fallbacks                          = NS.FactoryDefaults.Settings
+    SpeedSplitsDB.Settings.colors            = SpeedSplitsDB.Settings.colors or CopyTable(fallbacks.colors)
+    SpeedSplitsDB.Settings.fonts             = SpeedSplitsDB.Settings.fonts or CopyTable(fallbacks.fonts)
+
+    SpeedSplitsDB.Settings.fonts.boss        = SpeedSplitsDB.Settings.fonts.boss or fallbacks.fonts.boss
+    SpeedSplitsDB.Settings.fonts.num         = SpeedSplitsDB.Settings.fonts.num or fallbacks.fonts.num
+    SpeedSplitsDB.Settings.fonts.timer       = SpeedSplitsDB.Settings.fonts.timer or fallbacks.fonts.timer
+    SpeedSplitsDB.Settings.fonts.header      = SpeedSplitsDB.Settings.fonts.header or fallbacks.fonts.header
+    SpeedSplitsDB.Settings.fonts.counter     = SpeedSplitsDB.Settings.fonts.counter or fallbacks.fonts.counter
+    SpeedSplitsDB.Settings.fonts.history     = SpeedSplitsDB.Settings.fonts.history or fallbacks.fonts.history
+
+    SpeedSplitsDB.Settings.history           = SpeedSplitsDB.Settings.history or CopyTable(fallbacks.history)
+    SpeedSplitsDB.Settings.historyScale      = SpeedSplitsDB.Settings.historyScale or fallbacks.historyScale
+    SpeedSplitsDB.Settings.titleTexture      = SpeedSplitsDB.Settings.titleTexture or fallbacks.titleTexture
+    SpeedSplitsDB.Settings.timerToastTexture = SpeedSplitsDB.Settings.timerToastTexture or fallbacks.timerToastTexture
+    SpeedSplitsDB.Settings.timerToastScale   = SpeedSplitsDB.Settings.timerToastScale or fallbacks.timerToastScale
+    SpeedSplitsDB.Settings.paceThreshold1    = SpeedSplitsDB.Settings.paceThreshold1 or fallbacks.paceThreshold1
+    SpeedSplitsDB.Settings.paceThreshold2    = SpeedSplitsDB.Settings.paceThreshold2 or fallbacks.paceThreshold2
+    if SpeedSplitsDB.Settings.showTimerToast == nil then
+        SpeedSplitsDB.Settings.showTimerToast = fallbacks.showTimerToast
+    end
+    if SpeedSplitsDB.Settings.toastAllBosses == nil then
+        SpeedSplitsDB.Settings.toastAllBosses = fallbacks.toastAllBosses
+    end
+    SpeedSplitsDB.Settings.toastSoundID = SpeedSplitsDB.Settings.toastSoundID or fallbacks.toastSoundID
+    SpeedSplitsDB.Settings.toastSoundName = SpeedSplitsDB.Settings.toastSoundName or fallbacks.toastSoundName
+    SpeedSplitsDB.Settings.toastVolume = SpeedSplitsDB.Settings.toastVolume or fallbacks.toastVolume
+    SpeedSplitsDB.Settings.visibility = SpeedSplitsDB.Settings.visibility or CopyTable(fallbacks.visibility)
 
     -- Profile for default styles (Reset Styles will use this)
     if not SpeedSplitsDB.DefaultStyle then
-        SpeedSplitsDB.DefaultStyle = {
-            colors = {
-                gold       = "ffffd100",
-                white      = "ffffffff",
-                turquoise  = "ff00bec3",
-                deepGreen  = "ff10ff00",
-                lightGreen = "ffcc2232",
-                darkRed    = "ffcc0005",
-            },
-            fonts = {
-                boss    = { size = 14, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
-                num     = { size = 17, font = "Fonts\\ARIALN.TTF", flags = "OUTLINE" },
-                timer   = { size = 30, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
-                header  = { size = 14, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
-                counter = { size = 16, font = "Fonts\\FRIZQT__.TTF", flags = "OUTLINE" },
-            },
-            titleTexture = NS.TitleTextures[1],
-            timerToastTexture = NS.TimerToastTextures[1],
-            timerToastScale = 1.2,
-            showTimerToast = true,
-            paceThreshold1 = 4,
-            paceThreshold2 = 12
-        }
+        SpeedSplitsDB.DefaultStyle = CopyTable(NS.FactoryDefaults.Settings)
     end
 
     DB    = SpeedSplitsDB
@@ -329,19 +396,29 @@ StaticPopupDialogs["SPEEDSPLITS_WIPE_CONFIRM"] = {
     preferredIndex = 3,
 }
 
-StaticPopupDialogs["SPEEDSPLITS_RESET_LAYOUT"] = {
+StaticPopupDialogs["SPEEDSPLITS_FACTORY_RESET"] = {
     text =
-    "No default layout found. Reset all frame positions and sizes to their original factory defaults? This will reload your UI.",
-    button1 = "Reset & Reload",
+    "Are you sure you want to reset ALL settings, colors, and layouts to factory out-of-the-box defaults? This will reload your UI.",
+    button1 = "Reset to Factory",
     button2 = "Cancel",
     OnAccept = function()
-        NS.ResetLayout()
+        NS.ResetToFactorySettings()
     end,
     timeout = 0,
     whileDead = true,
     hideOnEscape = true,
     preferredIndex = 3,
 }
+
+function NS.ResetToFactorySettings()
+    if SpeedSplitsDB then
+        SpeedSplitsDB.Settings = CopyTable(NS.FactoryDefaults.Settings)
+        SpeedSplitsDB.DefaultStyle = CopyTable(NS.FactoryDefaults.Settings)
+        SpeedSplitsDB.ui = CopyTable(NS.FactoryDefaults.ui)
+        SpeedSplitsDB.DefaultLayout = { ui = CopyTable(NS.FactoryDefaults.ui) }
+        ReloadUI()
+    end
+end
 
 function NS.WipeDatabase()
     SpeedSplitsDB.InstancePersonalBests = {}
@@ -1965,7 +2042,7 @@ local function EnsureUI()
 
     -- Timer frame
     local timerFrame = CreateFrame("Frame", "SpeedSplitsTimerFrame", UIParent, "BackdropTemplate")
-    timerFrame:SetFrameStrata("HIGH")
+    timerFrame:SetFrameStrata("MEDIUM")
     timerFrame:SetClampedToScreen(true)
     timerFrame:SetMovable(true)
     timerFrame:EnableMouse(true)
@@ -2043,18 +2120,19 @@ local function EnsureUI()
     end)
 
     local timerTextSec = timerFrame:CreateFontString(nil, "OVERLAY")
+    timerTextSec:SetPoint("RIGHT", timerFrame, "CENTER", -2, 0) -- Fixed anchor to prevent jitter
     timerTextSec:SetJustifyH("RIGHT")
     NS.ApplyFontToFS(timerTextSec, "timer")
-    timerTextSec:SetText("00")
+    timerTextSec:SetText("0")
 
     local timerTextMin = timerFrame:CreateFontString(nil, "OVERLAY")
     timerTextMin:SetPoint("RIGHT", timerTextSec, "LEFT", 0, 0)
     timerTextMin:SetJustifyH("RIGHT")
     NS.ApplyFontToFS(timerTextMin, "timer")
-    timerTextMin:SetText("00:")
+    timerTextMin:SetText("")
 
     local timerTextMs = timerFrame:CreateFontString(nil, "OVERLAY")
-    timerTextMs:SetPoint("LEFT", timerTextSec, "RIGHT", 0, 0)
+    timerTextMs:SetPoint("LEFT", timerFrame, "CENTER", -2, 0) -- Anchor starting dot near center
     timerTextMs:SetJustifyH("LEFT")
     NS.ApplyFontToFS(timerTextMs, "timer")
     timerTextMs:SetText(".000")
@@ -2083,7 +2161,7 @@ local function EnsureUI()
 
     -- Boss frame
     local bossFrame = CreateFrame("Frame", "SpeedSplitsBossFrame", UIParent, "BackdropTemplate")
-    bossFrame:SetFrameStrata("HIGH")
+    bossFrame:SetFrameStrata("MEDIUM")
     bossFrame:SetClampedToScreen(true)
     bossFrame:SetMovable(true)
     bossFrame:EnableMouse(true)
@@ -2445,12 +2523,8 @@ local function SetTimerText(seconds, finished)
     UI.timerTextSec:SetTextColor(c.r, c.g, c.b, c.a or 1)
     UI.timerTextMs:SetTextColor(c.r, c.g, c.b, c.a or 1)
 
-    -- Force dynamic centering for even padding
-    local wL = (UI.timerTextMin:GetStringWidth() or 0) + (UI.timerTextSec:GetStringWidth() or 0)
-    local wR = (UI.timerTextMs:GetStringWidth() or 0)
-    local offset = (wL - wR) / 2
-    UI.timerTextSec:ClearAllPoints()
-    UI.timerTextSec:SetPoint("RIGHT", UI.timerFrame, "CENTER", offset, 0)
+    -- Dynamic centering removed to prevent jitter. 
+    -- Anchors in EnsureUI handle stable centering.
 end
 
 local function SetTimerDelta(delta, isPB)
@@ -2864,6 +2938,7 @@ function NS.RefreshAllUI()
     NS.UpdateColorsOnly()
     NS.UpdateFontsOnly()
     NS.UpdateToastLayout()
+    NS.RefreshVisibility()
 
     if UI.timerToastBg then
         if Run.inInstance then
@@ -3095,14 +3170,20 @@ local function RecordBossKill(encounterID, encounterName)
         pbTable[bossName] = splitSegment
     end
 
+    local isLastBoss = (Run.remainingCount or 0) == 0 and #Run.entries > 0
+    local isFullRunPB = false
+    if isLastBoss then
+        local existingPB = node and node.FullRun
+        isFullRunPB = (not existingPB or not existingPB.duration or splitCumulative <= (existingPB.duration + 0.001))
+    end
+    local toastIsPB = isLastBoss and isFullRunPB or isNewSegmentPB
+
     -- Timer Reward Toast
     if NS.DB.Settings.showTimerToast then
-        local isLastBoss = (Run.remainingCount or 0) == 0 and #Run.entries > 0
         local shouldToast = NS.DB.Settings.toastAllBosses or isLastBoss
-
         if shouldToast then
-            local tex = NS.GetPaceToastTexture(deltaOverallAtKill, isNewSegmentPB)
-            NS.ShowToast(tex, isNewSegmentPB)
+            local tex = NS.GetPaceToastTexture(deltaOverallAtKill, toastIsPB)
+            NS.ShowToast(tex, toastIsPB)
         end
     end
 
@@ -3145,14 +3226,14 @@ local function RecordBossKill(encounterID, encounterName)
 
     local pbTotalTableSum = ComputeSumOfBest(pbTable, Run.entries) or 0
     local deltaOverall = splitCumulative - cumulativePB_Comparison
-    local r, g, b, hex = GetPaceColor(deltaOverall, isNewSegmentPB)
+    local r, g, b, hex = GetPaceColor(deltaOverall, toastIsPB)
 
     -- Store for footer/timer synchronization
     Run.lastDelta = deltaOverall
     Run.lastPBTotal = pbTotalTableSum
     Run.lastSplitCumulative = splitCumulative
     Run.lastColorR, Run.lastColorG, Run.lastColorB, Run.lastColorHex = r, g, b, hex
-    Run.lastIsPB = isNewSegmentPB
+    Run.lastIsPB = toastIsPB
 
     SetRowKilled(bossKey, splitCumulative, cumulativePB_Display, deltaOverall, r, g, b, hex, isNewSegmentPB,
         pbTable[bossName])
@@ -3229,37 +3310,59 @@ end
 
 
 -- =========================================================
--- UI visibility / preview mode (show frames outside instances)
+-- UI visibility (Instance vs Outdoor conditions)
 -- =========================================================
-local function IsPreviewEnabled()
-    local ui = DB and DB.ui
-    return ui and ui.preview and true or false
-end
+function NS.RefreshVisibility()
+    if not NS.DB or not NS.DB.Settings or not NS.DB.Settings.visibility then return false, false end
+    EnsureUI()
 
-local function SetPreviewEnabled(enabled)
-    local ui = GetUISaved()
-    if not ui then
-        return
+    local inInstance = IsInInstance()
+    local v = NS.DB.Settings.visibility
+
+    local function ShouldShow(typeKey)
+        local setting = v[typeKey]
+        if setting == "both" then return true end
+        if setting == "instance" then return inInstance end
+        if setting == "outdoor" then return not inInstance end
+        return false
     end
-    ui.preview = enabled and true or false
+
+    local timerVisible = ShouldShow("timer")
+    local splitsVisible = ShouldShow("splits")
+
+    if UI.timerFrame then
+        if timerVisible then UI.timerFrame:Show() else UI.timerFrame:Hide() end
+    end
+    if UI.bossFrame then
+        if splitsVisible then UI.bossFrame:Show() else UI.bossFrame:Hide() end
+    end
+
+    -- Trigger outdoor start logic if we just enabled timer visibility outdoors
+    if not inInstance and timerVisible and not Run.active and not Run.waitingForMove then
+        App:RegisterEvent("PLAYER_STARTED_MOVING")
+        Run.waitingForMove = true
+        SetTimerText(0, false)
+
+        if GetUnitSpeed and GetUnitSpeed("player") > 0 then
+            StartRunTimer()
+            App:UnregisterEvent("PLAYER_STARTED_MOVING")
+        end
+    elseif not inInstance and not timerVisible and (Run.active or Run.waitingForMove) then
+        -- Stop outdoor timer if visibility is turned off
+        StopRun(false)
+        ResetRun()
+    end
+
+    return timerVisible, splitsVisible
 end
 
 local function ShowAddonFrames()
-    if UI.timerFrame then
-        UI.timerFrame:Show()
-    end
-    if UI.bossFrame then
-        UI.bossFrame:Show()
-    end
+    NS.RefreshVisibility()
 end
 
 local function HideAddonFrames()
-    if UI.timerFrame then
-        UI.timerFrame:Hide()
-    end
-    if UI.bossFrame then
-        UI.bossFrame:Hide()
-    end
+    if UI.timerFrame then UI.timerFrame:Hide() end
+    if UI.bossFrame then UI.bossFrame:Hide() end
 end
 
 -- =========================================================
@@ -3321,12 +3424,18 @@ local function EnterOrUpdateWorld()
         end
 
         ResetRun()
+        local timerVisible = NS.RefreshVisibility()
 
-        if IsPreviewEnabled() then
-            EnsureUI()
-            ShowAddonFrames()
-        else
-            HideAddonFrames()
+        -- If timer is visible outdoors, allow it to start on movement
+        if timerVisible then
+            App:RegisterEvent("PLAYER_STARTED_MOVING")
+            Run.waitingForMove = true
+            SetTimerText(0, false)
+
+            if GetUnitSpeed("player") > 0 then
+                StartRunTimer()
+                App:UnregisterEvent("PLAYER_STARTED_MOVING")
+            end
         end
         return
     end
@@ -3382,7 +3491,7 @@ App:SetScript("OnEvent", function(_, event, ...)
     end
 
     if event == "PLAYER_STARTED_MOVING" then
-        if Run.inInstance and Run.waitingForMove and not Run.active then
+        if Run.waitingForMove and not Run.active then
             StartRunTimer()
             App:UnregisterEvent("PLAYER_STARTED_MOVING")
         end
@@ -3416,39 +3525,17 @@ SlashCmdList.SPEEDSPLITS = function(msg)
 
     if cmd == "history" then
         ToggleHistoryFrame()
-    elseif cmd == "options" or cmd == "config" then
-        if NS.OpenOptions then NS.OpenOptions() end
     elseif cmd == "debugobj" then
         SpeedSplits_DebugObjectives = not SpeedSplits_DebugObjectives
         SS_Print("Objective debug: " .. (SpeedSplits_DebugObjectives and "ON" or "OFF"))
-    elseif cmd == "" or cmd == "toggle" then
-        local enabled = not IsPreviewEnabled()
-        SetPreviewEnabled(enabled)
-        EnsureUI()
-        ResetRun()
-        if enabled then
-            ShowAddonFrames()
-            SS_Print("Frames shown (preview mode).")
-        else
-            if not Run.inInstance then
-                HideAddonFrames()
-            end
-            SS_Print("Frames hidden.")
-        end
-    elseif cmd == "show" or cmd == "on" then
-        SetPreviewEnabled(true)
-        EnsureUI()
-        ResetRun()
-        ShowAddonFrames()
-        SS_Print("Frames shown (preview mode).")
-    elseif cmd == "hide" or cmd == "off" then
-        SetPreviewEnabled(false)
-        if not Run.inInstance then
-            HideAddonFrames()
-        end
-        SS_Print("Frames hidden.")
     else
-        SS_Print("Commands: /ss (toggle frames), /ss show, /ss hide, /ss history, /ss options")
+        -- Open options for all other cases including empty cmd
+        if NS.OpenOptions then
+            NS.OpenOptions()
+        else
+            -- Fallback if NS.OpenOptions is not yet defined
+            Settings.OpenToCategory("SpeedSplits")
+        end
     end
 end
 

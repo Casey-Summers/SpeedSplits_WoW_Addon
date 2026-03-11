@@ -156,11 +156,51 @@ function T.VisibilityRow(parent, label, field)
     local text = (val == "instance" and "Instance Only" or (val == "outdoor" and "Outdoor Only" or "Both"))
     UIDropDownMenu_SetText(dd, text)
 
-    table.insert(T.Registry, function()
-        local v = NS.DB.Settings.visibility[field] or "instance"
-        UIDropDownMenu_SetSelectedValue(dd, v)
-        UIDropDownMenu_SetText(dd, (v == "instance" and "Instance Only" or (v == "outdoor" and "Outdoor Only" or "Both")))
+    return container
+end
+
+function T.SettingsDropDown(parent, label, field, opts, width)
+    local container = CreateFrame("Frame", nil, parent)
+    container:SetSize(320, 32)
+
+    local sub = container:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    sub:SetPoint("LEFT", 0, 0); sub:SetText(label)
+    sub:SetWidth(120); sub:SetJustifyH("LEFT")
+
+    local dd = CreateFrame("Frame", "SSSettingsDD" .. field, container, "UIDropDownMenuTemplate")
+    dd:SetPoint("LEFT", sub, "RIGHT", 10, -2); UIDropDownMenu_SetWidth(dd, width or 120); dd:SetScale(0.95)
+
+    local function OnClick(self)
+        UIDropDownMenu_SetSelectedValue(dd, self.value); UIDropDownMenu_SetText(dd, self.text)
+        NS.DB.Settings[field] = self.value
+        NS.RefreshAllUI()
+    end
+
+    UIDropDownMenu_Initialize(dd, function()
+        local current = NS.DB.Settings[field]
+        for _, info in ipairs(opts) do
+            local item = UIDropDownMenu_CreateInfo()
+            item.text = info.name
+            item.value = info.value
+            item.func = OnClick
+            item.checked = (info.value == current)
+            UIDropDownMenu_AddButton(item)
+        end
     end)
+
+    local function Refresh()
+        local val = NS.DB.Settings[field]
+        UIDropDownMenu_SetSelectedValue(dd, val)
+        for _, info in ipairs(opts) do
+            if info.value == val then
+                UIDropDownMenu_SetText(dd, info.name)
+                break
+            end
+        end
+    end
+
+    Refresh()
+    table.insert(T.Registry, Refresh)
 
     return container
 end
@@ -510,9 +550,16 @@ function NS.CreateOptionsPanel()
     local vSplits = T.VisibilityRow(panel, "Splits Table", "splits")
     vSplits:SetPoint("TOPLEFT", vTimer, "BOTTOMLEFT", 0, -5)
 
+    local speedrunOpts = {
+        { name = "All-bosses", value = "all" },
+        { name = "Last Boss",  value = "last" },
+    }
+    local vMode = T.SettingsDropDown(panel, "Speedrun Mode", "speedrunMode", speedrunOpts)
+    vMode:SetPoint("TOPLEFT", vSplits, "BOTTOMLEFT", 0, -5)
+
     -- MANAGEMENT (COLUMN 2, BOTTOM)
     local managementHeader = T.Header(panel, "Management")
-    managementHeader:SetPoint("TOPLEFT", vSplits, "BOTTOMLEFT", -10, -25)
+    managementHeader:SetPoint("TOPLEFT", vMode, "BOTTOMLEFT", -10, -12)
 
     local function Q(label, func)
         local btn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate"); btn:SetSize(140, 26); btn:SetText(label); btn
@@ -534,7 +581,7 @@ function NS.CreateOptionsPanel()
         }
         if _G.SS_Print then _G.SS_Print("Default styles saved.") end
     end)
-    defBtn:SetPoint("TOPLEFT", managementHeader, "BOTTOMLEFT", 10, -20)
+    defBtn:SetPoint("TOPLEFT", managementHeader, "BOTTOMLEFT", 10, -10)
 
     local resetBtn = Q("Reset Styles", function()
         if NS.DB.DefaultStyle then
@@ -568,7 +615,7 @@ function NS.CreateOptionsPanel()
         }
         if _G.SS_Print then _G.SS_Print("Default layout saved.") end
     end)
-    layoutBtn:SetPoint("TOPLEFT", defBtn, "BOTTOMLEFT", 0, -10)
+    layoutBtn:SetPoint("TOPLEFT", defBtn, "BOTTOMLEFT", 0, -6)
 
     local resetLayoutBtn = Q("Reset Layout", function()
         if NS.DB.DefaultLayout and NS.DB.DefaultLayout.ui then
@@ -582,11 +629,11 @@ function NS.CreateOptionsPanel()
 
     local wipeBtn = Q("Wipe All Records", function() StaticPopup_Show("SPEEDSPLITS_WIPE_CONFIRM") end)
     wipeBtn:SetSize(295, 26)
-    wipeBtn:SetPoint("TOPLEFT", layoutBtn, "BOTTOMLEFT", 0, -10)
+    wipeBtn:SetPoint("TOPLEFT", layoutBtn, "BOTTOMLEFT", 0, -6)
 
     local factoryBtn = Q("Reset to Factory Settings", function() StaticPopup_Show("SPEEDSPLITS_FACTORY_RESET") end)
     factoryBtn:SetSize(295, 26)
-    factoryBtn:SetPoint("TOPLEFT", wipeBtn, "BOTTOMLEFT", 0, -10)
+    factoryBtn:SetPoint("TOPLEFT", wipeBtn, "BOTTOMLEFT", 0, -6)
 
     if Settings and Settings.RegisterCanvasLayoutCategory then
         local category, layout = Settings.RegisterCanvasLayoutCategory(panel, panel.name)

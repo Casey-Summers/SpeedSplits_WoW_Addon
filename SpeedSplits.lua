@@ -45,7 +45,7 @@ NS.SoundOptions                                      = {
 
 -- History Column Widths
 local HISTORY_COL_DEFAULTS                           = {
-    date = 130, dungeon = 220, expansion = 140, time = 80, result = 130, diff = 120, delete = 30
+    date = 130, dungeon = 220, expansion = 140, time = 80, result = 130, mode = 80, diff = 120, delete = 30
 }
 
 -- =========================================================
@@ -202,6 +202,14 @@ NS.GetPaceColor = GetPaceColor
 local DB
 local UI
 
+local function IsBossIgnored(bossName)
+    local db = NS.DB or DB
+    local instanceName = NS.Run and NS.Run.instanceName
+    if not instanceName or instanceName == "" or not bossName or not db then return false end
+    return db.Settings and db.Settings.ignoredBosses and db.Settings.ignoredBosses[instanceName] and
+        db.Settings.ignoredBosses[instanceName][bossName]
+end
+
 local Run = {
     inInstance = false,
     active = false,
@@ -223,6 +231,7 @@ local Run = {
     endGameTime = 0,
     startedAt = 0,
     endedAt = 0,
+    speedrunMode = "all",
     _bossLoadTries = 0,
     _bossLoaded = false
 }
@@ -267,6 +276,7 @@ NS.FactoryDefaults = {
             timer  = "instance", -- "instance", "outdoor", "both"
             splits = "instance",
         },
+        speedrunMode      = "all", -- "all" or "last"
     },
     ui = {
         cols = {
@@ -368,6 +378,8 @@ local function EnsureDB()
     SpeedSplitsDB.Settings.toastSoundName = SpeedSplitsDB.Settings.toastSoundName or fallbacks.toastSoundName
     SpeedSplitsDB.Settings.toastVolume = SpeedSplitsDB.Settings.toastVolume or fallbacks.toastVolume
     SpeedSplitsDB.Settings.visibility = SpeedSplitsDB.Settings.visibility or CopyTable(fallbacks.visibility)
+    SpeedSplitsDB.Settings.speedrunMode = SpeedSplitsDB.Settings.speedrunMode or fallbacks.speedrunMode
+    SpeedSplitsDB.Settings.ignoredBosses = SpeedSplitsDB.Settings.ignoredBosses or {}
 
     -- Profile for default styles (Reset Styles will use this)
     if not SpeedSplitsDB.DefaultStyle then
@@ -535,21 +547,36 @@ local function ResolveScrollingTable()
         return ScrollingTable
     end
     local candidates = { _G["lib-st-v4.1.3"], _G["lib-st"], _G.LibScrollingTable, _G.ScrollingTable }
+    local ST
     for _, lib in ipairs(candidates) do
         if lib and type(lib.CreateST) == "function" then
-            ScrollingTable = lib; return lib
+            ST = lib; break
         end
     end
-    if LibStub then
+    if not ST and LibStub then
         for _, id in ipairs({ "lib-st", "LibScrollingTable-1.1", "LibScrollingTable-1.0", "LibScrollingTable", "ScrollingTable" }) do
             local ok, lib = pcall(LibStub, id, true)
             if ok and lib and type(lib.CreateST) == "function" then
-                ScrollingTable = lib
-                return lib
+                ST = lib; break
             end
         end
     end
-    return nil
+
+    if ST and not ST._isSpeedSplitsPatched then
+        local old = ST.SetDisplayCols
+        ST.SetDisplayCols = function(self, cols)
+            old(self, cols)
+            if self.head and self.head.cols then
+                for i = 1, #self.head.cols do
+                    StyleHeaderCell(self.head.cols[i], cols[i].align)
+                end
+            end
+        end
+        ST._isSpeedSplitsPatched = true
+    end
+
+    ScrollingTable = ST
+    return ST
 end
 
 -- =========================================================
@@ -1204,7 +1231,7 @@ local function StyleHeaderCell(cell, align, multiplier, text)
 
     local c = (NS.Colors and NS.Colors.turquoise) or { r = 0, g = 0.74, b = 0.76 }
     fs:SetTextColor(c.r, c.g, c.b, 1)
-    fs:GetParent().turquoiseSet = true -- Tag to prevent accidental revert
+    cell.turquoiseSet = true -- Tag to prevent accidental revert
 
     fs:SetDrawLayer("OVERLAY", 7)
     fs:ClearAllPoints()
@@ -1229,7 +1256,7 @@ local function Model_DoCellUpdate(rowFrame, cellFrame, data, cols, row, realrow,
     local displayIDs = { 52047, 6110, 52515, 52595, 31042 }
     local id = displayIDs[realrow]
 
-    if id then
+    if id and not IsBossIgnored(data[realrow].cols[1].value) then
         cellFrame.model:SetDisplayInfo(id)
         cellFrame.model:SetKeepModelOnHide(true)
         cellFrame.model:Show()
@@ -1256,6 +1283,12 @@ local Boss_DoCellUpdate = function(rowFrame, cellFrame, data, cols, row, realrow
     cellFrame.text:ClearAllPoints()
     cellFrame.text:SetPoint("LEFT", cellFrame, "LEFT", 0, 0)
     cellFrame.text:SetPoint("RIGHT", cellFrame, "RIGHT", 0, 0)
+
+    if IsBossIgnored(cell.value) then
+        cellFrame.text:SetTextColor(0.5, 0.5, 0.5, 1)
+    else
+        cellFrame.text:SetTextColor(1, 1, 1, 1)
+    end
 end
 
 local Num_DoCellUpdate = function(rowFrame, cellFrame, data, cols, row, realrow, column, fShow, stable)
@@ -1286,7 +1319,10 @@ local Num_DoCellUpdate = function(rowFrame, cellFrame, data, cols, row, realrow,
 
     local dataIndex = column - 1
     local c = (cols[column].color) and cols[column].color(data, cols, realrow, column, stable) or cell.color
-    if c then
+
+    if IsBossIgnored(e.cols[1].value) then
+        cellFrame.text:SetTextColor(0.4, 0.4, 0.4, 1)
+    elseif c then
         cellFrame.text:SetTextColor(c.r or 1, c.g or 1, c.b or 1, c.a or 1)
     else
         cellFrame.text:SetTextColor(1, 1, 1, 1)
@@ -1379,10 +1415,10 @@ local function History_GetRow(parent)
         row:SetBackdropColor(0, 0, 0, 0)
 
         row.cols = {}
-        for i = 1, 7 do
+        for i = 1, 8 do
             local fs = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             fs:SetHeight(24); row.cols[i] = fs
-            if i == 7 then
+            if i == 8 then
                 local btn = CreateFrame("Button", nil, row)
                 btn:SetSize(20, 20); btn:SetPoint("CENTER", fs, "CENTER")
                 local tex = btn:CreateTexture(nil, "ARTWORK")
@@ -1411,7 +1447,7 @@ local function History_GetRow(parent)
         row.UpdateLayout = function(self)
             local w = UI.history.colWidths
             local avail = UI.history.listFrame:GetWidth() - 20
-            local used = w.date + w.expansion + w.time + w.result + w.diff + w.delete
+            local used = w.date + w.expansion + w.time + w.result + w.mode + w.diff + w.delete
             local dungW = math.max(avail - used, 100)
 
             local x = 0
@@ -1442,9 +1478,10 @@ local function History_GetRow(parent)
             SetCol(2, dungW, "LEFT")
             SetCol(3, w.expansion, "CENTER")
             SetCol(4, w.result, "CENTER")
-            SetCol(5, w.time, "CENTER", true)
-            SetCol(6, w.diff, "CENTER", true)
-            SetCol(7, w.delete, "CENTER")
+            SetCol(5, w.mode, "CENTER")
+            SetCol(6, w.time, "CENTER", true)
+            SetCol(7, w.diff, "CENTER", true)
+            SetCol(8, w.delete, "CENTER")
         end
     end
     row:SetParent(parent)
@@ -1502,8 +1539,10 @@ UI.RefreshHistoryTable = function()
             local function gO(x) return IsRunPB(x) and 1 or (x.success and 2 or 3) end
             valA, valB = gO(a), gO(b)
         elseif sortCol == 5 then
-            valA, valB = tonumber(a.duration) or 999999, tonumber(b.duration) or 999999
+            valA, valB = a.speedrunMode or "all", b.speedrunMode or "all"
         elseif sortCol == 6 then
+            valA, valB = tonumber(a.duration) or 999999, tonumber(b.duration) or 999999
+        elseif sortCol == 7 then
             local function gD(x)
                 local node = GetBestSplitsSubtable(x.instanceName)
                 local pb = node and node.FullRun and node.FullRun.duration
@@ -1602,7 +1641,7 @@ local function History_ApplyTableLayout()
 
     local w = h.colWidths
     local avail = h.listFrame:GetWidth() - scrollWidth
-    local used = w.date + w.expansion + w.time + w.result + w.diff + w.delete
+    local used = w.date + w.expansion + w.time + w.result + w.mode + w.diff + w.delete
     local dungW = math.max(avail - used, 100)
 
     if h.rows then
@@ -1618,7 +1657,8 @@ local function History_ApplyTableLayout()
         h.headerCells[i]:SetWidth(width)
         x = x + width
     end
-    SetH(1, w.date); SetH(2, dungW); SetH(3, w.expansion); SetH(4, w.result); SetH(5, w.time); SetH(6, w.diff); SetH(7,
+    SetH(1, w.date); SetH(2, dungW); SetH(3, w.expansion); SetH(4, w.result); SetH(5, w.mode); SetH(6, w.time); SetH(7,
+        w.diff); SetH(8,
         w.delete)
 
     if h.grips then
@@ -1634,8 +1674,9 @@ local function History_ApplyTableLayout()
         SetG(2, dungW)
         SetG(3, w.expansion)
         SetG(4, w.result)
-        SetG(5, w.time)
-        SetG(6, w.diff)
+        SetG(5, w.mode)
+        SetG(6, w.time)
+        SetG(7, w.diff)
     end
 end
 
@@ -1678,8 +1719,10 @@ local function History_UpdateColDrag()
         elseif idx == 4 then
             sum = sum - w.result
         elseif idx == 5 then
-            sum = sum - w.time
+            sum = sum - w.mode
         elseif idx == 6 then
+            sum = sum - w.time
+        elseif idx == 7 then
             sum = sum - w.diff
         end
         return sum
@@ -1699,9 +1742,12 @@ local function History_UpdateColDrag()
         w.result = Clamp(d.result + dx, 50, maxW)
     elseif d.idx == 5 then
         local maxW = avail - GetUsedExcept(5) - minDungeon
-        w.time = Clamp(d.time + dx, 50, maxW)
+        w.mode = Clamp(d.mode + dx, 50, maxW)
     elseif d.idx == 6 then
         local maxW = avail - GetUsedExcept(6) - minDungeon
+        w.time = Clamp(d.time + dx, 50, maxW)
+    elseif d.idx == 7 then
+        local maxW = avail - GetUsedExcept(7) - minDungeon
         w.diff = Clamp(d.diff + dx, 50, maxW)
     end
     History_ApplyTableLayout()
@@ -1734,7 +1780,7 @@ end
 local function History_EnsureColGrips()
     if UI.history.grips then return end
     UI.history.grips = {}
-    for i = 1, 6 do UI.history.grips[i] = History_MakeGrip(UI.history.header, i) end
+    for i = 1, 7 do UI.history.grips[i] = History_MakeGrip(UI.history.header, i) end
 end
 
 local function EnsureHistoryUI()
@@ -1881,9 +1927,9 @@ local function EnsureHistoryUI()
     header:SetPoint("BOTTOMRIGHT", listFrame, "TOPRIGHT", 0, 2)
     UI.history.header = header
 
-    local hCols = { "Date", "Dungeon", "Expansion", "Result", "Time", "Difference", "" }
+    local hCols = { "Date", "Dungeon", "Expansion", "Result", "Mode", "Time", "Difference", "" }
     UI.history.headerCells = {}
-    for i = 1, 7 do
+    for i = 1, 8 do
         local btn = CreateFrame("Button", nil, header)
         btn:SetHeight(24)
         local fs = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -1894,12 +1940,12 @@ local function EnsureHistoryUI()
         btn:SetFontString(fs)
         StyleHeaderCell(btn, "CENTER")
         btn:SetScript("OnClick", function()
-            if i == 7 then return end
+            if i == 8 then return end
             if UI.history.sort_col == i then
                 UI.history.sort_asc = not UI.history.sort_asc
             else
                 UI.history.sort_col = i
-                UI.history.sort_asc = (i == 5 or i == 6) -- ASC for time/diff, DESC for others
+                UI.history.sort_asc = (i == 6 or i == 7) -- ASC for time/diff, DESC for others
             end
             UI.RefreshHistoryTable()
         end)
@@ -1958,13 +2004,14 @@ local function EnsureHistoryUI()
                     r.cols[3]:SetText(GetTierNameSafe(d.tier))
                     r.cols[4]:SetText(resText)
                     r.cols[4]:SetTextColor(resColor.r, resColor.g, resColor.b)
-                    r.cols[5]:SetText(d.duration and FormatTime(d.duration) or "--:--.---")
+                    r.cols[5]:SetText(d.speedrunMode == "last" and "Last Boss" or "All Bosses")
+                    r.cols[6]:SetText(d.duration and FormatTime(d.duration) or "--:--.---")
 
                     if diff then
                         local _, _, _, hex = NS.GetPaceColor(diff, isPB)
-                        r.cols[6]:SetText(hex .. FormatDelta(diff) .. "|r")
+                        r.cols[7]:SetText(hex .. FormatDelta(diff) .. "|r")
                     else
-                        r.cols[6]:SetText("—")
+                        r.cols[7]:SetText("—")
                     end
 
                     r.delBtn.record = d
@@ -2271,8 +2318,48 @@ local function EnsureUI()
         end
     end
     UI.st = st
-    if st and st.frame then
+    if st then
+        st.frame:SetClipsChildren(true)
         SetHoverBackdrop(st.frame, 0.85)
+        -- Set light gray highlight instead of default yellow
+        st:SetDefaultHighlight(0.5, 0.5, 0.5, 0.25)
+
+        st:RegisterEvents({
+            ["OnClick"] = function(rowFrame, cellFrame, data, cols, row, realrow, column, scrollingTable, button)
+                if button == "RightButton" and realrow then
+                    local bossName = data[realrow].cols[1].value
+                    local instanceName = Run.instanceName or ""
+                    if bossName and instanceName ~= "" then
+                        local menu = {
+                            { text = bossName, isTitle = true, notCheckable = true },
+                            {
+                                text = IsBossIgnored(bossName) and "Stop ignoring this boss" or "Ignore this boss",
+                                func = function()
+                                    DB.Settings.ignoredBosses[instanceName] = DB.Settings.ignoredBosses[instanceName] or
+                                        {}
+                                    if IsBossIgnored(bossName) then
+                                        DB.Settings.ignoredBosses[instanceName][bossName] = nil
+                                    else
+                                        DB.Settings.ignoredBosses[instanceName][bossName] = true
+                                    end
+                                    NS.RefreshAllUI()
+                                end,
+                                notCheckable = true
+                            },
+                        }
+                        local contextMenu = CreateFrame("Frame", "SpeedSplitsBossContextMenu", UIParent,
+                            "UIDropDownMenuTemplate")
+                        UIDropDownMenu_Initialize(contextMenu, function(self, level)
+                            for _, item in ipairs(menu) do
+                                UIDropDownMenu_AddButton(item, level)
+                            end
+                        end, "MENU")
+                        ToggleDropDownMenu(1, nil, contextMenu, "cursor", 0, 0)
+                    end
+                end
+            end
+        })
+
         if st.head then
             st.head:SetFrameStrata("HIGH") -- Absolute top-most strata for headers
             st.head:SetFrameLevel(100)     -- Extremely high frame level
@@ -2523,7 +2610,7 @@ local function SetTimerText(seconds, finished)
     UI.timerTextSec:SetTextColor(c.r, c.g, c.b, c.a or 1)
     UI.timerTextMs:SetTextColor(c.r, c.g, c.b, c.a or 1)
 
-    -- Dynamic centering removed to prevent jitter. 
+    -- Dynamic centering removed to prevent jitter.
     -- Anchors in EnsureUI handle stable centering.
 end
 
@@ -2636,23 +2723,45 @@ local function RenderBossTable(entries, pbSegments)
     local data = UI.data
     local map = UI.rowByBossKey
 
-    local cumulativePB = 0
+    -- Separate ignored bosses to move them to the bottom
+    local activeEntries = {}
+    local ignoredEntries = {}
     for _, entry in ipairs(entries) do
+        if IsBossIgnored(entry.name) then
+            table.insert(ignoredEntries, entry)
+        else
+            table.insert(activeEntries, entry)
+        end
+    end
+
+    local cumulativePB = 0
+    local function AddToData(entry, isIgnored)
         local pbSegment = pbSegments[entry.name] or 0
-        cumulativePB = cumulativePB + pbSegment
+        if not isIgnored then
+            cumulativePB = cumulativePB + pbSegment
+        end
+
         data[#data + 1] = {
             key = entry.key,
             cols = {
                 { value = entry.name or "Unknown" },
                 {
-                    value = (pbSegment > 0 and cumulativePB > 0) and FormatTime(cumulativePB) or "--:--.---",
-                    color = NS.Colors.gold
+                    value = (pbSegment > 0 and (not isIgnored) and cumulativePB > 0) and FormatTime(cumulativePB) or
+                        (isIgnored and (pbSegment > 0 and FormatTime(pbSegment) or "—") or "--:--.---"),
+                    color = isIgnored and { r = 0.4, g = 0.4, b = 0.4, a = 1 } or NS.Colors.gold
                 },
                 { value = "" },
                 { value = "" }
             }
         }
         map[entry.key] = #data
+    end
+
+    for _, entry in ipairs(activeEntries) do
+        AddToData(entry, false)
+    end
+    for _, entry in ipairs(ignoredEntries) do
+        AddToData(entry, true)
     end
 
     if UI.st and UI.st.SetData then
@@ -2686,17 +2795,22 @@ local function SetRowKilled(bossKey, splitCumulative, cumulativePB, deltaSeconds
     local row = realrow and UI.data and UI.data[realrow]
     if not row then return end
 
+    local bossName = row.cols[1].value
+    local isIgnored = IsBossIgnored(bossName)
+
     row.cols[2].value = (cumulativePB and cumulativePB > 0) and FormatTime(cumulativePB) or "--:--.---"
-    row.cols[2].color = NS.Colors.gold
+    row.cols[2].color = isIgnored and { r = 0.4, g = 0.4, b = 0.4, a = 1 } or NS.Colors.gold
     row.cols[3].value = FormatTime(splitCumulative)
-    row.cols[3].color = isGold and NS.Colors.gold or { r = r, g = g, b = b, a = 1 }
+    row.cols[3].color = isIgnored and { r = 0.4, g = 0.4, b = 0.4, a = 1 } or
+        (isGold and NS.Colors.gold or { r = r, g = g, b = b, a = 1 })
 
     if deltaSeconds == nil then
         row.cols[4].value = ""
         row.cols[4].color = nil
     else
         row.cols[4].value = FormatDelta(deltaSeconds)
-        row.cols[4].color = isGold and NS.Colors.gold or { r = r, g = g, b = b, a = 1 }
+        row.cols[4].color = isIgnored and { r = 0.4, g = 0.4, b = 0.4, a = 1 } or
+            (isGold and NS.Colors.gold or { r = r, g = g, b = b, a = 1 })
     end
 
     if UI.st and UI.st.Refresh then
@@ -2966,9 +3080,8 @@ function NS.RefreshAllUI()
     if NS.Run.entries and #NS.Run.entries > 0 then
         local node = GetBestSplitsSubtable()
         local pbTable = node and node.Segments or {}
-        if #UI.data ~= #NS.Run.entries then
-            RenderBossTable(NS.Run.entries, pbTable)
-        end
+        -- Always re-build the table to ensure ignored bosses are correctly sorted to the bottom
+        RenderBossTable(NS.Run.entries, pbTable)
 
         local runningPBTotal = 0
         for _, entry in ipairs(NS.Run.entries) do
@@ -3035,6 +3148,7 @@ local function SaveRunRecord(success)
         startedAt = Run.startedAt,
         endedAt = Run.endedAt,
         duration = duration,
+        speedrunMode = Run.speedrunMode,
         bosses = bosses,
         kills = Run.kills,
         gameBuild = select(4, GetBuildInfo())
@@ -3241,7 +3355,19 @@ local function RecordBossKill(encounterID, encounterName)
     SetKillCount(Run.killedCount, #Run.entries)
     RefreshTotals(false)
 
-    if (Run.remainingCount or 0) == 0 and #Run.entries > 0 then
+    local isRunComplete = false
+    if Run.speedrunMode == "last" then
+        -- Last boss is the one at the end of the entries list (excluding ignored if possible, but simplest is just the last index)
+        local lastEntry = Run.entries[#Run.entries]
+        if lastEntry and lastEntry.key == bossKey then
+            isRunComplete = true
+        end
+    else
+        -- All bosses mode
+        isRunComplete = (Run.remainingCount or 0) == 0
+    end
+
+    if isRunComplete and #Run.entries > 0 then
         StopRun(true)
     end
 end
@@ -3382,6 +3508,7 @@ local function BeginInstanceSession()
     Run.journalID = journalID
     Run.tier = tonumber(tier) or 0
     Run.dungeonKey = GetDungeonKey(Run.mapID, Run.difficultyID)
+    Run.speedrunMode = (DB and DB.Settings and DB.Settings.speedrunMode) or "all"
 
     Run._bossLoadTries = 0
     Run._bossLoaded = false

@@ -4,6 +4,9 @@ local ADDON_NAME, NS                                 = ...
 local App                                            = CreateFrame("Frame")
 NS.App                                               = App
 
+local pairs, ipairs, tonumber, tostring, type        = pairs, ipairs, tonumber, tostring, type
+local string, math, table, date, time                = string, math, table, date, time
+
 -- Constants
 local COL_MAX_PB_SPLIT, COL_MAX_DELTA                = 260, 200
 local COL_MIN_BOSS, COL_MIN_NUM, COL_MIN_DELTA_TITLE = 20, 85, 85
@@ -201,6 +204,8 @@ NS.GetPaceColor = GetPaceColor
 -- =========================================================
 local DB
 local UI
+
+local StopRun, SaveRunRecord, UpdateBestRunIfNeeded
 
 local function IsBossIgnored(bossName)
     local db = NS.DB or DB
@@ -3085,7 +3090,9 @@ function NS.RefreshAllUI()
 
         local runningPBTotal = 0
         for _, entry in ipairs(NS.Run.entries) do
-            runningPBTotal = runningPBTotal + (pbTable[entry.name] or 0)
+            if not IsBossIgnored(entry.name) then
+                runningPBTotal = runningPBTotal + (pbTable[entry.name] or 0)
+            end
             local splitCumulative = NS.Run.kills[entry.key]
             if splitCumulative then
                 local prevCumulative = GetPreviousKilledCumulativeInTableOrder(NS.Run, entry.key)
@@ -3103,6 +3110,38 @@ function NS.RefreshAllUI()
     if not NS.Run.active and NS.Run.endGameTime > 0 then
         SetTimerText(NS.Run.endGameTime - NS.Run.startGameTime, true)
     end
+
+    -- Sync speedrun mode and check completion
+    if DB and DB.Settings then
+        Run.speedrunMode = DB.Settings.speedrunMode or "all"
+        if Run.active then
+            -- Check if current conditions now satisfy completion
+            local isRunComplete = false
+            local completionTime = nil
+
+            if Run.speedrunMode == "last" then
+                local lastEntry = Run.entries[#Run.entries]
+                if lastEntry and Run.kills[lastEntry.key] then
+                    isRunComplete = true
+                    completionTime = Run.startGameTime + Run.kills[lastEntry.key]
+                end
+            else
+                if (Run.remainingCount or 0) == 0 and #Run.entries > 0 then
+                    isRunComplete = true
+                    local maxKill = 0
+                    for _, killTime in pairs(Run.kills) do
+                        if killTime > maxKill then maxKill = killTime end
+                    end
+                    completionTime = Run.startGameTime + maxKill
+                end
+            end
+
+            if isRunComplete then
+                StopRun(true, completionTime)
+            end
+        end
+    end
+
     if UI.st and UI.st.Refresh then UI.st:Refresh() end
 end
 
@@ -3162,11 +3201,11 @@ local function SaveRunRecord(success)
     end
 end
 
-local function StopRun(success)
+local function StopRun(success, endTime)
     if not Run.active then return end
     Run.active = false
     CancelTimerTicker()
-    Run.endGameTime = NowGameTime()
+    Run.endGameTime = endTime or NowGameTime()
     Run.endedAt = NowEpoch()
     local duration = Run.endGameTime - Run.startGameTime
     SetTimerText(duration, true)
@@ -3271,8 +3310,9 @@ local function RecordBossKill(encounterID, encounterName)
     -- Prepare cumulative comparison vs old PB sum (DETERMINE PACE BEFORE PB UPDATE)
     local cumulativePB_Comparison = 0
     for _, entry in ipairs(Run.entries) do
-        local seg = pbTable[entry.name] or 0
-        cumulativePB_Comparison = cumulativePB_Comparison + seg
+        if not IsBossIgnored(entry.name) then
+            cumulativePB_Comparison = cumulativePB_Comparison + (pbTable[entry.name] or 0)
+        end
         if entry.key == bossKey then
             break
         end
@@ -3284,17 +3324,26 @@ local function RecordBossKill(encounterID, encounterName)
         pbTable[bossName] = splitSegment
     end
 
-    local isLastBoss = (Run.remainingCount or 0) == 0 and #Run.entries > 0
-    local isFullRunPB = false
-    if isLastBoss then
-        local existingPB = node and node.FullRun
-        isFullRunPB = (not existingPB or not existingPB.duration or splitCumulative <= (existingPB.duration + 0.001))
+    local isRunComplete = false
+    if Run.speedrunMode == "last" then
+        local lastEntry = Run.entries[#Run.entries]
+        isRunComplete = (lastEntry and lastEntry.key == bossKey)
+    else
+        isRunComplete = (Run.remainingCount or 0) == 0 and #Run.entries > 0
     end
-    local toastIsPB = isLastBoss and isFullRunPB or isNewSegmentPB
+
+    local isFullRunPB = false
+    if isRunComplete then
+        local existingPB = node and node.FullRun and node.FullRun.duration
+        -- If no full-run PB exists yet, compare against the Sum of Best segments as the baseline.
+        local target = (existingPB and existingPB > 0) and existingPB or cumulativePB_Comparison
+        isFullRunPB = (not target or target == 0 or splitCumulative <= (target + 0.001))
+    end
+    local toastIsPB = isRunComplete and isFullRunPB or isNewSegmentPB
 
     -- Timer Reward Toast
     if NS.DB.Settings.showTimerToast then
-        local shouldToast = NS.DB.Settings.toastAllBosses or isLastBoss
+        local shouldToast = NS.DB.Settings.toastAllBosses or isRunComplete
         if shouldToast then
             local tex = NS.GetPaceToastTexture(deltaOverallAtKill, toastIsPB)
             NS.ShowToast(tex, toastIsPB)
@@ -3331,8 +3380,9 @@ local function RecordBossKill(encounterID, encounterName)
     -- Prepare cumulative display (sum of current best segments)
     local cumulativePB_Display = 0
     for _, entry in ipairs(Run.entries) do
-        local seg = pbTable[entry.name] or 0
-        cumulativePB_Display = cumulativePB_Display + seg
+        if not IsBossIgnored(entry.name) then
+            cumulativePB_Display = cumulativePB_Display + (pbTable[entry.name] or 0)
+        end
         if entry.key == bossKey then
             break
         end
@@ -3357,13 +3407,11 @@ local function RecordBossKill(encounterID, encounterName)
 
     local isRunComplete = false
     if Run.speedrunMode == "last" then
-        -- Last boss is the one at the end of the entries list (excluding ignored if possible, but simplest is just the last index)
         local lastEntry = Run.entries[#Run.entries]
         if lastEntry and lastEntry.key == bossKey then
             isRunComplete = true
         end
     else
-        -- All bosses mode
         isRunComplete = (Run.remainingCount or 0) == 0
     end
 

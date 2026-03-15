@@ -37,6 +37,7 @@ NS.FactoryDefaults = {
             splits = "instance",
         },
         speedrunMode = "all",
+        showNPCViewModels = true,
     },
     ui = {
         cols = {

@@ -43,6 +43,40 @@ local function ApplySavedVariablesMigrations(db)
     end
 end
 
+local function IsTestRunRecord(record)
+    if type(record) ~= "table" then
+        return false
+    end
+
+    if record.isTest == true or record.testRun == true then
+        return true
+    end
+
+    local instanceName = tostring(record.instanceName or ""):lower()
+    local bossSource = tostring(record.bossSource or ""):lower()
+    if bossSource == "simulation" then
+        return true
+    end
+    if instanceName:find("mock", 1, true) or instanceName:find("test", 1, true) then
+        return true
+    end
+
+    return false
+end
+
+local function PurgeTestRunHistory(db)
+    local history = db and db.RunHistory
+    if type(history) ~= "table" then
+        return
+    end
+
+    for i = #history, 1, -1 do
+        if IsTestRunRecord(history[i]) then
+            table.remove(history, i)
+        end
+    end
+end
+
 local function EnsureDB()
     if SpeedSplitsDB == nil then
         SpeedSplitsDB = {}
@@ -60,6 +94,7 @@ local function EnsureDB()
     SpeedSplitsDB.pbRun = nil
 
     ApplySavedVariablesMigrations(SpeedSplitsDB)
+    PurgeTestRunHistory(SpeedSplitsDB)
 
     local fallbacks = NS.FactoryDefaults.Settings
     local settings = SpeedSplitsDB.Settings
@@ -89,6 +124,9 @@ local function EnsureDB()
     settings.toastVolume = settings.toastVolume or fallbacks.toastVolume
     settings.visibility = settings.visibility or Util.CopyTable(fallbacks.visibility)
     settings.speedrunMode = settings.speedrunMode or fallbacks.speedrunMode
+    if settings.showNPCViewModels == nil then
+        settings.showNPCViewModels = fallbacks.showNPCViewModels
+    end
     settings.ignoredBosses = settings.ignoredBosses or {}
     settings.autoIgnoredBosses = settings.autoIgnoredBosses or {}
 
@@ -170,6 +208,8 @@ end
 NS.Database.EnsureDB = EnsureDB
 NS.Database.GetBestSplitsSubtable = GetBestSplitsSubtable
 NS.Database.DeleteRunRecord = DeleteRunRecord
+NS.Database.IsTestRunRecord = IsTestRunRecord
+NS.Database.PurgeTestRunHistory = PurgeTestRunHistory
 NS.ResetToFactorySettings = ResetToFactorySettings
 NS.WipeDatabase = WipeDatabase
 NS.ResetLayout = ResetLayout

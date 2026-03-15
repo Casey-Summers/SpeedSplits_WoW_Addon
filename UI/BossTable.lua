@@ -5,7 +5,8 @@ local Util = NS.Util
 local Colors = NS.Colors
 
 local function Model_DoCellUpdate(rowFrame, cellFrame, data, cols, row, realrow, column, fShow)
-    if not fShow or not realrow then
+    local showModels = NS.DB and NS.DB.Settings and NS.DB.Settings.showNPCViewModels ~= false
+    if not fShow or not realrow or not showModels then
         if cellFrame and cellFrame.model then
             cellFrame.model:Hide()
         end
@@ -47,13 +48,16 @@ local function Boss_DoCellUpdate(rowFrame, cellFrame, data, cols, row, realrow, 
     end
 
     cellFrame.text:SetText(cell.value or "")
-    NS.ApplyFontToFS(cellFrame.text, "boss")
+    NS.ApplyFontToFS(cellFrame.text, "boss", 0.85)
     cellFrame.text:SetJustifyH("LEFT")
     cellFrame.text:SetJustifyV("MIDDLE")
-    cellFrame.text:SetWordWrap(false)
+    cellFrame.text:SetWordWrap(true)
+    if cellFrame.text.SetMaxLines then
+        cellFrame.text:SetMaxLines(2)
+    end
     cellFrame.text:ClearAllPoints()
-    cellFrame.text:SetPoint("LEFT", cellFrame, "LEFT", 0, 0)
-    cellFrame.text:SetPoint("RIGHT", cellFrame, "RIGHT", 0, 0)
+    cellFrame.text:SetPoint("TOPLEFT", cellFrame, "TOPLEFT", 0, -1)
+    cellFrame.text:SetPoint("BOTTOMRIGHT", cellFrame, "BOTTOMRIGHT", 0, 1)
 
     if NS.IsBossIgnored(cell.value) then
         cellFrame.text:SetTextColor(0.5, 0.5, 0.5, 1)

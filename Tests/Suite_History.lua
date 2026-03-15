@@ -36,3 +36,33 @@ System.RegisterTest({
         end)
     end,
 })
+
+System.RegisterTest({
+    id = "history_purges_test_records",
+    suite = "History",
+    subcategory = "Database",
+    name = "Removes saved test runs from Run History",
+    func = function()
+        local backupDB = NS.Util.CopyTable(SpeedSplitsDB)
+
+        System.WithCleanup(function()
+            System.BeginSection("Purge historical test records during database init")
+            SpeedSplitsDB = {
+                RunHistory = {
+                    { instanceName = "Mock Speedrun Dungeon", bossSource = "simulation", duration = 120 },
+                    { instanceName = "Real Dungeon", bossSource = "encounter_journal", duration = 240 },
+                },
+                InstancePersonalBests = {},
+                Settings = {},
+            }
+
+            local db = NS.Database.EnsureDB()
+            System.AssertEqual(#db.RunHistory, 1, "Only non-test run history records remain after migration")
+            System.AssertEqual(db.RunHistory[1].instanceName, "Real Dungeon", "The real run history entry is retained")
+            System.EndSection("Purge historical test records during database init", "PASS")
+        end, function()
+            SpeedSplitsDB = backupDB
+            NS.Database.EnsureDB()
+        end)
+    end,
+})

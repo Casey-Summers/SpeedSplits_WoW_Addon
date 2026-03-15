@@ -108,6 +108,29 @@ System.RegisterTest({
 })
 
 System.RegisterTest({
+    id = "ui_model_column_respects_setting",
+    suite = "UI",
+    subcategory = "Boss Table",
+    name = "Collapses the NPC model column when view models are disabled",
+    func = function()
+        NS.Database.EnsureDB()
+        NS.UI.EnsureUI()
+
+        local oldValue = NS.DB.Settings.showNPCViewModels
+        System.WithCleanup(function()
+            System.BeginSection("Disable NPC view models and reflow the table")
+            NS.DB.Settings.showNPCViewModels = false
+            NS.UI.ApplyTableLayout()
+            System.AssertEqual(NS.UI.cols[1].width, 0, "The model column width collapses to zero when disabled")
+            System.EndSection("Disable NPC view models and reflow the table", "PASS")
+        end, function()
+            NS.DB.Settings.showNPCViewModels = oldValue
+            NS.UI.ApplyTableLayout()
+        end)
+    end,
+})
+
+System.RegisterTest({
     id = "ui_scrollbar_skin",
     suite = "UI",
     subcategory = "Scrollbar",

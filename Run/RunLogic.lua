@@ -29,6 +29,10 @@ local function ResolveBossKey(encounterID, encounterName)
 end
 
 local function SaveRunRecord(success)
+    if NS.Run.isTest == true then
+        return
+    end
+
     local duration = (NS.Run.endGameTime > 0 and NS.Run.startGameTime > 0) and (NS.Run.endGameTime - NS.Run.startGameTime) or nil
 
     local bosses = {}
@@ -49,6 +53,7 @@ local function SaveRunRecord(success)
         dungeonKey = NS.Run.dungeonKey,
         tier = NS.Run.tier,
         bossSource = NS.Run.bossSource,
+        isTest = NS.Run.isTest == true,
         startedAt = NS.Run.startedAt,
         endedAt = NS.Run.endedAt,
         duration = duration,
@@ -59,6 +64,9 @@ local function SaveRunRecord(success)
     }
 
     table.insert(NS.DB.RunHistory, 1, record)
+    if NS.Database and NS.Database.PurgeTestRunHistory then
+        NS.Database.PurgeTestRunHistory(NS.DB)
+    end
     while #NS.DB.RunHistory > Const.RUNS_MAX do
         table.remove(NS.DB.RunHistory)
     end

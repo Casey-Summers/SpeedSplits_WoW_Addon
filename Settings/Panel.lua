@@ -69,6 +69,27 @@ function NS.CreateSettingsPanel()
             suf:SetPoint("LEFT", eb, "RIGHT", 5, 0)
             suf:SetText("seconds")
 
+            if color[3] == "paceThreshold2" then
+                local npcModelsCB = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
+                npcModelsCB.Text:SetText("Show NPC View Models")
+                npcModelsCB.Text:SetFont("Fonts\\FRIZQT__.TTF", 10)
+                npcModelsCB:SetPoint("TOPLEFT", cp, "BOTTOMLEFT", 0, -8)
+                npcModelsCB:SetChecked(NS.DB.Settings.showNPCViewModels ~= false)
+                npcModelsCB:SetScript("OnClick", function(self)
+                    NS.DB.Settings.showNPCViewModels = self:GetChecked() and true or false
+                    if NS.UI and NS.UI.ApplyTableLayout then
+                        NS.UI.ApplyTableLayout()
+                    end
+                    if NS.RefreshAllUI then
+                        NS.RefreshAllUI()
+                    end
+                end)
+
+                table.insert(Widgets.Registry, function()
+                    npcModelsCB:SetChecked(NS.DB.Settings.showNPCViewModels ~= false)
+                end)
+            end
+
             table.insert(Widgets.Registry, function()
                 eb:SetText(tostring(NS.DB.Settings[color[3]] or (color[3] == "paceThreshold1" and 4 or 12)))
             end)

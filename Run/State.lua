@@ -23,6 +23,7 @@ Run.endGameTime = Run.endGameTime or 0
 Run.startedAt = Run.startedAt or 0
 Run.endedAt = Run.endedAt or 0
 Run.speedrunMode = Run.speedrunMode or "all"
+Run.isTest = Run.isTest or false
 Run._bossLoadTries = Run._bossLoadTries or 0
 Run._bossLoaded = Run._bossLoaded or false
 
@@ -58,6 +59,7 @@ local function ResetRun()
     Run.endGameTime = 0
     Run.startedAt = 0
     Run.endedAt = 0
+    Run.isTest = false
     Run.lastDelta = 0
     Run.lastColorR, Run.lastColorG, Run.lastColorB, Run.lastColorHex = nil, nil, nil, nil
     Run._bossLoadTries = 0

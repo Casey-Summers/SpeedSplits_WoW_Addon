@@ -55,6 +55,11 @@ local function SaveColWidths()
     ui.cols.delta = UI._deltaWidth
 end
 
+local function GetModelColumnWidth()
+    local showModels = NS.DB and NS.DB.Settings and NS.DB.Settings.showNPCViewModels ~= false
+    return showModels and 40 or 0
+end
+
 local function RestoreColWidths()
     local ui = GetUISaved()
     if not ui then
@@ -99,6 +104,7 @@ local function ApplyTableLayout()
     end
 
     UI._rightInset = GetScrollBarInset(UI.st)
+    UI._modelWidth = GetModelColumnWidth()
     local width = UI.st.frame:GetWidth() or 1
     local available = math.max(width - UI._rightInset, 1)
 
@@ -166,8 +172,8 @@ local function ApplyTableLayout()
 
     if UI._colGrips then
         local xBossRight = UI._modelWidth + bossWidth
-        local xPBRight = UI._modelWidth + bossWidth + UI._pbWidth
-        local xSplitRight = UI._modelWidth + bossWidth + UI._pbWidth + UI._splitWidth
+        local xPBRight = xBossRight + UI._pbWidth
+        local xSplitRight = xPBRight + UI._splitWidth
         local bottom = -Const.HEADER_H
 
         UI._colGrips[1]:ClearAllPoints()
@@ -263,8 +269,8 @@ local function MakeGrip(parent, which)
             ResetCursor()
         end
     )
-    grip:SetFrameStrata("HIGH")
-    grip:SetFrameLevel((parent:GetFrameLevel() or 0) + 50)
+    grip:SetFrameStrata("DIALOG")
+    grip:SetFrameLevel(math.max((parent:GetFrameLevel() or 0) + 50, (UI.titleTab and UI.titleTab:GetFrameLevel() or 0) + 20))
 
     UI.ApplyThinSeparator(grip)
     local indicator = grip:CreateTexture(nil, "OVERLAY")
@@ -281,10 +287,11 @@ local function EnsureColGrips()
     if UI._colGrips or not UI.st or not UI.st.frame then
         return
     end
+    local gripParent = UI.titleTab or UI.st.frame
     UI._colGrips = {
-        MakeGrip(UI.st.frame, 1),
-        MakeGrip(UI.st.frame, 2),
-        MakeGrip(UI.st.frame, 3),
+        MakeGrip(gripParent, 1),
+        MakeGrip(gripParent, 2),
+        MakeGrip(gripParent, 3),
     }
 end
 
@@ -294,6 +301,7 @@ UI.RestoreFrameGeom = RestoreFrameGeom
 UI.SaveColWidths = SaveColWidths
 UI.RestoreColWidths = RestoreColWidths
 UI.GetScrollBarInset = GetScrollBarInset
+UI.GetModelColumnWidth = GetModelColumnWidth
 UI.ApplyTableLayout = ApplyTableLayout
 UI.SetupSizeGrip = SetupSizeGrip
 UI.BeginColDrag = BeginColDrag

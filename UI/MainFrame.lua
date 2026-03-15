@@ -27,7 +27,7 @@ local function BuildBossColumns()
     return {
         {
             name = "",
-            width = UI._modelWidth,
+            width = UI.GetModelColumnWidth and UI.GetModelColumnWidth() or UI._modelWidth,
             align = "CENTER",
             DoCellUpdate = UI.Model_DoCellUpdate,
         },
@@ -328,11 +328,12 @@ function UI.EnsureUI()
     local killCountText = bgFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     killCountText:SetDrawLayer("OVERLAY", 7)
     killCountText:SetPoint("LEFT", killCountCounterText, "RIGHT", 4, 0)
-    NS.ApplyFontToFS(killCountText, "header", 1.25)
+    NS.ApplyFontToFS(killCountText, "header", 0.9)
     killCountText:SetJustifyH("LEFT")
-    killCountText:SetWordWrap(false)
+    killCountText:SetJustifyV("MIDDLE")
+    killCountText:SetWordWrap(true)
     if killCountText.SetMaxLines then
-        killCountText:SetMaxLines(1)
+        killCountText:SetMaxLines(2)
     end
     UI.killCountText = killCountText
 
@@ -475,7 +476,7 @@ function NS.UpdateFontsOnly()
     end
 
     if UI.killCountCounterText then NS.ApplyFontToFS(UI.killCountCounterText, "counter", 0.95) end
-    if UI.killCountText then NS.ApplyFontToFS(UI.killCountText, "counter") end
+    if UI.killCountText then NS.ApplyFontToFS(UI.killCountText, "header", 0.9) end
     if UI.totalPB then NS.ApplyFontToFS(UI.totalPB, "num") end
     if UI.totalSplit then NS.ApplyFontToFS(UI.totalSplit, "num") end
     if UI.totalDelta then NS.ApplyFontToFS(UI.totalDelta, "num") end

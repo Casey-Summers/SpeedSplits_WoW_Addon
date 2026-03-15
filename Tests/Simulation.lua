@@ -28,6 +28,7 @@ local function RunScenarioSpeedrunRegression()
         run.killedCount = 0
         run.kills = {}
         run.speedrunMode = "all"
+        run.isTest = true
 
         local bosses = {
             { name = "Opening Pull", key = "M:1", pb = 12.0, split = 10.0, ignored = false },

@@ -124,11 +124,10 @@ local function ApplyTableLayout()
         UI.killCountText:SetWidth(math.max(bossWidth - counterWidth - 6, 1))
     end
 
-    UI.cols[1].width = UI._modelWidth
-    UI.cols[2].width = bossWidth
-    UI.cols[3].width = UI._pbWidth
-    UI.cols[4].width = UI._splitWidth
-    UI.cols[5].width = UI._deltaWidth
+    UI.cols[1].width = bossWidth
+    UI.cols[2].width = UI._pbWidth
+    UI.cols[3].width = UI._splitWidth
+    UI.cols[4].width = UI._deltaWidth
 
     if UI.st.SetDisplayCols then
         UI.st:SetDisplayCols(UI.cols)
@@ -171,7 +170,7 @@ local function ApplyTableLayout()
     end
 
     if UI._colGrips then
-        local xBossRight = UI._modelWidth + bossWidth
+        local xBossRight = bossWidth
         local xPBRight = xBossRight + UI._pbWidth
         local xSplitRight = xPBRight + UI._splitWidth
         local bottom = -Const.HEADER_H

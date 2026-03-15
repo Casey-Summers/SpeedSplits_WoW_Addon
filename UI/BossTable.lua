@@ -4,10 +4,13 @@ local UI = NS.UI
 local Util = NS.Util
 local Colors = NS.Colors
 
-local function Model_DoCellUpdate(rowFrame, cellFrame, data, cols, row, realrow, column, fShow)
+local function UpdateBossCellModel(cellFrame, bossName, realrow)
+    local displayIDs = { 52047, 6110, 52515, 52595, 31042 }
+    local displayID = displayIDs[realrow]
     local showModels = NS.DB and NS.DB.Settings and NS.DB.Settings.showNPCViewModels ~= false
-    if not fShow or not realrow or not showModels then
-        if cellFrame and cellFrame.model then
+
+    if not showModels or UI._modelWidth <= 0 then
+        if cellFrame.model then
             cellFrame.model:Hide()
         end
         return
@@ -15,15 +18,16 @@ local function Model_DoCellUpdate(rowFrame, cellFrame, data, cols, row, realrow,
 
     if not cellFrame.model then
         local model = CreateFrame("PlayerModel", nil, cellFrame)
-        model:SetAllPoints()
-        model:SetPoint("TOPLEFT", cellFrame, "TOPLEFT", 1, -1)
-        model:SetPoint("BOTTOMRIGHT", cellFrame, "BOTTOMRIGHT", -1, 1)
+        model:SetFrameLevel((cellFrame:GetFrameLevel() or 0) + 1)
         cellFrame.model = model
     end
 
-    local displayIDs = { 52047, 6110, 52515, 52595, 31042 }
-    local displayID = displayIDs[realrow]
-    if displayID and not NS.IsBossIgnored(data[realrow].cols[1].value) then
+    cellFrame.model:ClearAllPoints()
+    cellFrame.model:SetPoint("TOPLEFT", cellFrame, "TOPLEFT", 1, -1)
+    cellFrame.model:SetPoint("BOTTOMLEFT", cellFrame, "BOTTOMLEFT", 1, 1)
+    cellFrame.model:SetWidth(math.max(UI._modelWidth - 2, 0))
+
+    if displayID and not NS.IsBossIgnored(bossName) then
         cellFrame.model:SetDisplayInfo(displayID)
         cellFrame.model:SetKeepModelOnHide(true)
         cellFrame.model:Show()
@@ -35,6 +39,9 @@ end
 
 local function Boss_DoCellUpdate(rowFrame, cellFrame, data, cols, row, realrow, column, fShow)
     if not fShow or not realrow then
+        if cellFrame and cellFrame.model then
+            cellFrame.model:Hide()
+        end
         if cellFrame and cellFrame.text then
             cellFrame.text:SetText("")
         end
@@ -47,6 +54,9 @@ local function Boss_DoCellUpdate(rowFrame, cellFrame, data, cols, row, realrow, 
         return
     end
 
+    local leftInset = (UI._modelWidth and UI._modelWidth > 0) and (UI._modelWidth + 4) or 2
+    UpdateBossCellModel(cellFrame, cell.value, realrow)
+
     cellFrame.text:SetText(cell.value or "")
     NS.ApplyFontToFS(cellFrame.text, "boss", 0.85)
     cellFrame.text:SetJustifyH("LEFT")
@@ -56,8 +66,8 @@ local function Boss_DoCellUpdate(rowFrame, cellFrame, data, cols, row, realrow, 
         cellFrame.text:SetMaxLines(2)
     end
     cellFrame.text:ClearAllPoints()
-    cellFrame.text:SetPoint("TOPLEFT", cellFrame, "TOPLEFT", 0, -1)
-    cellFrame.text:SetPoint("BOTTOMRIGHT", cellFrame, "BOTTOMRIGHT", 0, 1)
+    cellFrame.text:SetPoint("TOPLEFT", cellFrame, "TOPLEFT", leftInset, -1)
+    cellFrame.text:SetPoint("BOTTOMRIGHT", cellFrame, "BOTTOMRIGHT", -2, 1)
 
     if NS.IsBossIgnored(cell.value) then
         cellFrame.text:SetTextColor(0.5, 0.5, 0.5, 1)
@@ -224,7 +234,6 @@ local function SetRowKilled(bossKey, splitCumulative, cumulativePB, deltaSeconds
     end
 end
 
-UI.Model_DoCellUpdate = Model_DoCellUpdate
 UI.Boss_DoCellUpdate = Boss_DoCellUpdate
 UI.Num_DoCellUpdate = Num_DoCellUpdate
 UI.PBColor = PBColor

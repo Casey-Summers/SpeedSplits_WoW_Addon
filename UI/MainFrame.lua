@@ -27,12 +27,6 @@ local function BuildBossColumns()
     return {
         {
             name = "",
-            width = UI.GetModelColumnWidth and UI.GetModelColumnWidth() or UI._modelWidth,
-            align = "CENTER",
-            DoCellUpdate = UI.Model_DoCellUpdate,
-        },
-        {
-            name = "",
             width = 220,
             align = "LEFT",
             DoCellUpdate = UI.Boss_DoCellUpdate,

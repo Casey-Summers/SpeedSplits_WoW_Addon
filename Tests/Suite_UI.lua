@@ -41,8 +41,8 @@ System.RegisterTest({
         NS.Database.EnsureDB()
         NS.UI.EnsureUI()
         System.BeginSection("Read header colours from the boss table")
-        local bossHeader = NS.UI.st.head.cols[2]:GetFontString()
-        local pbHeader = NS.UI.st.head.cols[3]:GetFontString()
+        local bossHeader = NS.UI.st.head.cols[1]:GetFontString()
+        local pbHeader = NS.UI.st.head.cols[2]:GetFontString()
         local br, bg, bb = bossHeader:GetTextColor()
         local pr, pg, pb = pbHeader:GetTextColor()
 
@@ -119,9 +119,12 @@ System.RegisterTest({
         local oldValue = NS.DB.Settings.showNPCViewModels
         System.WithCleanup(function()
             System.BeginSection("Disable NPC view models and reflow the table")
+            local enabledWidth = NS.UI.cols[1].width
             NS.DB.Settings.showNPCViewModels = false
             NS.UI.ApplyTableLayout()
-            System.AssertEqual(NS.UI.cols[1].width, 0, "The model column width collapses to zero when disabled")
+            System.AssertTrue(NS.UI.cols[1].width > enabledWidth, "The boss data column expands when models are disabled",
+                NS.UI.cols[1].width)
+            System.AssertEqual(NS.UI.GetModelColumnWidth(), 0, "The model region width collapses to zero when disabled")
             System.EndSection("Disable NPC view models and reflow the table", "PASS")
         end, function()
             NS.DB.Settings.showNPCViewModels = oldValue

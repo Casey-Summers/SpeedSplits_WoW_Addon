@@ -21,6 +21,7 @@ function NS.CreateSettingsPanel()
     }
 
     local lastColorElem = themesHeader
+    local lastCutoffControl
     for i, color in ipairs(colors) do
         local cp = Widgets.ColorPicker(panel, color[1], color[2])
         cp:SetPoint("TOPLEFT", themesHeader, "BOTTOMLEFT", 8, -6 - (i - 1) * 26)
@@ -68,27 +69,7 @@ function NS.CreateSettingsPanel()
             local suf = eb:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
             suf:SetPoint("LEFT", eb, "RIGHT", 5, 0)
             suf:SetText("seconds")
-
-            if color[3] == "paceThreshold2" then
-                local npcModelsCB = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
-                npcModelsCB.Text:SetText("Show NPC View Models")
-                npcModelsCB.Text:SetFont("Fonts\\FRIZQT__.TTF", 10)
-                npcModelsCB:SetPoint("TOPLEFT", cp, "BOTTOMLEFT", 0, -8)
-                npcModelsCB:SetChecked(NS.DB.Settings.showNPCViewModels ~= false)
-                npcModelsCB:SetScript("OnClick", function(self)
-                    NS.DB.Settings.showNPCViewModels = self:GetChecked() and true or false
-                    if NS.UI and NS.UI.ApplyTableLayout then
-                        NS.UI.ApplyTableLayout()
-                    end
-                    if NS.RefreshAllUI then
-                        NS.RefreshAllUI()
-                    end
-                end)
-
-                table.insert(Widgets.Registry, function()
-                    npcModelsCB:SetChecked(NS.DB.Settings.showNPCViewModels ~= false)
-                end)
-            end
+            lastCutoffControl = eb
 
             table.insert(Widgets.Registry, function()
                 eb:SetText(tostring(NS.DB.Settings[color[3]] or (color[3] == "paceThreshold1" and 4 or 12)))
@@ -97,8 +78,31 @@ function NS.CreateSettingsPanel()
         lastColorElem = cp
     end
 
+    local npcModelsCB = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
+    npcModelsCB.Text:SetText("Show NPC View Models")
+    npcModelsCB.Text:SetFont("Fonts\\FRIZQT__.TTF", 10)
+    if lastCutoffControl then
+        npcModelsCB:SetPoint("TOPLEFT", lastCutoffControl, "BOTTOMLEFT", -145, -8)
+    else
+        npcModelsCB:SetPoint("TOPLEFT", themesHeader, "BOTTOMLEFT", 8, -90)
+    end
+    npcModelsCB:SetChecked(NS.DB.Settings.showNPCViewModels ~= false)
+    npcModelsCB:SetScript("OnClick", function(self)
+        NS.DB.Settings.showNPCViewModels = self:GetChecked() and true or false
+        if NS.UI and NS.UI.ApplyTableLayout then
+            NS.UI.ApplyTableLayout()
+        end
+        if NS.RefreshAllUI then
+            NS.RefreshAllUI()
+        end
+    end)
+
+    table.insert(Widgets.Registry, function()
+        npcModelsCB:SetChecked(NS.DB.Settings.showNPCViewModels ~= false)
+    end)
+
     local textureHeader = Widgets.Header(panel, "Header Texture")
-    textureHeader:SetPoint("TOPLEFT", lastColorElem, "BOTTOMLEFT", -8, -12)
+    textureHeader:SetPoint("TOPLEFT", lastColorElem, "BOTTOMLEFT", -8, -36)
 
     local texButtons = {}
     for i, name in ipairs(NS.TitleTextures) do
@@ -339,6 +343,7 @@ function NS.CreateSettingsPanel()
             toastVolume = NS.DB.Settings.toastVolume,
             paceThreshold1 = NS.DB.Settings.paceThreshold1,
             paceThreshold2 = NS.DB.Settings.paceThreshold2,
+            showNPCViewModels = NS.DB.Settings.showNPCViewModels,
             visibility = Widgets.CopyTable(NS.DB.Settings.visibility),
         }
         if _G.SS_Print then
@@ -361,6 +366,11 @@ function NS.CreateSettingsPanel()
             NS.DB.Settings.toastVolume = d.toastVolume or 0.8
             NS.DB.Settings.paceThreshold1 = d.paceThreshold1
             NS.DB.Settings.paceThreshold2 = d.paceThreshold2
+            if d.showNPCViewModels == nil then
+                NS.DB.Settings.showNPCViewModels = true
+            else
+                NS.DB.Settings.showNPCViewModels = d.showNPCViewModels
+            end
             NS.DB.Settings.visibility = Widgets.CopyTable(d.visibility or {})
             NS.UpdateColorsFromSettings()
             for _, refresh in ipairs(Widgets.Registry) do

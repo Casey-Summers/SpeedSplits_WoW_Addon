@@ -4,49 +4,74 @@ local UI = NS.UI
 local Util = NS.Util
 local Colors = NS.Colors
 
-local function UpdateBossCellModel(cellFrame, bossName, realrow)
-    local displayIDs = { 52047, 6110, 52515, 52595, 31042 }
-    local displayID = displayIDs[realrow]
-    local showModels = NS.DB and NS.DB.Settings and NS.DB.Settings.showNPCViewModels ~= false
+local MODEL_DISPLAY_IDS = { 52047, 6110, 52515, 52595, 31042 }
 
-    if not showModels or UI._modelWidth <= 0 then
-        if cellFrame.model then
-            cellFrame.model:Hide()
-        end
+local function GetDisplayDataIndex(column)
+    if column >= 1 and column <= 4 then
+        return column
+    end
+    return nil
+end
+
+local function GetVisibleRowModel(rowFrame)
+    if not rowFrame then
+        return nil
+    end
+
+    if not rowFrame._ssModel then
+        local model = CreateFrame("PlayerModel", nil, rowFrame)
+        model:SetFrameLevel((rowFrame:GetFrameLevel() or 0) + 1)
+        rowFrame._ssModel = model
+    end
+
+    return rowFrame._ssModel
+end
+
+local function UpdateVisibleRowModel(rowFrame, entry, realrow, fShow)
+    local model = GetVisibleRowModel(rowFrame)
+    if not model then
         return
     end
 
-    if not cellFrame.model then
-        local model = CreateFrame("PlayerModel", nil, cellFrame)
-        model:SetFrameLevel((cellFrame:GetFrameLevel() or 0) + 1)
-        cellFrame.model = model
+    local showModels = NS.DB and NS.DB.Settings and NS.DB.Settings.showNPCViewModels ~= false
+    if not fShow or not realrow or not showModels or UI._modelWidth <= 0 or not entry then
+        model:Hide()
+        return
     end
 
-    cellFrame.model:ClearAllPoints()
-    cellFrame.model:SetPoint("TOPLEFT", cellFrame, "TOPLEFT", 1, -1)
-    cellFrame.model:SetPoint("BOTTOMLEFT", cellFrame, "BOTTOMLEFT", 1, 1)
-    cellFrame.model:SetWidth(math.max(UI._modelWidth - 2, 0))
+    local bossCell = rowFrame.cols and rowFrame.cols[1]
+    if not bossCell then
+        model:Hide()
+        return
+    end
 
-    if displayID and not NS.IsBossIgnored(bossName) then
-        cellFrame.model:SetDisplayInfo(displayID)
-        cellFrame.model:SetKeepModelOnHide(true)
-        cellFrame.model:Show()
-        cellFrame.model:SetPortraitZoom(NS.Const.BOSS_MODEL_ZOOM)
+    model:ClearAllPoints()
+    model:SetPoint("TOPLEFT", bossCell, "TOPLEFT", 1, -1)
+    model:SetPoint("BOTTOMLEFT", bossCell, "BOTTOMLEFT", 1, 1)
+    model:SetWidth(math.max(UI._modelWidth - 2, 0))
+
+    local displayID = MODEL_DISPLAY_IDS[realrow]
+    if displayID and not NS.IsBossIgnored(entry.cols[1].value) then
+        model:SetDisplayInfo(displayID)
+        model:SetKeepModelOnHide(true)
+        model:Show()
+        model:SetPortraitZoom(NS.Const.BOSS_MODEL_ZOOM)
     else
-        cellFrame.model:Hide()
+        model:Hide()
     end
 end
 
 local function Boss_DoCellUpdate(rowFrame, cellFrame, data, cols, row, realrow, column, fShow)
     if not fShow or not realrow then
-        if cellFrame and cellFrame.model then
-            cellFrame.model:Hide()
+        if rowFrame and rowFrame._ssModel then
+            rowFrame._ssModel:Hide()
         end
         if cellFrame and cellFrame.text then
             cellFrame.text:SetText("")
         end
         return
     end
+
     cellFrame:SetClipsChildren(true)
     local entry = data[realrow]
     local cell = entry and entry.cols and entry.cols[1]
@@ -54,11 +79,10 @@ local function Boss_DoCellUpdate(rowFrame, cellFrame, data, cols, row, realrow, 
         return
     end
 
-    local leftInset = (UI._modelWidth and UI._modelWidth > 0) and (UI._modelWidth + 4) or 2
-    UpdateBossCellModel(cellFrame, cell.value, realrow)
+    UpdateVisibleRowModel(rowFrame, entry, realrow, fShow)
 
     cellFrame.text:SetText(cell.value or "")
-    NS.ApplyFontToFS(cellFrame.text, "boss", 0.85)
+    NS.ApplyFontToFS(cellFrame.text, "boss")
     cellFrame.text:SetJustifyH("LEFT")
     cellFrame.text:SetJustifyV("MIDDLE")
     cellFrame.text:SetWordWrap(true)
@@ -66,7 +90,7 @@ local function Boss_DoCellUpdate(rowFrame, cellFrame, data, cols, row, realrow, 
         cellFrame.text:SetMaxLines(2)
     end
     cellFrame.text:ClearAllPoints()
-    cellFrame.text:SetPoint("TOPLEFT", cellFrame, "TOPLEFT", leftInset, -1)
+    cellFrame.text:SetPoint("TOPLEFT", cellFrame, "TOPLEFT", UI._modelWidth + 4, -1)
     cellFrame.text:SetPoint("BOTTOMRIGHT", cellFrame, "BOTTOMRIGHT", -2, 1)
 
     if NS.IsBossIgnored(cell.value) then
@@ -85,7 +109,7 @@ local function Num_DoCellUpdate(rowFrame, cellFrame, data, cols, row, realrow, c
     end
 
     local entry = data[realrow]
-    local dataIndex = column - 1
+    local dataIndex = GetDisplayDataIndex(column)
     local cell = entry and entry.cols and entry.cols[dataIndex]
     if not cell then
         return
@@ -115,13 +139,13 @@ end
 
 local function DeltaColor(data, cols, realrow, column)
     local entry = data[realrow]
-    local cell = entry and entry.cols and entry.cols[column - 1]
+    local cell = entry and entry.cols and entry.cols[GetDisplayDataIndex(column)]
     return cell and cell.color or nil
 end
 
 local function SplitColor(data, cols, realrow, column)
     local entry = data[realrow]
-    local cell = entry and entry.cols and entry.cols[column - 1]
+    local cell = entry and entry.cols and entry.cols[GetDisplayDataIndex(column)]
     return cell and cell.color or nil
 end
 
@@ -130,6 +154,14 @@ local function ClearBossRows()
     UI.rowByBossKey = UI.rowByBossKey or {}
     wipe(UI.data)
     wipe(UI.rowByBossKey)
+
+    if UI.st and UI.st.rows then
+        for _, row in ipairs(UI.st.rows) do
+            if row and row._ssModel then
+                row._ssModel:Hide()
+            end
+        end
+    end
 
     if UI.st and UI.st.SetData then
         UI.st:SetData(UI.data, true)
@@ -158,7 +190,8 @@ local function RenderBossTable(entries, pbSegments)
                 { value = entry.name or "Unknown" },
                 {
                     value = (pbSegment > 0 and (not isIgnored) and cumulativePB > 0) and Util.FormatTime(cumulativePB)
-                        or (isIgnored and (pbSegment > 0 and Util.FormatTime(pbSegment) or "â€”") or "--:--.---"),
+                        or (isIgnored and (pbSegment > 0 and Util.FormatTime(pbSegment) or "--:--.---")
+                            or "--:--.---"),
                     color = isIgnored and { r = 0.4, g = 0.4, b = 0.4, a = 1 } or Colors.gold,
                 },
                 { value = "" },
@@ -181,7 +214,7 @@ local function RenderBossTable(entries, pbSegments)
     end
 
     UI.ApplyTableLayout()
-    
+
     if NS.UpdateColorsOnly then
         NS.UpdateColorsOnly()
     end

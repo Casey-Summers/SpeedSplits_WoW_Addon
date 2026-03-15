@@ -21,7 +21,7 @@ function NS.CreateSettingsPanel()
     }
 
     local lastColorElem = themesHeader
-    local lastCutoffControl
+    local bottomThemeAnchor
     for i, color in ipairs(colors) do
         local cp = Widgets.ColorPicker(panel, color[1], color[2])
         cp:SetPoint("TOPLEFT", themesHeader, "BOTTOMLEFT", 8, -6 - (i - 1) * 26)
@@ -69,20 +69,20 @@ function NS.CreateSettingsPanel()
             local suf = eb:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
             suf:SetPoint("LEFT", eb, "RIGHT", 5, 0)
             suf:SetText("seconds")
-            lastCutoffControl = eb
 
             table.insert(Widgets.Registry, function()
                 eb:SetText(tostring(NS.DB.Settings[color[3]] or (color[3] == "paceThreshold1" and 4 or 12)))
             end)
         end
         lastColorElem = cp
+        bottomThemeAnchor = cp
     end
 
     local npcModelsCB = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
     npcModelsCB.Text:SetText("Show NPC View Models")
     npcModelsCB.Text:SetFont("Fonts\\FRIZQT__.TTF", 10)
-    if lastCutoffControl then
-        npcModelsCB:SetPoint("TOPLEFT", lastCutoffControl, "BOTTOMLEFT", -145, -8)
+    if bottomThemeAnchor then
+        npcModelsCB:SetPoint("TOPLEFT", bottomThemeAnchor, "BOTTOMLEFT", -4, -10)
     else
         npcModelsCB:SetPoint("TOPLEFT", themesHeader, "BOTTOMLEFT", 8, -90)
     end
@@ -102,7 +102,7 @@ function NS.CreateSettingsPanel()
     end)
 
     local textureHeader = Widgets.Header(panel, "Header Texture")
-    textureHeader:SetPoint("TOPLEFT", lastColorElem, "BOTTOMLEFT", -8, -36)
+    textureHeader:SetPoint("TOPLEFT", npcModelsCB, "BOTTOMLEFT", 0, -12)
 
     local texButtons = {}
     for i, name in ipairs(NS.TitleTextures) do

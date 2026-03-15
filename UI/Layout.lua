@@ -171,8 +171,8 @@ local function ApplyTableLayout()
 
     if UI._colGrips then
         local xBossRight = bossWidth
-        local xPBRight = xBossRight + UI._pbWidth
-        local xSplitRight = xPBRight + UI._splitWidth
+        local xPBRight = bossWidth + UI._pbWidth
+        local xSplitRight = bossWidth + UI._pbWidth + UI._splitWidth
         local bottom = -Const.HEADER_H
 
         UI._colGrips[1]:ClearAllPoints()
@@ -234,50 +234,29 @@ local function UpdateColDrag()
 end
 
 local function MakeGrip(parent, which)
-    local isDragging = false
     local grip = ResizeGrip.CreateColumnGrip(
         parent,
         10,
         14,
         function()
-            isDragging = true
-            if grip._hoverIndicator then
-                grip._hoverIndicator:Show()
-            end
             local x = GetCursorPosition() / (UI.st.frame:GetEffectiveScale() or 1)
             BeginColDrag(which, x)
         end,
         UpdateColDrag,
         function()
-            isDragging = false
-            if grip._hoverIndicator then
-                grip._hoverIndicator:Hide()
-            end
             EndColDrag()
         end,
         function()
-            if grip._hoverIndicator then
-                grip._hoverIndicator:Show()
-            end
             SetCursor("UI_RESIZE_CURSOR")
         end,
         function()
-            if grip._hoverIndicator and not isDragging then
-                grip._hoverIndicator:Hide()
-            end
             ResetCursor()
         end
     )
-    grip:SetFrameStrata("DIALOG")
-    grip:SetFrameLevel(math.max((parent:GetFrameLevel() or 0) + 50, (UI.titleTab and UI.titleTab:GetFrameLevel() or 0) + 20))
+    grip:SetFrameStrata("HIGH")
+    grip:SetFrameLevel((parent:GetFrameLevel() or 0) + 50)
 
     UI.ApplyThinSeparator(grip)
-    local indicator = grip:CreateTexture(nil, "OVERLAY")
-    indicator:SetAtlas("gradientbar-Spark-arrows", true)
-    indicator:SetPoint("CENTER", grip, "CENTER", 0, 0)
-    indicator:SetSize(18, Const.HEADER_H)
-    indicator:Hide()
-    grip._hoverIndicator = indicator
 
     return grip
 end
@@ -286,11 +265,10 @@ local function EnsureColGrips()
     if UI._colGrips or not UI.st or not UI.st.frame then
         return
     end
-    local gripParent = UI.titleTab or UI.st.frame
     UI._colGrips = {
-        MakeGrip(gripParent, 1),
-        MakeGrip(gripParent, 2),
-        MakeGrip(gripParent, 3),
+        MakeGrip(UI.st.frame, 1),
+        MakeGrip(UI.st.frame, 2),
+        MakeGrip(UI.st.frame, 3),
     }
 end
 

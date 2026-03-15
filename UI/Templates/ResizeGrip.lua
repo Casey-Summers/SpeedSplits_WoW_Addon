@@ -40,9 +40,10 @@ function ResizeGrip.CreateFrameGrip(ownerFrame, onChanged)
 end
 
 function ResizeGrip.CreateColumnGrip(parent, width, height, onStart, onUpdate, onStop, onEnter, onLeave)
-    local grip = CreateFrame("Frame", nil, parent)
+    local grip = CreateFrame("Button", nil, parent)
     grip:SetSize(width or 10, height or 14)
     grip:EnableMouse(true)
+    grip:RegisterForClicks("AnyUp", "AnyDown")
 
     if onEnter then
         grip:SetScript("OnEnter", onEnter)

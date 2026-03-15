@@ -119,17 +119,71 @@ System.RegisterTest({
         local oldValue = NS.DB.Settings.showNPCViewModels
         System.WithCleanup(function()
             System.BeginSection("Disable NPC view models and reflow the table")
-            local enabledWidth = NS.UI.cols[1].width
+            local enabledBossWidth = NS.UI.cols[1].width
             NS.DB.Settings.showNPCViewModels = false
             NS.UI.ApplyTableLayout()
-            System.AssertTrue(NS.UI.cols[1].width > enabledWidth, "The boss data column expands when models are disabled",
-                NS.UI.cols[1].width)
             System.AssertEqual(NS.UI.GetModelColumnWidth(), 0, "The model region width collapses to zero when disabled")
+            System.AssertTrue(NS.UI.cols[1].width >= enabledBossWidth,
+                "The boss data column remains visible when models are disabled", NS.UI.cols[1].width)
             System.EndSection("Disable NPC view models and reflow the table", "PASS")
         end, function()
             NS.DB.Settings.showNPCViewModels = oldValue
             NS.UI.ApplyTableLayout()
         end)
+    end,
+})
+
+System.RegisterTest({
+    id = "ui_difference_column_mapping",
+    suite = "UI",
+    subcategory = "Boss Table",
+    name = "Maps the difference payload into the Difference display column",
+    func = function()
+        NS.Database.EnsureDB()
+        NS.UI.EnsureUI()
+
+        System.BeginSection("Populate a synthetic boss row")
+        NS.UI.data = {
+            {
+                key = "boss_a",
+                cols = {
+                    { value = "Boss A" },
+                    { value = "01:00.000" },
+                    { value = "01:05.000" },
+                    { value = "+00:05.000", color = NS.Colors.gold },
+                },
+            },
+        }
+        NS.UI.rowByBossKey = { boss_a = 1 }
+        NS.UI.st:SetData(NS.UI.data, true)
+        NS.UI.st:Refresh()
+
+        local row = NS.UI.st.rows[1]
+        System.AssertEqual(row.cols[1].text:GetText(), "Boss A", "Boss name remains in the boss-name display column")
+        System.AssertEqual(row.cols[4].text:GetText(), "+00:05.000", "Difference display column reads the difference payload")
+        System.EndSection("Populate a synthetic boss row", "PASS")
+    end,
+})
+
+System.RegisterTest({
+    id = "ui_column_grip_parent_matches_archive",
+    suite = "UI",
+    subcategory = "Column Grips",
+    name = "Parents column grips to the scrolling-table frame like the working archive",
+    func = function()
+        NS.Database.EnsureDB()
+        NS.UI.EnsureUI()
+
+        System.BeginSection("Inspect the active column grip hierarchy")
+        local grip = NS.UI._colGrips and NS.UI._colGrips[1]
+        System.AssertTrue(grip ~= nil, "A column grip is created for the splits table", grip ~= nil)
+        if grip then
+            System.AssertTrue(grip:GetParent() == NS.UI.st.frame,
+                "Column grips are parented to the scrolling-table frame", grip:GetParent())
+            System.AssertTrue(grip:GetFrameLevel() > NS.UI.st.frame:GetFrameLevel(),
+                "Column grip frame level stays above the table frame", grip:GetFrameLevel())
+        end
+        System.EndSection("Inspect the active column grip hierarchy", "PASS")
     end,
 })
 

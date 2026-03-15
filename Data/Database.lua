@@ -19,6 +19,8 @@ local function EnsureDB()
     SpeedSplitsDB.pbBoss = nil
     SpeedSplitsDB.pbRun = nil
 
+    Migration.ApplySavedVariablesMigrations(SpeedSplitsDB)
+
     local fallbacks = NS.FactoryDefaults.Settings
     local settings = SpeedSplitsDB.Settings
     settings.colors = settings.colors or Util.CopyTable(fallbacks.colors)
@@ -68,7 +70,12 @@ local function GetBestSplitsSubtable(instanceName)
     if not instanceName or instanceName == "" then
         return nil
     end
-    return Migration.NormalizeBestSplitsNode(NS.DB, instanceName)
+    NS.DB.InstancePersonalBests = NS.DB.InstancePersonalBests or {}
+    NS.DB.InstancePersonalBests[instanceName] = NS.DB.InstancePersonalBests[instanceName] or {
+        Segments = {},
+        FullRun = {},
+    }
+    return NS.DB.InstancePersonalBests[instanceName]
 end
 
 local function ResetToFactorySettings()

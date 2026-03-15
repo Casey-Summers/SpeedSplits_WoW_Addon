@@ -2,6 +2,8 @@ local _, NS = ...
 
 NS.Tests = NS.Tests or {}
 
+-- Keep test-only globals behind NS.Tests so the normal addon runtime only sees a
+-- single, explicit test surface when /ss test is available.
 function NS.Tests.Open()
     if NS.TestUI and NS.TestUI.CreateTestFrame then
         NS.TestUI.CreateTestFrame()

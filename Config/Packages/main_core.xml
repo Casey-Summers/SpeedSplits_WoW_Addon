@@ -3,11 +3,12 @@
 
     <Script file="..\..\Core\Init.lua"/>
     <Script file="..\..\Config\Constants.lua"/>
+    <Script file="..\..\Config\ThemeAssets.lua"/>
+    <Script file="..\..\Config\FactoryDefaults.lua"/>
     <Script file="..\..\UI\Templates\Popups.lua"/>
     <Script file="..\..\Core\Debug.lua"/>
     <Script file="..\..\Core\Utils.lua"/>
 
-    <Script file="..\..\Data\Defaults.lua"/>
     <Script file="..\..\Data\Migration.lua"/>
     <Script file="..\..\Data\Database.lua"/>
 
@@ -38,6 +39,8 @@
     <Script file="..\..\Tests\Suite_History.lua"/>
     <Script file="..\..\Tests\Suite_UX.lua"/>
     <Script file="..\..\Tests\TestingFramework.lua"/>
+    <!-- Keep the in-game test harness loaded in the normal build so /ss test remains available. -->
     <Script file="..\..\Tests\TestAdapter.lua"/>
+    <Script file="..\..\Core\Commands.lua"/>
     <Script file="..\..\Core\Events.lua"/>
 </Ui>

@@ -3,7 +3,7 @@ local _, NS = ...
 local Migration = {}
 NS.Database.Migration = Migration
 
-function Migration.NormalizeBestSplitsNode(db, instanceName)
+local function NormalizeBestSplitsNode(db, instanceName)
     db.InstancePersonalBests = db.InstancePersonalBests or {}
 
     if db.InstancePersonalBests[instanceName] and not db.InstancePersonalBests[instanceName].Segments then
@@ -34,4 +34,16 @@ function Migration.NormalizeBestSplitsNode(db, instanceName)
         FullRun = {},
     }
     return db.InstancePersonalBests[instanceName]
+end
+
+function Migration.NormalizeBestSplitsNode(db, instanceName)
+    return NormalizeBestSplitsNode(db, instanceName)
+end
+
+function Migration.ApplySavedVariablesMigrations(db)
+    db.InstancePersonalBests = db.InstancePersonalBests or {}
+
+    for instanceName in pairs(db.InstancePersonalBests) do
+        NormalizeBestSplitsNode(db, instanceName)
+    end
 end

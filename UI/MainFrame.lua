@@ -3,6 +3,10 @@ local _, NS = ...
 local UI = NS.UI
 local Util = NS.Util
 local Const = NS.Const
+local FrameFactory = UI.Templates.FrameFactory
+local ScrollBarSkin = UI.Templates.ScrollBarSkin
+local IconButton = UI.Templates.IconButton
+local HoverFadeFrame = UI.Templates.HoverFadeFrame
 
 function UI.ShowAddonFrames()
     if NS.RefreshVisibility then
@@ -115,23 +119,9 @@ function UI.EnsureUI()
         UI.SaveFrameGeom("timer", self)
     end)
 
-    local fadeTarget = 0
-    local fadeCurrent = 0
-    local fadeSpeed = 5
-    timerFrame:SetScript("OnUpdate", function(self, elapsed)
-        if self:IsMouseOver() then
-            fadeTarget = 1
-        else
-            fadeTarget = 0
-        end
-        if math.abs(fadeCurrent - fadeTarget) > 0.01 then
-            local dir = (fadeTarget > fadeCurrent) and 1 or -1
-            fadeCurrent = Util.Clamp(fadeCurrent + (dir * fadeSpeed * elapsed), 0, 1)
-            self:SetBackdropColor(0, 0, 0, 0.60 * fadeCurrent)
-            self:SetBackdropBorderColor(1, 1, 1, 0.10 * fadeCurrent)
-            if UI._timerResizeGrip then
-                UI._timerResizeGrip:SetAlpha(fadeCurrent)
-            end
+    HoverFadeFrame.Attach(timerFrame, 0.60, function(alpha)
+        if UI._timerResizeGrip then
+            UI._timerResizeGrip:SetAlpha(alpha)
         end
     end)
 
@@ -238,19 +228,7 @@ function UI.EnsureUI()
         if st.scrollframe then
             local scrollbar = _G[st.scrollframe:GetName() .. "ScrollBar"]
             if scrollbar then
-                scrollbar:SetWidth(10)
-                local up = _G[scrollbar:GetName() .. "ScrollUpButton"]
-                local down = _G[scrollbar:GetName() .. "ScrollDownButton"]
-                if up then up:Hide() end
-                if down then down:Hide() end
-                local thumb = scrollbar:GetThumbTexture()
-                if thumb then
-                    thumb:SetColorTexture(0.4, 0.4, 0.4, 0.8)
-                    thumb:SetWidth(8)
-                end
-                local bg = scrollbar:CreateTexture(nil, "BACKGROUND")
-                bg:SetAllPoints()
-                bg:SetColorTexture(0, 0, 0, 0.5)
+                ScrollBarSkin.Apply(scrollbar, 10)
             end
         end
     end
@@ -270,7 +248,8 @@ function UI.EnsureUI()
                             {
                                 text = NS.IsBossIgnored(bossName) and "Stop ignoring this boss" or "Ignore this boss",
                                 func = function()
-                                    NS.DB.Settings.ignoredBosses[instanceName] = NS.DB.Settings.ignoredBosses[instanceName] or {}
+                                    NS.DB.Settings.ignoredBosses[instanceName] = NS.DB.Settings.ignoredBosses
+                                        [instanceName] or {}
                                     if NS.IsBossIgnored(bossName) then
                                         NS.DB.Settings.ignoredBosses[instanceName][bossName] = nil
                                     else
@@ -281,7 +260,8 @@ function UI.EnsureUI()
                                 notCheckable = true,
                             },
                         }
-                        local contextMenu = CreateFrame("Frame", "SpeedSplitsBossContextMenu", UIParent, "UIDropDownMenuTemplate")
+                        local contextMenu = CreateFrame("Frame", "SpeedSplitsBossContextMenu", UIParent,
+                            "UIDropDownMenuTemplate")
                         UIDropDownMenu_Initialize(contextMenu, function(self, level)
                             for _, item in ipairs(menu) do
                                 UIDropDownMenu_AddButton(item, level)
@@ -304,18 +284,9 @@ function UI.EnsureUI()
         end
     end
 
-    local bgFrame = CreateFrame("Frame", nil, bossFrame, "BackdropTemplate")
-    bgFrame:SetHeight(Const.TOP_BAR_H)
-    bgFrame:SetPoint("TOPLEFT", bossFrame, "TOPLEFT", 0, 0)
-    bgFrame:SetPoint("TOPRIGHT", bossFrame, "TOPRIGHT", 0, 0)
+    local bgFrame = FrameFactory.CreateHeaderStrip(bossFrame, Const.TOP_BAR_H, 0.4)
     bgFrame:SetFrameLevel(math.max(5, bossFrame:GetFrameLevel() + 2))
     bgFrame:SetClipsChildren(true)
-    bgFrame:SetBackdrop({
-        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-    })
-    bgFrame:SetBackdropColor(0, 0, 0, 0.4)
     UI.titleTab = bgFrame
 
     local titleBg = bgFrame:CreateTexture(nil, "BACKGROUND", nil, -8)
@@ -340,13 +311,7 @@ function UI.EnsureUI()
     NS.ApplyFontToFS(killCountText, "header", 1.25)
     UI.killCountText = killCountText
 
-    local totalFrame = CreateFrame("Frame", nil, bossFrame, "BackdropTemplate")
-    totalFrame:SetHeight(24)
-    totalFrame:SetBackdrop({
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-    })
-    totalFrame:SetBackdropColor(0, 0, 0, 0)
+    local totalFrame = FrameFactory.CreateFooterStrip(bossFrame, 24)
     UI.totalFrame = totalFrame
 
     local totalBg = totalFrame:CreateTexture(nil, "BACKGROUND", nil, -8)
@@ -385,23 +350,18 @@ function UI.EnsureUI()
     UI.logoShimmerAG = shimAG
     shimAG:Play()
 
-    local historyButton = CreateFrame("Button", nil, totalFrame)
-    historyButton:SetSize(18 * Const.HISTORY_ICON_SCALE, 18 * Const.HISTORY_ICON_SCALE)
+    local historyButton = IconButton.Create(
+        totalFrame,
+        18 * Const.HISTORY_ICON_SCALE,
+        18 * Const.HISTORY_ICON_SCALE,
+        "perks-clock-large",
+        "Run history",
+        function()
+            UI.ToggleHistoryFrame()
+        end
+    )
     historyButton:SetPoint("LEFT", logoText, "RIGHT", 8, 0)
-    historyButton:SetNormalAtlas("perks-clock-large")
-    historyButton:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
     UI.historyButton = historyButton
-    historyButton:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Run history", 1, 1, 1)
-        GameTooltip:Show()
-    end)
-    historyButton:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-    historyButton:SetScript("OnClick", function()
-        UI.ToggleHistoryFrame()
-    end)
 
     local totalPB = totalFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     totalPB:SetJustifyH("RIGHT")
@@ -444,14 +404,7 @@ function UI.EnsureUI()
     UI.resizeGrip = bossGrip
     UI._timerResizeGrip = timerGrip
 
-    local borderFrame = CreateFrame("Frame", nil, bossFrame, "BackdropTemplate")
-    borderFrame:SetAllPoints(bossFrame)
-    borderFrame:SetFrameLevel(bossFrame:GetFrameLevel() + 30)
-    borderFrame:SetBackdrop({
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-    })
-    borderFrame:EnableMouse(false)
+    local borderFrame = FrameFactory.CreateOverlayBorder(bossFrame, 30)
     UI.borderFrame = borderFrame
 
     UI.EnsureColGrips()

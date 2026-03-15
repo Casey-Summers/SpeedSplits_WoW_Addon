@@ -3,6 +3,7 @@ local _, NS = ...
 local UI = NS.UI
 local Util = NS.Util
 local Const = NS.Const
+local ResizeGrip = UI.Templates.ResizeGrip
 
 local function GetUISaved()
     if not NS.DB then
@@ -102,10 +103,14 @@ local function ApplyTableLayout()
     local available = math.max(width - UI._rightInset, 1)
 
     local minDelta = Const.COL_MIN_NUM
-    UI._pbWidth = Util.Clamp(UI._pbWidth, Const.COL_MIN_NUM, math.max(available - (UI._modelWidth + Const.COL_MIN_BOSS + UI._splitWidth + minDelta), Const.COL_MIN_NUM))
-    UI._splitWidth = Util.Clamp(UI._splitWidth, Const.COL_MIN_NUM, math.max(available - (UI._modelWidth + Const.COL_MIN_BOSS + UI._pbWidth + minDelta), Const.COL_MIN_NUM))
-    UI._deltaWidth = Util.Clamp(UI._deltaWidth, minDelta, math.max(available - (UI._modelWidth + Const.COL_MIN_BOSS + UI._pbWidth + UI._splitWidth), minDelta))
-    local bossWidth = math.max(available - (UI._modelWidth + UI._pbWidth + UI._splitWidth + UI._deltaWidth), Const.COL_MIN_BOSS)
+    UI._pbWidth = Util.Clamp(UI._pbWidth, Const.COL_MIN_NUM,
+        math.max(available - (UI._modelWidth + Const.COL_MIN_BOSS + UI._splitWidth + minDelta), Const.COL_MIN_NUM))
+    UI._splitWidth = Util.Clamp(UI._splitWidth, Const.COL_MIN_NUM,
+        math.max(available - (UI._modelWidth + Const.COL_MIN_BOSS + UI._pbWidth + minDelta), Const.COL_MIN_NUM))
+    UI._deltaWidth = Util.Clamp(UI._deltaWidth, minDelta,
+        math.max(available - (UI._modelWidth + Const.COL_MIN_BOSS + UI._pbWidth + UI._splitWidth), minDelta))
+    local bossWidth = math.max(available - (UI._modelWidth + UI._pbWidth + UI._splitWidth + UI._deltaWidth),
+        Const.COL_MIN_BOSS)
 
     UI.cols[1].width = UI._modelWidth
     UI.cols[2].width = bossWidth
@@ -174,36 +179,7 @@ local function ApplyTableLayout()
 end
 
 local function SetupSizeGrip(ownerFrame, onChanged)
-    local grip = CreateFrame("Button", nil, ownerFrame)
-    grip:SetSize(14, 14)
-    grip:SetPoint("BOTTOMRIGHT", ownerFrame, "BOTTOMRIGHT", -2, 2)
-    grip:EnableMouse(true)
-
-    local tex = grip:CreateTexture(nil, "ARTWORK")
-    tex:SetAllPoints()
-    tex:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
-    grip._tex = tex
-
-    grip:SetScript("OnEnter", function(self)
-        self._tex:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
-    end)
-    grip:SetScript("OnLeave", function(self)
-        self._tex:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
-    end)
-    grip:SetScript("OnMouseDown", function(_, button)
-        if button ~= "LeftButton" then
-            return
-        end
-        ownerFrame:StartSizing("BOTTOMRIGHT")
-    end)
-    grip:SetScript("OnMouseUp", function()
-        ownerFrame:StopMovingOrSizing()
-        if onChanged then
-            onChanged()
-        end
-    end)
-
-    return grip
+    return ResizeGrip.CreateFrameGrip(ownerFrame, onChanged)
 end
 
 local function BeginColDrag(which, startX)
@@ -231,7 +207,8 @@ local function UpdateColDrag()
     local available = (UI.st.frame:GetWidth() or 0) - UI._rightInset
 
     if UI._colDrag.which == 1 then
-        local maxPB = math.max(Const.COL_MIN_NUM, available - (UI._modelWidth + UI._splitWidth + UI._deltaWidth + Const.COL_MIN_BOSS))
+        local maxPB = math.max(Const.COL_MIN_NUM,
+            available - (UI._modelWidth + UI._splitWidth + UI._deltaWidth + Const.COL_MIN_BOSS))
         UI._pbWidth = Util.Clamp(UI._colDrag.pb - dx, Const.COL_MIN_NUM, math.min(Const.COL_MAX_PB_SPLIT, maxPB))
     elseif UI._colDrag.which == 2 then
         UI._pbWidth = Util.Clamp(UI._colDrag.pb + dx, Const.COL_MIN_NUM, Const.COL_MAX_PB_SPLIT)
@@ -246,32 +223,29 @@ local function UpdateColDrag()
 end
 
 local function MakeGrip(parent, which)
-    local grip = CreateFrame("Frame", nil, parent)
+    local grip = ResizeGrip.CreateColumnGrip(
+        parent,
+        10,
+        14,
+        function()
+            local x = GetCursorPosition() / (UI.st.frame:GetEffectiveScale() or 1)
+            BeginColDrag(which, x)
+        end,
+        UpdateColDrag,
+        function()
+            EndColDrag()
+        end,
+        function()
+            SetCursor("UI_RESIZE_CURSOR")
+        end,
+        function()
+            ResetCursor()
+        end
+    )
     grip:SetFrameStrata("HIGH")
     grip:SetFrameLevel((parent:GetFrameLevel() or 0) + 50)
-    grip:EnableMouse(true)
-    grip:SetSize(10, 14)
 
     UI.ApplyThinSeparator(grip)
-
-    grip:SetScript("OnEnter", function()
-        SetCursor("UI_RESIZE_CURSOR")
-    end)
-    grip:SetScript("OnLeave", function()
-        ResetCursor()
-    end)
-    grip:SetScript("OnMouseDown", function(self, button)
-        if button ~= "LeftButton" then
-            return
-        end
-        local x = GetCursorPosition() / (UI.st.frame:GetEffectiveScale() or 1)
-        BeginColDrag(which, x)
-        self:SetScript("OnUpdate", UpdateColDrag)
-    end)
-    grip:SetScript("OnMouseUp", function(self)
-        self:SetScript("OnUpdate", nil)
-        EndColDrag()
-    end)
 
     return grip
 end

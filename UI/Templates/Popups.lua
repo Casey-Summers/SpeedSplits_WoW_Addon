@@ -16,7 +16,8 @@ StaticPopupDialogs["SPEEDSPLITS_WIPE_CONFIRM"] = {
 }
 
 StaticPopupDialogs["SPEEDSPLITS_FACTORY_RESET"] = {
-    text = "Are you sure you want to reset ALL settings, colors, and layouts to factory out-of-the-box defaults? This will reload your UI.",
+    text =
+    "Are you sure you want to reset ALL settings, colors, and layouts to factory out-of-the-box defaults? This will reload your UI.",
     button1 = "Reset to Factory",
     button2 = "Cancel",
     OnAccept = function()

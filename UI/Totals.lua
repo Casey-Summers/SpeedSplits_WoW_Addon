@@ -67,7 +67,8 @@ local function RefreshTotals(isFinal)
     local pbTotal = pbTable and NS.RunLogic.ComputeSumOfBest(pbTable, NS.Run.entries) or nil
 
     if isFinal then
-        local duration = (NS.Run.endGameTime > 0 and NS.Run.startGameTime > 0) and (NS.Run.endGameTime - NS.Run.startGameTime) or nil
+        local duration = (NS.Run.endGameTime > 0 and NS.Run.startGameTime > 0) and
+            (NS.Run.endGameTime - NS.Run.startGameTime) or nil
         local deltaTotal = (duration and pbTotal) and (duration - pbTotal) or nil
 
         local existingPB = node and node.FullRun
@@ -96,7 +97,8 @@ local function RefreshTotals(isFinal)
         local r = NS.Run.lastColorR or 1
         local g = NS.Run.lastColorG or 1
         local b = NS.Run.lastColorB or 1
-        SetTotals(NS.Run.lastPBTotal, NS.Run.lastSplitCumulative, NS.Run.lastDelta, r, g, b, NS.Run.lastColorHex or "|cffffffff")
+        SetTotals(NS.Run.lastPBTotal, NS.Run.lastSplitCumulative, NS.Run.lastDelta, r, g, b,
+            NS.Run.lastColorHex or "|cffffffff")
         UI.SetTimerDelta(NS.Run.lastDelta, NS.Run.lastIsPB)
     else
         SetTotals(pbTotal, nil, nil)

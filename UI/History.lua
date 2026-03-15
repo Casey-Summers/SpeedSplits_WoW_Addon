@@ -3,13 +3,15 @@ local _, NS = ...
 local UI = NS.UI
 local Util = NS.Util
 local Const = NS.Const
+local DropDown = UI.Templates.DropDown
+local FrameFactory = UI.Templates.FrameFactory
+local ResizeGrip = UI.Templates.ResizeGrip
+local ScrollBarSkin = UI.Templates.ScrollBarSkin
+local HeaderCell = UI.Templates.HeaderCell
+local HistoryRowTemplate = UI.Templates.HistoryRow
 
 local UIDropDownMenu_SetWidth = _G.UIDropDownMenu_SetWidth
 local UIDropDownMenu_SetText = _G.UIDropDownMenu_SetText
-local UIDropDownMenu_Initialize = _G.UIDropDownMenu_Initialize
-local UIDropDownMenu_AddButton = _G.UIDropDownMenu_AddButton
-local UIDropDownMenu_CreateInfo = _G.UIDropDownMenu_CreateInfo
-
 local function FormatEpochShort(epoch)
     return (not epoch or epoch <= 0) and "â€”" or date("%H:%M %d/%m/%Y", epoch)
 end
@@ -58,57 +60,13 @@ local function History_GetRow(parent)
     UI.history.rowPool = UI.history.rowPool or {}
     local row = table.remove(UI.history.rowPool)
     if not row then
-        row = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-        row:SetHeight(24)
-        row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
-        row:SetBackdropColor(0, 0, 0, 0)
-        row.cols = {}
-
-        for i = 1, 8 do
-            local fs = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-            fs:SetHeight(24)
-            row.cols[i] = fs
-            if i == 8 then
-                local btn = CreateFrame("Button", nil, row)
-                btn:SetSize(20, 20)
-                btn:SetPoint("CENTER", fs, "CENTER")
-                local tex = btn:CreateTexture(nil, "ARTWORK")
-                tex:SetAtlas("common-icon-delete")
-                tex:SetVertexColor(0.8, 0.2, 0.2)
-                tex:SetAllPoints()
-                btn:SetNormalTexture(tex)
-                btn:SetHighlightAtlas("common-icon-delete")
-                btn:GetHighlightTexture():SetAlpha(0.4)
-                btn:SetScript("OnEnter", function(self)
-                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                    GameTooltip:SetText("Delete", 1, 0, 0)
-                    GameTooltip:Show()
-                end)
-                btn:SetScript("OnLeave", function()
-                    GameTooltip:Hide()
-                end)
-                btn:SetScript("OnClick", function(self)
-                    if self.record then
-                        NS.Database.DeleteRunRecord(self.record)
-                    end
-                end)
-                row.delBtn = btn
-            else
-                fs:SetWordWrap(false)
-                if fs.SetTextTruncate then
-                    fs:SetTextTruncate("REPLACE")
-                end
-            end
-        end
-
-        row.bg = row:CreateTexture(nil, "BACKGROUND")
-        row.bg:SetAllPoints()
-        row.bg:SetColorTexture(1, 1, 1, 0.03)
+        row = HistoryRowTemplate.Create(parent, NS.Database.DeleteRunRecord)
 
         row.UpdateLayout = function(self)
             local widths = UI.history.colWidths
             local avail = UI.history.listFrame:GetWidth() - 20
-            local used = widths.date + widths.expansion + widths.time + widths.result + widths.mode + widths.diff + widths.delete
+            local used = widths.date + widths.expansion + widths.time + widths.result + widths.mode + widths.diff +
+                widths.delete
             local dungeonWidth = math.max(avail - used, 100)
 
             local x = 0
@@ -257,33 +215,15 @@ end
 local function BuildHistoryResultItems()
     return {
         { text = "Any Result", value = "Any" },
-        { text = "PB", value = "PB" },
-        { text = "Completed", value = "Completed" },
+        { text = "PB",         value = "PB" },
+        { text = "Completed",  value = "Completed" },
         { text = "Incomplete", value = "Incomplete" },
     }
 end
 
 local function InitHistoryDropDown(dropdown, buildItems, getValue, setValue)
-    if not dropdown or not UIDropDownMenu_Initialize then
-        return
-    end
-    UIDropDownMenu_Initialize(dropdown, function(self, level)
-        local items = buildItems()
-        if not items then
-            return
-        end
-        for _, item in ipairs(items) do
-            local info = UIDropDownMenu_CreateInfo()
-            info.text = item.text
-            info.value = item.value
-            info.checked = (getValue() == item.value)
-            info.func = function()
-                setValue(item.value)
-                UIDropDownMenu_SetText(dropdown, item.text)
-                UI.RefreshHistoryTable()
-            end
-            UIDropDownMenu_AddButton(info, level)
-        end
+    DropDown.Initialize(dropdown, buildItems, getValue, setValue, function()
+        UI.RefreshHistoryTable()
     end)
 end
 
@@ -320,7 +260,8 @@ local function History_ApplyTableLayout()
 
     local widths = history.colWidths
     local avail = history.listFrame:GetWidth() - scrollWidth
-    local used = widths.date + widths.expansion + widths.time + widths.result + widths.mode + widths.diff + widths.delete
+    local used = widths.date + widths.expansion + widths.time + widths.result + widths.mode + widths.diff + widths
+        .delete
     local dungeonWidth = math.max(avail - used, 100)
 
     if history.rows then
@@ -398,7 +339,8 @@ local function History_UpdateColDrag()
     local minDungeon = 100
 
     local function GetUsedExcept(idx)
-        local sum = widths.date + widths.expansion + widths.time + widths.result + widths.mode + widths.diff + widths.delete
+        local sum = widths.date + widths.expansion + widths.time + widths.result + widths.mode + widths.diff +
+            widths.delete
         if idx == 1 then
             sum = sum - widths.date
         elseif idx == 3 then
@@ -434,9 +376,19 @@ local function History_UpdateColDrag()
 end
 
 local function History_MakeGrip(parent, i)
-    local grip = CreateFrame("Frame", nil, parent)
-    grip:SetSize(10, 24)
-    grip:EnableMouse(true)
+    local grip = ResizeGrip.CreateColumnGrip(
+        parent,
+        10,
+        24,
+        function()
+            local x = GetCursorPosition() / (UI.history.frame:GetEffectiveScale() or 1)
+            History_BeginColDrag(i, x)
+        end,
+        History_UpdateColDrag,
+        function()
+            History_EndColDrag()
+        end
+    )
     grip:SetFrameLevel(parent:GetFrameLevel() + 10)
 
     local tex = grip:CreateTexture(nil, "OVERLAY")
@@ -452,15 +404,7 @@ local function History_MakeGrip(parent, i)
         ResetCursor()
         tex:SetColorTexture(1, 1, 1, 0.2)
     end)
-    grip:SetScript("OnMouseDown", function(self)
-        local x = GetCursorPosition() / (UI.history.frame:GetEffectiveScale() or 1)
-        History_BeginColDrag(i, x)
-        self:SetScript("OnUpdate", History_UpdateColDrag)
-    end)
-    grip:SetScript("OnMouseUp", function(self)
-        self:SetScript("OnUpdate", nil)
-        History_EndColDrag()
-    end)
+
     return grip
 end
 
@@ -481,19 +425,8 @@ local function EnsureHistoryUI()
     UI.history.filters = UI.history.filters or Util.HistoryFilterDefaults()
     History_RestoreColWidths()
 
-    local historyFrame = CreateFrame("Frame", "SpeedSplitsHistoryFrame", UIParent, "BackdropTemplate")
+    local historyFrame = FrameFactory.CreateDialogFrame("SpeedSplitsHistoryFrame", 850, 500)
     UI.history.frame = historyFrame
-    historyFrame:SetFrameStrata("DIALOG")
-    historyFrame:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = false,
-        tileSize = 16,
-        edgeSize = 16,
-        insets = { left = 4, right = 4, top = 4, bottom = 4 },
-    })
-    historyFrame:SetBackdropColor(0.08, 0.08, 0.08, 0.95)
-    historyFrame:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
     historyFrame:EnableMouse(true)
     historyFrame:SetMovable(true)
     historyFrame:SetResizable(true)
@@ -567,17 +500,9 @@ local function EnsureHistoryUI()
         end
     end)
 
-    local listFrame = CreateFrame("Frame", nil, historyFrame, "BackdropTemplate")
+    local listFrame = FrameFactory.CreateBorderedFrame(historyFrame, 0.4, NS.Colors.turquoise)
     listFrame:SetPoint("TOPLEFT", controls, "BOTTOMLEFT", 0, -34)
     listFrame:SetPoint("BOTTOMRIGHT", historyFrame, "BOTTOMRIGHT", -12, 10)
-    listFrame:SetBackdrop({
-        bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-        insets = { left = 0, right = 0, top = 0, bottom = 0 },
-    })
-    listFrame:SetBackdropColor(0, 0, 0, 0.4)
-    listFrame:SetBackdropBorderColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 0.8)
     listFrame:SetClipsChildren(true)
     UI.history.listFrame = listFrame
 
@@ -588,23 +513,7 @@ local function EnsureHistoryUI()
 
     local scrollbar = _G[scrollFrame:GetName() .. "ScrollBar"]
     if scrollbar then
-        scrollbar:SetWidth(10)
-        local up = _G[scrollbar:GetName() .. "ScrollUpButton"]
-        local down = _G[scrollbar:GetName() .. "ScrollDownButton"]
-        if up then
-            up:Hide()
-        end
-        if down then
-            down:Hide()
-        end
-        local thumb = scrollbar:GetThumbTexture()
-        if thumb then
-            thumb:SetColorTexture(0.4, 0.4, 0.4, 0.8)
-            thumb:SetWidth(8)
-        end
-        local bg = scrollbar:CreateTexture(nil, "BACKGROUND")
-        bg:SetAllPoints()
-        bg:SetColorTexture(0, 0, 0, 0.5)
+        ScrollBarSkin.Apply(scrollbar, 10)
         scrollbar:ClearAllPoints()
         scrollbar:SetPoint("TOPRIGHT", listFrame, "TOPRIGHT", -2, -1)
         scrollbar:SetPoint("BOTTOMRIGHT", listFrame, "BOTTOMRIGHT", -2, 1)
@@ -620,16 +529,7 @@ local function EnsureHistoryUI()
     local headerCols = { "Date", "Dungeon", "Expansion", "Result", "Mode", "Time", "Difference", "" }
     UI.history.headerCells = {}
     for i = 1, 8 do
-        local btn = CreateFrame("Button", nil, header)
-        btn:SetHeight(24)
-        local fs = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        fs:SetText(headerCols[i])
-        fs:SetAllPoints()
-        fs:SetJustifyH("CENTER")
-        fs:SetJustifyV("MIDDLE")
-        btn:SetFontString(fs)
-        UI.StyleHeaderCell(btn, "CENTER")
-        btn:SetScript("OnClick", function()
+        local btn = HeaderCell.Create(header, headerCols[i], "CENTER", function()
             if i == 8 then
                 return
             end

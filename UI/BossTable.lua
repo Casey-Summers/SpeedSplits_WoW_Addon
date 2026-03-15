@@ -210,14 +210,16 @@ local function SetRowKilled(bossKey, splitCumulative, cumulativePB, deltaSeconds
     row.cols[2].value = (cumulativePB and cumulativePB > 0) and Util.FormatTime(cumulativePB) or "--:--.---"
     row.cols[2].color = isIgnored and { r = 0.4, g = 0.4, b = 0.4, a = 1 } or Colors.gold
     row.cols[3].value = Util.FormatTime(splitCumulative)
-    row.cols[3].color = isIgnored and { r = 0.4, g = 0.4, b = 0.4, a = 1 } or (isGold and Colors.gold or { r = r, g = g, b = b, a = 1 })
+    row.cols[3].color = isIgnored and { r = 0.4, g = 0.4, b = 0.4, a = 1 } or
+        (isGold and Colors.gold or { r = r, g = g, b = b, a = 1 })
 
     if deltaSeconds == nil then
         row.cols[4].value = ""
         row.cols[4].color = nil
     else
         row.cols[4].value = Util.FormatDelta(deltaSeconds)
-        row.cols[4].color = isIgnored and { r = 0.4, g = 0.4, b = 0.4, a = 1 } or (isGold and Colors.gold or { r = r, g = g, b = b, a = 1 })
+        row.cols[4].color = isIgnored and { r = 0.4, g = 0.4, b = 0.4, a = 1 } or
+            (isGold and Colors.gold or { r = r, g = g, b = b, a = 1 })
     end
 
     if UI.st and UI.st.Refresh then

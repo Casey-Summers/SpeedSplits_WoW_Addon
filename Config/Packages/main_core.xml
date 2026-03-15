@@ -6,6 +6,14 @@
     <Script file="..\..\Config\ThemeAssets.lua"/>
     <Script file="..\..\Config\FactoryDefaults.lua"/>
     <Script file="..\..\UI\Templates\Popups.lua"/>
+    <Script file="..\..\UI\Templates\FrameFactory.lua"/>
+    <Script file="..\..\UI\Templates\ResizeGrip.lua"/>
+    <Script file="..\..\UI\Templates\ScrollBarSkin.lua"/>
+    <Script file="..\..\UI\Templates\DropDown.lua"/>
+    <Script file="..\..\UI\Templates\IconButton.lua"/>
+    <Script file="..\..\UI\Templates\HeaderCell.lua"/>
+    <Script file="..\..\UI\Templates\HistoryRow.lua"/>
+    <Script file="..\..\UI\Templates\HoverFadeFrame.lua"/>
     <Script file="..\..\Core\Debug.lua"/>
     <Script file="..\..\Core\Utils.lua"/>
 

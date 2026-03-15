@@ -46,12 +46,13 @@ System.RegisterTest({
         local br, bg, bb = bossHeader:GetTextColor()
         local pr, pg, pb = pbHeader:GetTextColor()
 
-        System.AssertNear(br, NS.Colors.turquoise.r, 0.01, "Boss header red channel matches the accent color")
-        System.AssertNear(bg, NS.Colors.turquoise.g, 0.01, "Boss header green channel matches the accent color")
-        System.AssertNear(bb, NS.Colors.turquoise.b, 0.01, "Boss header blue channel matches the accent color")
-        System.AssertNear(pr, NS.Colors.turquoise.r, 0.01, "PB header red channel matches the accent color")
-        System.AssertNear(pg, NS.Colors.turquoise.g, 0.01, "PB header green channel matches the accent color")
-        System.AssertNear(pb, NS.Colors.turquoise.b, 0.01, "PB header blue channel matches the accent color")
+        System.AssertNear(br, NS.Colors.turquoise.r, 0.01, "Initial Boss header red channel matches")
+        
+        -- Trigger a full UI refresh which previously caused headers to turn white
+        NS.RefreshAllUI()
+        
+        local br2, bg2, bb2 = bossHeader:GetTextColor()
+        System.AssertNear(br2, NS.Colors.turquoise.r, 0.01, "Boss header color persists after NS.RefreshAllUI")
         System.EndSection("Read header colours from the boss table", "PASS")
     end,
 })

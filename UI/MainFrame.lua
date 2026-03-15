@@ -319,7 +319,7 @@ function UI.EnsureUI()
 
     local killCountCounterText = bgFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     killCountCounterText:SetDrawLayer("OVERLAY", 7)
-    killCountCounterText:SetPoint("LEFT", bgFrame, "LEFT", UI._modelWidth + 2, 0)
+    killCountCounterText:SetPoint("LEFT", bgFrame, "LEFT", 10, 0)
     NS.ApplyFontToFS(killCountCounterText, "header", 1.1)
     killCountCounterText:SetJustifyH("LEFT")
     killCountCounterText:SetWordWrap(false)
@@ -507,8 +507,6 @@ function NS.RefreshAllUI()
     end
 
     NS.UpdateColorsFromSettings()
-    NS.UpdateColorsOnly()
-    NS.UpdateFontsOnly()
     NS.UpdateToastLayout()
     if NS.RefreshVisibility then
         NS.RefreshVisibility()
@@ -598,4 +596,8 @@ function NS.RefreshAllUI()
     if UI.st and UI.st.Refresh then
         UI.st:Refresh()
     end
+
+    -- Re-apply accent colors and fonts after potential table resets
+    NS.UpdateColorsOnly()
+    NS.UpdateFontsOnly()
 end

@@ -167,6 +167,13 @@ local function RenderBossTable(entries, pbSegments)
     end
 
     UI.ApplyTableLayout()
+    
+    if NS.UpdateColorsOnly then
+        NS.UpdateColorsOnly()
+    end
+    if NS.UpdateFontsOnly then
+        NS.UpdateFontsOnly()
+    end
 end
 
 local function GetPreviousKilledCumulativeInTableOrder(run, bossKey)

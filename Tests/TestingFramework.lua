@@ -155,9 +155,13 @@ function UI.CreateTestFrame()
         System.ClearRunHistory()
     end)
 
+    local categoryLabel = leftPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    categoryLabel:SetPoint("TOPLEFT", 10, -160)
+    categoryLabel:SetText("|cffffff00Test Categories|r")
+
     local suiteScroll = CreateFrame("ScrollFrame", nil, leftPanel, "UIPanelScrollFrameTemplate")
-    suiteScroll:SetPoint("TOPLEFT", 0, -165)
-    suiteScroll:SetPoint("BOTTOMRIGHT", -25, 5)
+    suiteScroll:SetPoint("TOPLEFT", 0, -180)
+    suiteScroll:SetPoint("BOTTOMRIGHT", -25, 170)
 
     local suiteContent = CreateFrame("Frame", nil, suiteScroll)
     suiteContent:SetSize(175, 1)
@@ -165,14 +169,9 @@ function UI.CreateTestFrame()
     UI.suiteContent = suiteContent
     BuildSuiteButtons(suiteContent)
 
-    local rightPanel = CreateFrame("Frame", nil, frame)
-    rightPanel:SetPoint("TOPLEFT", leftPanel, "TOPRIGHT", 10, 0)
-    rightPanel:SetPoint("BOTTOMRIGHT", -15, 15)
-
-    local statusFrame = CreateFrame("Frame", nil, rightPanel, "BackdropTemplate")
-    statusFrame:SetPoint("TOPLEFT", 0, 0)
-    statusFrame:SetPoint("TOPRIGHT", 0, 0)
-    statusFrame:SetHeight(120)
+    local statusFrame = CreateFrame("Frame", nil, leftPanel, "BackdropTemplate")
+    statusFrame:SetPoint("TOPLEFT", 0, -395)
+    statusFrame:SetPoint("BOTTOMRIGHT", 0, 0)
     statusFrame:SetBackdrop({
         bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
         edgeFile = "Interface\\Buttons\\WHITE8X8",
@@ -184,14 +183,18 @@ function UI.CreateTestFrame()
 
     local statusText = statusFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     statusText:SetPoint("TOPLEFT", 10, -10)
-    statusText:SetPoint("TOPRIGHT", -10, -10)
+    statusText:SetPoint("BOTTOMRIGHT", -10, 10)
     statusText:SetJustifyH("LEFT")
     statusText:SetJustifyV("TOP")
     UI.statusText = statusText
 
+    local rightPanel = CreateFrame("Frame", nil, frame)
+    rightPanel:SetPoint("TOPLEFT", leftPanel, "TOPRIGHT", 10, 0)
+    rightPanel:SetPoint("BOTTOMRIGHT", -15, 15)
+
     local lastResultFrame = CreateFrame("Frame", nil, rightPanel, "BackdropTemplate")
-    lastResultFrame:SetPoint("TOPLEFT", statusFrame, "BOTTOMLEFT", 0, -5)
-    lastResultFrame:SetPoint("TOPRIGHT", statusFrame, "BOTTOMRIGHT", 0, -5)
+    lastResultFrame:SetPoint("TOPLEFT", 0, 0)
+    lastResultFrame:SetPoint("TOPRIGHT", 0, 0)
     lastResultFrame:SetHeight(24)
     lastResultFrame:SetBackdrop({
         bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
@@ -285,6 +288,18 @@ function UI.CreateTestFrame()
     rightText:SetJustifyH("LEFT")
     rightText:SetJustifyV("TOP")
     UI.rightTermText = rightText
+
+    local rightTextEB = CreateFrame("EditBox", nil, rightContent)
+    rightTextEB:SetPoint("TOPLEFT", rightText, "TOPLEFT", 0, 0)
+    rightTextEB:SetPoint("BOTTOMRIGHT", rightText, "BOTTOMRIGHT", 0, 0)
+    rightTextEB:SetMultiLine(true)
+    rightTextEB:SetAutoFocus(false)
+    rightTextEB:SetFontObject("ChatFontNormal")
+    rightTextEB:SetTextColor(1, 1, 1, 0) -- Invisible text to overlay nicely
+    rightTextEB:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    rightTextEB:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
+    rightTextEB:SetScript("OnChar", function() end)
+    UI.rightTermEB = rightTextEB
     UI.rightTermContent = rightContent
 
     UI.RefreshStatusList()
@@ -469,10 +484,13 @@ function UI.UpdateDetails()
                 lines[#lines + 1] = string.format("%s%s|r", GetStatusColor(message.status), message.message)
             end
             UI.rightTermText:SetText(table.concat(lines, "\n"))
+            if UI.rightTermEB then UI.rightTermEB:SetText("") end
         elseif #System.RunHistory > 0 then
             UI.rightTermText:SetText("|cff888888No test runs match the current filter.|r")
+            if UI.rightTermEB then UI.rightTermEB:SetText("") end
         else
             UI.rightTermText:SetText("|cff888888No executed tests yet. Run a suite or hover a test row once one exists.|r")
+            if UI.rightTermEB then UI.rightTermEB:SetText("") end
         end
         UI.rightTermContent:SetHeight(UI.rightTermText:GetStringHeight() + 20)
         return
@@ -510,5 +528,14 @@ function UI.UpdateDetails()
     end
 
     UI.rightTermText:SetText(table.concat(lines, "\n"))
+    
+    if UI.rightTermEB then
+        local rawLines = {}
+        for _, line in ipairs(lines) do
+            rawLines[#rawLines + 1] = line:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+        end
+        UI.rightTermEB:SetText(table.concat(rawLines, "\n"))
+    end
+    
     UI.rightTermContent:SetHeight(UI.rightTermText:GetStringHeight() + 20)
 end

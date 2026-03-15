@@ -4,43 +4,7 @@
 ## Author: Aceman
 ## Version: 0.1.4
 ## SavedVariables: SpeedSplitsDB
+## OptionalDeps: Ace3, lib-st
+## IconTexture: Interface/AddOns/SpeedSplits/Config/Icons/SpeedSplitsStopwatchx64.blp
 
-Libs/LibStub/LibStub.lua
-Libs/CallbackHandler-1.0/CallbackHandler-1.0.lua
-Libs/lib-st-v4.1.3/lib-st/Core.lua
-
-SpeedSplits.lua
-Config/Constants.lua
-Config/Popups.lua
-Core/Debug.lua
-Core/Utils.lua
-Data/Defaults.lua
-Data/Migration.lua
-Data/Database.lua
-Run/State.lua
-Run/BossDiscovery.lua
-Run/PB.lua
-UI/Shared.lua
-UI/Layout.lua
-UI/BossTable.lua
-UI/TimerFrame.lua
-UI/Totals.lua
-UI/Toast.lua
-UI/History.lua
-UI/MainFrame.lua
-Run/Timer.lua
-Run/RunLogic.lua
-Options/Widgets.lua
-Options/Panel.lua
-SpeedSplitsOptions.lua
-Tests/Framework.lua
-Tests/Simulation.lua
-Tests/Suite_UI.lua
-Tests/Suite_Discovery.lua
-Tests/Suite_Logic.lua
-Tests/Suite_PB.lua
-Tests/Suite_History.lua
-Tests/Suite_UX.lua
-Tests/TestingFramework.lua
-Packages/TestAdapter.lua
-Core/Events.lua
+Config/Packages/main_core.xml

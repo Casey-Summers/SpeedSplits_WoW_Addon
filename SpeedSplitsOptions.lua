@@ -1,3 +1,0 @@
-local _, NS = ...
-
-NS.Options = NS.Options or {}

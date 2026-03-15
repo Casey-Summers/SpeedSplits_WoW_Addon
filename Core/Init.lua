@@ -11,7 +11,7 @@ NS.Discovery = NS.Discovery or {}
 NS.RunLogic = NS.RunLogic or {}
 NS.UI = NS.UI or {}
 NS.UI.history = NS.UI.history or {}
-NS.Options = NS.Options or {}
+NS.Settings = NS.Settings or {}
 NS.Tests = NS.Tests or {}
 NS.Private = NS.Private or {}
 

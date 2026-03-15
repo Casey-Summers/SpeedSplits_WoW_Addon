@@ -1,0 +1,43 @@
+<Ui>
+    <Include file="main_lib.xml"/>
+
+    <Script file="..\..\Core\Init.lua"/>
+    <Script file="..\..\Config\Constants.lua"/>
+    <Script file="..\..\UI\Templates\Popups.lua"/>
+    <Script file="..\..\Core\Debug.lua"/>
+    <Script file="..\..\Core\Utils.lua"/>
+
+    <Script file="..\..\Data\Defaults.lua"/>
+    <Script file="..\..\Data\Migration.lua"/>
+    <Script file="..\..\Data\Database.lua"/>
+
+    <Script file="..\..\Run\State.lua"/>
+    <Script file="..\..\Run\BossDiscovery.lua"/>
+    <Script file="..\..\Run\PB.lua"/>
+
+    <Script file="..\..\UI\Shared.lua"/>
+    <Script file="..\..\UI\Layout.lua"/>
+    <Script file="..\..\UI\BossTable.lua"/>
+    <Script file="..\..\UI\TimerFrame.lua"/>
+    <Script file="..\..\UI\Totals.lua"/>
+    <Script file="..\..\UI\Toast.lua"/>
+    <Script file="..\..\UI\History.lua"/>
+    <Script file="..\..\UI\MainFrame.lua"/>
+
+    <Script file="..\..\Run\Timer.lua"/>
+    <Script file="..\..\Run\RunLogic.lua"/>
+    <Script file="..\..\Settings\Widgets.lua"/>
+    <Script file="..\..\Settings\Panel.lua"/>
+
+    <Script file="..\..\Tests\Framework.lua"/>
+    <Script file="..\..\Tests\Simulation.lua"/>
+    <Script file="..\..\Tests\Suite_UI.lua"/>
+    <Script file="..\..\Tests\Suite_Discovery.lua"/>
+    <Script file="..\..\Tests\Suite_Logic.lua"/>
+    <Script file="..\..\Tests\Suite_PB.lua"/>
+    <Script file="..\..\Tests\Suite_History.lua"/>
+    <Script file="..\..\Tests\Suite_UX.lua"/>
+    <Script file="..\..\Tests\TestingFramework.lua"/>
+    <Script file="..\..\Tests\TestAdapter.lua"/>
+    <Script file="..\..\Core\Events.lua"/>
+</Ui>

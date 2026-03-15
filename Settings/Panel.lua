@@ -1,8 +1,10 @@
 local _, NS = ...
 
-local Widgets = NS.Options.Widgets
+NS.Settings = NS.Settings or {}
 
-function NS.CreateOptionsPanel()
+local Widgets = NS.Settings.Widgets
+
+function NS.CreateSettingsPanel()
     local panel = CreateFrame("Frame", "SpeedSplitsOptionsPanel", UIParent)
     panel.name = "SpeedSplits"
 
@@ -390,7 +392,7 @@ function NS.CreateOptionsPanel()
     end
 end
 
-function NS.OpenOptions()
+function NS.OpenSettings()
     if Settings and Settings.OpenToCategory then
         if NS.SettingsCategoryID then
             Settings.OpenToCategory(NS.SettingsCategoryID)
@@ -401,3 +403,6 @@ function NS.OpenOptions()
         InterfaceOptionsFrame_OpenToCategory("SpeedSplits")
     end
 end
+
+NS.CreateOptionsPanel = NS.CreateSettingsPanel
+NS.OpenOptions = NS.OpenSettings

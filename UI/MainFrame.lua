@@ -228,7 +228,7 @@ function UI.EnsureUI()
 
     local ST = Util.ResolveScrollingTable()
     if not ST and NS.Print then
-        NS.Print("Missing lib-st (ScrollingTable). Embed lib-st-v4.1.3/Core.lua and load before SpeedSplits.lua.")
+        NS.Print("Missing lib-st (ScrollingTable). Load lib-st before Config/Packages/main_core.xml.")
     end
 
     local cols = BuildBossColumns()

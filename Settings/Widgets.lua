@@ -1,7 +1,8 @@
 local _, NS = ...
 
 local Widgets = {}
-NS.Options.Widgets = Widgets
+NS.Settings = NS.Settings or {}
+NS.Settings.Widgets = Widgets
 
 local UIDropDownMenu_SetWidth = _G.UIDropDownMenu_SetWidth
 local UIDropDownMenu_SetSelectedValue = _G.UIDropDownMenu_SetSelectedValue

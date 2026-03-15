@@ -1,0 +1,5 @@
+<Ui>
+    <Script file="..\..\Libs\LibStub\LibStub.lua"/>
+    <Include file="..\..\Libs\CallbackHandler-1.0\CallbackHandler-1.0.xml"/>
+    <Script file="..\..\Libs\lib-st-v4.1.3\lib-st\Core.lua"/>
+</Ui>

@@ -107,16 +107,17 @@ local function ApplyTableLayout()
     UI._modelWidth = GetModelColumnWidth()
     local width = UI.st.frame:GetWidth() or 1
     local available = math.max(width - UI._rightInset, 1)
+    local splitMin = Const.SPLITS_COL_MIN
 
-    local minDelta = Const.COL_MIN_NUM
-    UI._pbWidth = Util.Clamp(UI._pbWidth, Const.COL_MIN_NUM,
-        math.max(available - (UI._modelWidth + Const.COL_MIN_BOSS + UI._splitWidth + minDelta), Const.COL_MIN_NUM))
-    UI._splitWidth = Util.Clamp(UI._splitWidth, Const.COL_MIN_NUM,
-        math.max(available - (UI._modelWidth + Const.COL_MIN_BOSS + UI._pbWidth + minDelta), Const.COL_MIN_NUM))
+    local minDelta = splitMin.NUM
+    UI._pbWidth = Util.Clamp(UI._pbWidth, splitMin.NUM,
+        math.max(available - (UI._modelWidth + splitMin.BOSS + UI._splitWidth + minDelta), splitMin.NUM))
+    UI._splitWidth = Util.Clamp(UI._splitWidth, splitMin.NUM,
+        math.max(available - (UI._modelWidth + splitMin.BOSS + UI._pbWidth + minDelta), splitMin.NUM))
     UI._deltaWidth = Util.Clamp(UI._deltaWidth, minDelta,
-        math.max(available - (UI._modelWidth + Const.COL_MIN_BOSS + UI._pbWidth + UI._splitWidth), minDelta))
+        math.max(available - (UI._modelWidth + splitMin.BOSS + UI._pbWidth + UI._splitWidth), minDelta))
     local bossWidth = math.max(available - (UI._modelWidth + UI._pbWidth + UI._splitWidth + UI._deltaWidth),
-        Const.COL_MIN_BOSS)
+        splitMin.BOSS)
 
     if UI.killCountCounterText and UI.killCountText then
         local counterWidth = math.max(UI.killCountCounterText:GetStringWidth() or 0, 36)
@@ -216,17 +217,18 @@ local function UpdateColDrag()
     local curX = GetCursorPosition() / UI.st.frame:GetEffectiveScale()
     local dx = curX - UI._colDrag.startX
     local available = (UI.st.frame:GetWidth() or 0) - UI._rightInset
+    local splitMin = Const.SPLITS_COL_MIN
 
     if UI._colDrag.which == 1 then
-        local maxPB = math.max(Const.COL_MIN_NUM,
-            available - (UI._modelWidth + UI._splitWidth + UI._deltaWidth + Const.COL_MIN_BOSS))
-        UI._pbWidth = Util.Clamp(UI._colDrag.pb - dx, Const.COL_MIN_NUM, math.min(Const.COL_MAX_PB_SPLIT, maxPB))
+        local maxPB = math.max(splitMin.NUM,
+            available - (UI._modelWidth + UI._splitWidth + UI._deltaWidth + splitMin.BOSS))
+        UI._pbWidth = Util.Clamp(UI._colDrag.pb - dx, splitMin.NUM, math.min(Const.COL_MAX_PB_SPLIT, maxPB))
     elseif UI._colDrag.which == 2 then
-        UI._pbWidth = Util.Clamp(UI._colDrag.pb + dx, Const.COL_MIN_NUM, Const.COL_MAX_PB_SPLIT)
-        UI._splitWidth = Util.Clamp(UI._colDrag.split - dx, Const.COL_MIN_NUM, Const.COL_MAX_PB_SPLIT)
+        UI._pbWidth = Util.Clamp(UI._colDrag.pb + dx, splitMin.NUM, Const.COL_MAX_PB_SPLIT)
+        UI._splitWidth = Util.Clamp(UI._colDrag.split - dx, splitMin.NUM, Const.COL_MAX_PB_SPLIT)
     elseif UI._colDrag.which == 3 then
-        local minDelta = math.max(Const.COL_MIN_NUM, Const.COL_MIN_DELTA_TITLE)
-        UI._splitWidth = Util.Clamp(UI._colDrag.split + dx, Const.COL_MIN_NUM, Const.COL_MAX_PB_SPLIT)
+        local minDelta = math.max(splitMin.NUM, splitMin.DELTA_TITLE)
+        UI._splitWidth = Util.Clamp(UI._colDrag.split + dx, splitMin.NUM, Const.COL_MAX_PB_SPLIT)
         UI._deltaWidth = Util.Clamp(UI._colDrag.delta - dx, minDelta, Const.COL_MAX_DELTA)
     end
 

@@ -80,5 +80,15 @@ function UI.StyleHeaderCell(cell, align, multiplier, text, colorKey)
     cell.turquoiseSet = (colorName == "turquoise")
     fs:SetDrawLayer("OVERLAY", 7)
     fs:ClearAllPoints()
-    fs:SetAllPoints(cell)
+
+    local justify = align or "CENTER"
+    if justify == "LEFT" then
+        fs:SetPoint("LEFT", cell, "LEFT", 4, 0)
+        fs:SetPoint("RIGHT", cell, "RIGHT", -2, 0)
+    elseif justify == "RIGHT" then
+        fs:SetPoint("LEFT", cell, "LEFT", 2, 0)
+        fs:SetPoint("RIGHT", cell, "RIGHT", -4, 0)
+    else
+        fs:SetPoint("CENTER", cell, "CENTER", 0, 0)
+    end
 end

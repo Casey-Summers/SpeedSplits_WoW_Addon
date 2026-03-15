@@ -168,7 +168,7 @@ function Util.ResolveScrollingTable()
             oldSetDisplayCols(self, cols)
             if self.head and self.head.cols and NS.UI and NS.UI.StyleHeaderCell then
                 for i = 1, #self.head.cols do
-                    NS.UI.StyleHeaderCell(self.head.cols[i], cols[i].align)
+                    NS.UI.StyleHeaderCell(self.head.cols[i], cols[i].align, 1.0, cols[i].name, "turquoise")
                 end
             end
         end

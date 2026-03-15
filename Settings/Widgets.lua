@@ -210,6 +210,12 @@ function Widgets.SettingsDropDown(parent, label, field, opts, width)
         UIDropDownMenu_SetSelectedValue(dd, self.value)
         UIDropDownMenu_SetText(dd, self.text)
         NS.DB.Settings[field] = self.value
+        if field == "speedrunMode" then
+            NS.Run.speedrunMode = self.value
+            if NS.RunLogic and NS.RunLogic.SyncAutoIgnoredBosses then
+                NS.RunLogic.SyncAutoIgnoredBosses()
+            end
+        end
         NS.RefreshAllUI()
     end
 

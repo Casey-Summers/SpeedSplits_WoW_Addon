@@ -589,14 +589,19 @@ local function EnsureHistoryUI()
                     local node = NS.GetBestSplitsSubtable(record.instanceName)
                     local pb = node and node.FullRun and node.FullRun.duration
                     local diff = (pb and record.duration) and (record.duration - pb) or nil
+                    local textColor = NS.Colors.white
 
                     row.cols[1]:SetText(FormatEpochShort(record.startedAt))
+                    row.cols[1]:SetTextColor(textColor.r, textColor.g, textColor.b, textColor.a or 1)
                     row.cols[2]:SetText(record.instanceName or "â€”")
                     row.cols[3]:SetText(GetTierNameSafe(record.tier))
+                    row.cols[3]:SetTextColor(textColor.r, textColor.g, textColor.b, textColor.a or 1)
                     row.cols[4]:SetText(resultText)
                     row.cols[4]:SetTextColor(resultColor.r, resultColor.g, resultColor.b)
                     row.cols[5]:SetText(record.speedrunMode == "last" and "Last Boss" or "All Bosses")
+                    row.cols[5]:SetTextColor(textColor.r, textColor.g, textColor.b, textColor.a or 1)
                     row.cols[6]:SetText(record.duration and Util.FormatTime(record.duration) or "--:--.---")
+                    row.cols[6]:SetTextColor(textColor.r, textColor.g, textColor.b, textColor.a or 1)
 
                     if diff then
                         local _, _, _, hex = NS.GetPaceColor(diff, isPB)

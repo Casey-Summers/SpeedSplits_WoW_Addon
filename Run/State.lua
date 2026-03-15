@@ -34,7 +34,13 @@ local function IsBossIgnored(bossName)
     if not instanceName or instanceName == "" or not bossName or not db then
         return false
     end
-    return db.Settings and db.Settings.ignoredBosses and db.Settings.ignoredBosses[instanceName] and db.Settings.ignoredBosses[instanceName][bossName]
+    local settings = db.Settings
+    if not settings then
+        return false
+    end
+    return (settings.ignoredBosses and settings.ignoredBosses[instanceName] and settings.ignoredBosses[instanceName][bossName]) or
+        (settings.autoIgnoredBosses and settings.autoIgnoredBosses[instanceName] and settings.autoIgnoredBosses[instanceName][bossName]) or
+        false
 end
 
 local function ResetRun()

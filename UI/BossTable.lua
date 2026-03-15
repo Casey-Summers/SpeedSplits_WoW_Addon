@@ -58,7 +58,7 @@ local function Boss_DoCellUpdate(rowFrame, cellFrame, data, cols, row, realrow, 
     if NS.IsBossIgnored(cell.value) then
         cellFrame.text:SetTextColor(0.5, 0.5, 0.5, 1)
     else
-        cellFrame.text:SetTextColor(1, 1, 1, 1)
+        cellFrame.text:SetTextColor(Colors.white.r, Colors.white.g, Colors.white.b, Colors.white.a or 1)
     end
 end
 
@@ -132,23 +132,11 @@ local function RenderBossTable(entries, pbSegments)
 
     local data = UI.data
     local map = UI.rowByBossKey
-    local activeEntries = {}
-    local ignoredEntries = {}
-
-    for _, entry in ipairs(entries) do
-        if NS.IsBossIgnored(entry.name) then
-            table.insert(ignoredEntries, entry)
-        else
-            table.insert(activeEntries, entry)
-        end
-    end
 
     local cumulativePB = 0
     local function AddToData(entry, isIgnored)
         local pbSegment = pbSegments[entry.name] or 0
-        if not isIgnored then
-            cumulativePB = cumulativePB + pbSegment
-        end
+        cumulativePB = cumulativePB + pbSegment
 
         data[#data + 1] = {
             key = entry.key,
@@ -163,14 +151,12 @@ local function RenderBossTable(entries, pbSegments)
                 { value = "" },
             },
         }
+        data[#data].cols[2].value = (pbSegment > 0 and cumulativePB > 0) and Util.FormatTime(cumulativePB) or "--:--.---"
         map[entry.key] = #data
     end
 
-    for _, entry in ipairs(activeEntries) do
-        AddToData(entry, false)
-    end
-    for _, entry in ipairs(ignoredEntries) do
-        AddToData(entry, true)
+    for _, entry in ipairs(entries) do
+        AddToData(entry, NS.IsBossIgnored(entry.name))
     end
 
     if UI.st and UI.st.SetData then

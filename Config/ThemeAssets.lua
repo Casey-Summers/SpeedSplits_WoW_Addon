@@ -25,4 +25,5 @@ NS.SoundOptions = {
     { name = "Level up",        id = 569593 },
     { name = "Reputation Gain", id = 568016 },
     { name = "Trading Post",    id = 4919212 },
+    -- Put new sound IDs here
 }

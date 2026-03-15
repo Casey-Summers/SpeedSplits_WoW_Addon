@@ -61,6 +61,10 @@ local function BuildBossColumns()
     }
 end
 
+local function GetHeaderColorKey(index)
+    return "turquoise"
+end
+
 function UI.EnsureUI()
     if UI.bossFrame and UI.timerFrame then
         return
@@ -186,7 +190,7 @@ function UI.EnsureUI()
         self:StopMovingOrSizing()
         UI.SaveFrameGeom("boss", self)
     end)
-    Util.ApplyResizeBounds(bossFrame, 450, 200, 1400, 1000)
+    Util.ApplyResizeBounds(bossFrame, 450, Const.SPLITS_TABLE_MIN_HEIGHT, 1400, 1000)
     bossFrame:SetBackdrop({
         bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
         edgeFile = "Interface\\Buttons\\WHITE8X8",
@@ -250,10 +254,18 @@ function UI.EnsureUI()
                                 func = function()
                                     NS.DB.Settings.ignoredBosses[instanceName] = NS.DB.Settings.ignoredBosses
                                         [instanceName] or {}
+                                    NS.DB.Settings.autoIgnoredBosses = NS.DB.Settings.autoIgnoredBosses or {}
+                                    NS.DB.Settings.autoIgnoredBosses[instanceName] = NS.DB.Settings.autoIgnoredBosses
+                                        [instanceName] or {}
                                     if NS.IsBossIgnored(bossName) then
                                         NS.DB.Settings.ignoredBosses[instanceName][bossName] = nil
+                                        NS.DB.Settings.autoIgnoredBosses[instanceName][bossName] = nil
                                     else
                                         NS.DB.Settings.ignoredBosses[instanceName][bossName] = true
+                                        NS.DB.Settings.autoIgnoredBosses[instanceName][bossName] = nil
+                                    end
+                                    if NS.RunLogic and NS.RunLogic.SyncAutoIgnoredBosses then
+                                        NS.RunLogic.SyncAutoIgnoredBosses()
                                     end
                                     NS.RefreshAllUI()
                                 end,
@@ -278,7 +290,7 @@ function UI.EnsureUI()
             st.head:SetFrameLevel(100)
             if st.head.cols then
                 for i = 1, #cols do
-                    UI.StyleHeaderCell(st.head.cols[i], cols[i].align)
+                    UI.StyleHeaderCell(st.head.cols[i], cols[i].align, 1.0, cols[i].name, GetHeaderColorKey(i))
                 end
             end
         end
@@ -300,15 +312,28 @@ function UI.EnsureUI()
         UI.st.head:SetFrameLevel(bgFrame:GetFrameLevel() + 2)
         if UI.st.head.cols then
             for i = 1, #cols do
-                UI.StyleHeaderCell(UI.st.head.cols[i], cols[i].align)
+                UI.StyleHeaderCell(UI.st.head.cols[i], cols[i].align, 1.0, cols[i].name, GetHeaderColorKey(i))
             end
         end
     end
 
+    local killCountCounterText = bgFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    killCountCounterText:SetDrawLayer("OVERLAY", 7)
+    killCountCounterText:SetPoint("LEFT", bgFrame, "LEFT", UI._modelWidth + 2, 0)
+    NS.ApplyFontToFS(killCountCounterText, "header", 1.1)
+    killCountCounterText:SetJustifyH("LEFT")
+    killCountCounterText:SetWordWrap(false)
+    UI.killCountCounterText = killCountCounterText
+
     local killCountText = bgFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     killCountText:SetDrawLayer("OVERLAY", 7)
-    killCountText:SetPoint("LEFT", 10, 0)
+    killCountText:SetPoint("LEFT", killCountCounterText, "RIGHT", 4, 0)
     NS.ApplyFontToFS(killCountText, "header", 1.25)
+    killCountText:SetJustifyH("LEFT")
+    killCountText:SetWordWrap(false)
+    if killCountText.SetMaxLines then
+        killCountText:SetMaxLines(1)
+    end
     UI.killCountText = killCountText
 
     local totalFrame = FrameFactory.CreateFooterStrip(bossFrame, 24)
@@ -322,33 +347,6 @@ function UI.EnsureUI()
     logoText:SetPoint("LEFT", 10, 0)
     logoText:SetText("SpeedSplits")
     UI.logoText = logoText
-
-    local logoShimmer = totalFrame:CreateTexture(nil, "ARTWORK", nil, 1)
-    logoShimmer:SetAtlas("bonusobjectives-bar-shine")
-    logoShimmer:SetSize(60, 24)
-    logoShimmer:SetBlendMode("ADD")
-    logoShimmer:SetAlpha(0)
-    logoShimmer:SetPoint("LEFT", totalFrame, "LEFT", -60, 0)
-    UI.logoShimmer = logoShimmer
-
-    local shimAG = logoShimmer:CreateAnimationGroup()
-    local shimMove = shimAG:CreateAnimation("Translation")
-    shimMove:SetOffset(400, 0)
-    shimMove:SetDuration(1.0)
-    shimMove:SetSmoothing("IN_OUT")
-    local shimAlpha = shimAG:CreateAnimation("Alpha")
-    shimAlpha:SetFromAlpha(0)
-    shimAlpha:SetToAlpha(0.8)
-    shimAlpha:SetDuration(0.15)
-    shimAlpha:SetOrder(1)
-    local shimAlphaOut = shimAG:CreateAnimation("Alpha")
-    shimAlphaOut:SetFromAlpha(0.8)
-    shimAlphaOut:SetToAlpha(0)
-    shimAlphaOut:SetDuration(0.3)
-    shimAlphaOut:SetStartDelay(0.7)
-    shimAG:SetLooping("REPEAT")
-    UI.logoShimmerAG = shimAG
-    shimAG:Play()
 
     local historyButton = IconButton.Create(
         totalFrame,
@@ -431,6 +429,9 @@ function NS.UpdateColorsOnly()
     if UI.killCountText then
         UI.killCountText:SetTextColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 1)
     end
+    if UI.killCountCounterText then
+        UI.killCountCounterText:SetTextColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 1)
+    end
     if UI.logoGlow then
         UI.logoGlow:SetTextColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 0.6)
     end
@@ -463,7 +464,7 @@ function NS.UpdateColorsOnly()
 
     if UI.st and UI.st.head and UI.st.head.cols then
         for i = 1, #UI.st.head.cols do
-            UI.StyleHeaderCell(UI.st.head.cols[i], UI.cols[i].align, 1.0, UI.cols[i].name)
+            UI.StyleHeaderCell(UI.st.head.cols[i], UI.cols[i].align, 1.0, UI.cols[i].name, GetHeaderColorKey(i))
         end
     end
 end
@@ -473,6 +474,7 @@ function NS.UpdateFontsOnly()
         return
     end
 
+    if UI.killCountCounterText then NS.ApplyFontToFS(UI.killCountCounterText, "counter", 0.95) end
     if UI.killCountText then NS.ApplyFontToFS(UI.killCountText, "counter") end
     if UI.totalPB then NS.ApplyFontToFS(UI.totalPB, "num") end
     if UI.totalSplit then NS.ApplyFontToFS(UI.totalSplit, "num") end
@@ -494,7 +496,7 @@ function NS.UpdateFontsOnly()
     end
     if UI.st and UI.st.head and UI.st.head.cols then
         for i = 1, #UI.st.head.cols do
-            UI.StyleHeaderCell(UI.st.head.cols[i], UI.cols[i].align, 1.0, UI.cols[i].name)
+            UI.StyleHeaderCell(UI.st.head.cols[i], UI.cols[i].align, 1.0, UI.cols[i].name, GetHeaderColorKey(i))
         end
     end
 end

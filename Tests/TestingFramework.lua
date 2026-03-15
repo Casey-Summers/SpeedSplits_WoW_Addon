@@ -1,45 +1,119 @@
 local _, NS = ...
-NS.TestUI = {}
+
+NS.TestUI = NS.TestUI or {}
+
 local UI = NS.TestUI
 local System = NS.TestSystem
+
+local function GetStatusColor(status)
+    if status == "PASS" then
+        return "|cff00ff00"
+    end
+    if status == "FAIL" then
+        return "|cffff4444"
+    end
+    if status == "RUNNING" then
+        return "|cff00ccff"
+    end
+    if status == "INFO" then
+        return "|cff00ccff"
+    end
+    return "|cffaaaaaa"
+end
+
+local function MatchesFilter(run)
+    local filter = System.LogFilter or "ALL"
+    if filter == "ALL" then
+        return true
+    end
+    if filter == "INFO" then
+        return run.status == "RUNNING"
+    end
+    return run.status == filter
+end
+
+local function IsVisibleRun(selectedRunId, visibleRuns)
+    for _, run in ipairs(visibleRuns) do
+        if run.runId == selectedRunId then
+            return true
+        end
+    end
+    return false
+end
+
+local function CreateActionButton(parent, text, y, onClick)
+    local btn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    btn:SetSize(180, 32)
+    btn:SetPoint("TOP", 0, y)
+    btn:SetText(text)
+    btn:SetScript("OnClick", onClick)
+    return btn
+end
+
+local function BuildSuiteButtons(container)
+    UI.suiteButtons = UI.suiteButtons or {}
+
+    for _, btn in ipairs(UI.suiteButtons) do
+        btn:Hide()
+    end
+
+    local suiteY = -10
+    for index, suite in ipairs(System.GetSuites()) do
+        local btn = UI.suiteButtons[index]
+        if not btn then
+            btn = CreateFrame("Button", nil, container, "UIPanelButtonTemplate")
+            btn:SetSize(160, 32)
+            UI.suiteButtons[index] = btn
+        end
+
+        btn:Show()
+        btn:SetPoint("TOP", container, "TOP", 10, suiteY)
+        btn:SetText(suite .. " Suite")
+        btn:SetScript("OnClick", function()
+            System.RunSuite(suite)
+        end)
+        suiteY = suiteY - 35
+    end
+
+    container:SetHeight(math.max(1, 10 + (#System.GetSuites() * 35)))
+end
 
 function UI.CreateTestFrame()
     if UI.frame then
         UI.frame:Show()
-        UI.RefreshStatusList() -- Update status list in case new results came in
+        UI.RefreshStatusList()
+        UI.UpdateTerminal()
         return
     end
 
-    local f = CreateFrame("Frame", "SpeedSplitsTestFrame", UIParent, "BackdropTemplate")
-    f:SetSize(850, 550) -- Slightly larger to accommodate two columns
-    f:SetPoint("CENTER")
-    f:SetFrameStrata("DIALOG")
-    f:SetBackdrop({
+    local frame = CreateFrame("Frame", "SpeedSplitsTestFrame", UIParent, "BackdropTemplate")
+    frame:SetSize(980, 620)
+    frame:SetPoint("CENTER")
+    frame:SetFrameStrata("DIALOG")
+    frame:SetBackdrop({
         bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
         edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
         tile = true,
         tileSize = 32,
         edgeSize = 32,
-        insets = { left = 8, right = 8, top = 8, bottom = 8 }
+        insets = { left = 8, right = 8, top = 8, bottom = 8 },
     })
-    f:SetBackdropColor(0, 0, 0, 0.95)
-    f:EnableMouse(true)
-    f:SetMovable(true)
-    f:RegisterForDrag("LeftButton")
-    f:SetScript("OnDragStart", f.StartMoving)
-    f:SetScript("OnDragStop", f.StopMovingOrSizing)
-    UI.frame = f
+    frame:SetBackdropColor(0, 0, 0, 0.95)
+    frame:EnableMouse(true)
+    frame:SetMovable(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", frame.StartMoving)
+    frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
+    UI.frame = frame
 
-    -- Title
-    local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 20, -15)
     title:SetText("SpeedSplits Modular Test Environment")
 
-    local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+    local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", -5, -5)
 
-    -- Left Panel: Actions
-    local leftPanel = CreateFrame("Frame", nil, f, "BackdropTemplate")
+    local leftPanel = CreateFrame("Frame", nil, frame, "BackdropTemplate")
     leftPanel:SetPoint("TOPLEFT", 15, -50)
     leftPanel:SetPoint("BOTTOMLEFT", 15, 15)
     leftPanel:SetWidth(200)
@@ -51,76 +125,54 @@ function UI.CreateTestFrame()
     leftPanel:SetBackdropColor(0.1, 0.1, 0.1, 0.5)
     leftPanel:SetBackdropBorderColor(1, 1, 1, 0.2)
 
-    local function CreateActionBtn(parent, text, y, func, colorType)
-        local btn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-        btn:SetSize(180, 32)
-        btn:SetPoint("TOP", 0, y)
-        btn:SetText(text)
-        btn:SetScript("OnClick", func)
-        return btn
-    end
-
-    -- Pinned Section at top of Left Panel
-    local PinnedSection = CreateFrame("Frame", nil, leftPanel, "BackdropTemplate")
-    PinnedSection:SetPoint("TOPLEFT", 0, 0)
-    PinnedSection:SetPoint("TOPRIGHT", 0, 0)
-    PinnedSection:SetHeight(155)
-    PinnedSection:SetBackdrop({
+    local pinned = CreateFrame("Frame", nil, leftPanel, "BackdropTemplate")
+    pinned:SetPoint("TOPLEFT", 0, 0)
+    pinned:SetPoint("TOPRIGHT", 0, 0)
+    pinned:SetHeight(155)
+    pinned:SetBackdrop({
         bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
         edgeFile = "Interface\\Buttons\\WHITE8X8",
         edgeSize = 1,
     })
-    PinnedSection:SetBackdropColor(0.2, 0.2, 0.2, 0.4)
-    PinnedSection:SetBackdropBorderColor(1, 1, 0, 0.3) -- Yellow border for pinned
+    pinned:SetBackdropColor(0.2, 0.2, 0.2, 0.4)
+    pinned:SetBackdropBorderColor(1, 1, 0, 0.3)
 
-    CreateActionBtn(PinnedSection, "|cffffff00Run All Tests|r", -10, function() System.RunAllTests() end)
-    CreateActionBtn(PinnedSection, "Simulate This Instance", -45, function()
-        System.Log("SIMULATION START: Finding current instance data...", "INFO")
+    CreateActionButton(pinned, "|cffffff00Run All Tests|r", -10, function()
+        System.RunAllTests()
+    end)
+    CreateActionButton(pinned, "Simulate This Instance", -45, function()
+        System.LogInfo("Simulation helper: finding current instance data.", "INFO")
         NS.BeginInstanceSession()
     end)
-    CreateActionBtn(PinnedSection, "Simulate speedrun", -80, function()
-        if NS.SimulateSpeedrun then NS.SimulateSpeedrun() end
+    CreateActionButton(pinned, "Simulate speedrun", -80, function()
+        if System.RunTestById and System.RegisteredTestsById["logic_scenario_speedrun_regression"] then
+            System.RunTestById("logic_scenario_speedrun_regression")
+        elseif NS.SimulateSpeedrun then
+            NS.SimulateSpeedrun()
+        end
     end)
-    CreateActionBtn(PinnedSection, "Clear Logs", -115, function()
-        System.Logs = {}
-        UI.UpdateTerminal()
+    CreateActionButton(pinned, "Clear Runs", -115, function()
+        System.ClearRunHistory()
     end)
 
-    -- Dynamic Suites Section
     local suiteScroll = CreateFrame("ScrollFrame", nil, leftPanel, "UIPanelScrollFrameTemplate")
     suiteScroll:SetPoint("TOPLEFT", 0, -165)
     suiteScroll:SetPoint("BOTTOMRIGHT", -25, 5)
 
     local suiteContent = CreateFrame("Frame", nil, suiteScroll)
-    suiteContent:SetSize(175, 500) -- Set proper width for centering
+    suiteContent:SetSize(175, 1)
     suiteScroll:SetScrollChild(suiteContent)
+    UI.suiteContent = suiteContent
+    BuildSuiteButtons(suiteContent)
 
-    local suiteY = -10
-    local suites = { "UI", "Discovery", "Logic", "PB", "History", "UX" }
-    for _, s in ipairs(suites) do
-        local btn = CreateFrame("Button", nil, suiteContent, "UIPanelButtonTemplate")
-        btn:SetSize(160, 32)
-        btn:SetPoint("TOP", suiteContent, "TOP", 10, suiteY)
-        btn:SetText(s .. " Suite")
-        btn:SetScript("OnClick", function()
-            System.Log("Running Suite: " .. s, "INFO")
-            for i, t in ipairs(System.Tests) do
-                if t.suite == s then System.RunTest(i) end
-            end
-        end)
-        suiteY = suiteY - 35
-    end
-
-    -- Right Panel: Terminal & Status
-    local rightPanel = CreateFrame("Frame", nil, f)
+    local rightPanel = CreateFrame("Frame", nil, frame)
     rightPanel:SetPoint("TOPLEFT", leftPanel, "TOPRIGHT", 10, 0)
     rightPanel:SetPoint("BOTTOMRIGHT", -15, 15)
 
-    -- Status Widget (Top of right panel)
     local statusFrame = CreateFrame("Frame", nil, rightPanel, "BackdropTemplate")
     statusFrame:SetPoint("TOPLEFT", 0, 0)
     statusFrame:SetPoint("TOPRIGHT", 0, 0)
-    statusFrame:SetHeight(180) -- Slightly taller for 2 columns
+    statusFrame:SetHeight(120)
     statusFrame:SetBackdrop({
         bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
         edgeFile = "Interface\\Buttons\\WHITE8X8",
@@ -130,17 +182,13 @@ function UI.CreateTestFrame()
     statusFrame:SetBackdropBorderColor(1, 1, 1, 0.1)
     UI.statusFrame = statusFrame
 
-    local statusScroll = CreateFrame("ScrollFrame", "SpeedSplitsTestStatusScroll", statusFrame,
-        "UIPanelScrollFrameTemplate")
-    statusScroll:SetPoint("TOPLEFT", 5, -5)
-    statusScroll:SetPoint("BOTTOMRIGHT", -25, 5)
+    local statusText = statusFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    statusText:SetPoint("TOPLEFT", 10, -10)
+    statusText:SetPoint("TOPRIGHT", -10, -10)
+    statusText:SetJustifyH("LEFT")
+    statusText:SetJustifyV("TOP")
+    UI.statusText = statusText
 
-    local statusContent = CreateFrame("Frame", nil, statusScroll)
-    statusContent:SetSize(1, 1)
-    statusScroll:SetScrollChild(statusContent)
-    UI.statusContent = statusContent
-
-    -- Latest Result Widget (Single line between status and terminal)
     local lastResultFrame = CreateFrame("Frame", nil, rightPanel, "BackdropTemplate")
     lastResultFrame:SetPoint("TOPLEFT", statusFrame, "BOTTOMLEFT", 0, -5)
     lastResultFrame:SetPoint("TOPRIGHT", statusFrame, "BOTTOMRIGHT", 0, -5)
@@ -152,35 +200,37 @@ function UI.CreateTestFrame()
     })
     lastResultFrame:SetBackdropColor(0.2, 0.2, 0.2, 0.6)
     lastResultFrame:SetBackdropBorderColor(1, 1, 1, 0.2)
-    UI.lastResultFrame = lastResultFrame
 
     local lastResultText = lastResultFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     lastResultText:SetPoint("LEFT", 10, 0)
     lastResultText:SetText("|cff888888Latest Result:|r None")
     UI.lastResultText = lastResultText
 
-    local dropdownLabel = lastResultFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    dropdownLabel:SetPoint("RIGHT", -80, 0)
-    dropdownLabel:SetText("Filter:")
+    local filterLabel = lastResultFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    filterLabel:SetPoint("RIGHT", -80, 0)
+    filterLabel:SetText("Filter:")
 
-    local cycleFilterBtn = CreateFrame("Button", nil, lastResultFrame, "UIPanelButtonTemplate")
-    cycleFilterBtn:SetSize(60, 18)
-    cycleFilterBtn:SetPoint("RIGHT", dropdownLabel, "RIGHT", 65, 0)
-    cycleFilterBtn:SetText("ALL")
-    
+    local filterButton = CreateFrame("Button", nil, lastResultFrame, "UIPanelButtonTemplate")
+    filterButton:SetSize(60, 18)
+    filterButton:SetPoint("RIGHT", filterLabel, "RIGHT", 65, 0)
+    filterButton:SetText(System.LogFilter or "ALL")
+    UI.filterButton = filterButton
+
     local filters = { "ALL", "PASS", "FAIL", "INFO" }
-    cycleFilterBtn:SetScript("OnClick", function()
-        local current = System.LogFilter
-        local nextIdx = 1
-        for i, f in ipairs(filters) do
-            if f == current then nextIdx = (i % 4) + 1 break end
+    filterButton:SetScript("OnClick", function(self)
+        local current = System.LogFilter or "ALL"
+        local nextIndex = 1
+        for i, value in ipairs(filters) do
+            if value == current then
+                nextIndex = (i % #filters) + 1
+                break
+            end
         end
-        System.LogFilter = filters[nextIdx]
-        cycleFilterBtn:SetText(System.LogFilter)
+        System.LogFilter = filters[nextIndex]
+        self:SetText(System.LogFilter)
         UI.UpdateTerminal()
     end)
 
-    -- Terminal (Bottom of right panel)
     local termFrame = CreateFrame("Frame", nil, rightPanel, "BackdropTemplate")
     termFrame:SetPoint("TOPLEFT", lastResultFrame, "BOTTOMLEFT", 0, -5)
     termFrame:SetPoint("BOTTOMRIGHT", 0, 0)
@@ -192,217 +242,273 @@ function UI.CreateTestFrame()
     termFrame:SetBackdropColor(0, 0, 0, 0.8)
     termFrame:SetBackdropBorderColor(0, 0.8, 1, 0.4)
 
-    -- Divide the remaining space into two columns
-    local leftTermFrame = CreateFrame("Frame", nil, termFrame)
+    local leftTermFrame = CreateFrame("Frame", nil, termFrame, "BackdropTemplate")
     leftTermFrame:SetPoint("TOPLEFT", 0, 0)
     leftTermFrame:SetPoint("BOTTOMLEFT", 0, 0)
-    leftTermFrame:SetWidth(280)
+    leftTermFrame:SetWidth(310)
+    leftTermFrame:SetBackdrop({
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    leftTermFrame:SetBackdropBorderColor(1, 1, 1, 0.08)
 
     local rightTermFrame = CreateFrame("Frame", nil, termFrame)
     rightTermFrame:SetPoint("TOPLEFT", leftTermFrame, "TOPRIGHT", 0, 0)
     rightTermFrame:SetPoint("BOTTOMRIGHT", 0, 0)
-    
-    -- Left Scroll (High-level logs)
-    local leftTermScroll = CreateFrame("ScrollFrame", "SpeedSplitsTestTermLeftScroll", leftTermFrame, "UIPanelScrollFrameTemplate")
-    leftTermScroll:SetPoint("TOPLEFT", 8, -8)
-    leftTermScroll:SetPoint("BOTTOMRIGHT", -28, 25)
 
-    local leftTermContent = CreateFrame("Frame", nil, leftTermScroll)
-    leftTermContent:SetSize(250, 10)
-    leftTermScroll:SetScrollChild(leftTermContent)
-    UI.leftTermContent = leftTermContent
+    local leftScroll = CreateFrame("ScrollFrame", "SpeedSplitsTestTermLeftScroll", leftTermFrame,
+        "UIPanelScrollFrameTemplate")
+    leftScroll:SetPoint("TOPLEFT", 8, -8)
+    leftScroll:SetPoint("BOTTOMRIGHT", -28, 25)
 
-    -- Right Scroll (Low-level details)
-    local rightTermScroll = CreateFrame("ScrollFrame", "SpeedSplitsTestTermRightScroll", rightTermFrame, "UIPanelScrollFrameTemplate")
-    rightTermScroll:SetPoint("TOPLEFT", 8, -8)
-    rightTermScroll:SetPoint("BOTTOMRIGHT", -28, 25)
+    local leftContent = CreateFrame("Frame", nil, leftScroll)
+    leftContent:SetSize(280, 10)
+    leftScroll:SetScrollChild(leftContent)
+    UI.leftTermContent = leftContent
 
-    local termHelp = termFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    termHelp:SetPoint("BOTTOMLEFT", 10, 5)
-    termHelp:SetText("|cff888888Hover over a section on the left to see low-level test assertions here.|r")
+    local rightScroll = CreateFrame("ScrollFrame", "SpeedSplitsTestTermRightScroll", rightTermFrame,
+        "UIPanelScrollFrameTemplate")
+    rightScroll:SetPoint("TOPLEFT", 8, -8)
+    rightScroll:SetPoint("BOTTOMRIGHT", -28, 25)
 
-    local rightTermContent = CreateFrame("Frame", nil, rightTermScroll)
-    rightTermContent:SetSize(280, 10)
-    rightTermScroll:SetScrollChild(rightTermContent)
+    local helpText = termFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    helpText:SetPoint("BOTTOMLEFT", 10, 5)
+    helpText:SetText("|cff888888Hover over a test on the left to inspect its low-level detail trail.|r")
 
-    local rightTermText = rightTermContent:CreateFontString(nil, "OVERLAY", "ChatFontNormal")
-    rightTermText:SetPoint("TOPLEFT", 10, -10)
-    rightTermText:SetWidth(260)
-    rightTermText:SetJustifyH("LEFT")
-    rightTermText:SetJustifyV("TOP")
-    UI.rightTermText = rightTermText
-    UI.rightTermContent = rightTermContent
+    local rightContent = CreateFrame("Frame", nil, rightScroll)
+    rightContent:SetSize(480, 10)
+    rightScroll:SetScrollChild(rightContent)
+
+    local rightText = rightContent:CreateFontString(nil, "OVERLAY", "ChatFontNormal")
+    rightText:SetPoint("TOPLEFT", 10, -10)
+    rightText:SetWidth(450)
+    rightText:SetJustifyH("LEFT")
+    rightText:SetJustifyV("TOP")
+    UI.rightTermText = rightText
+    UI.rightTermContent = rightContent
 
     UI.RefreshStatusList()
     UI.UpdateTerminal()
 end
 
 function UI.RefreshStatusList()
-    if not UI.statusContent then return end
-
-    -- Clear old children
-    local children = { UI.statusContent:GetChildren() }
-    for _, child in ipairs(children) do
-        child:Hide()
-        child:SetParent(nil)
+    if not UI.statusText then
+        return
     end
 
-    -- Sort tests so FAILs are first
-    local sortedTests = {}
-    for i, t in ipairs(System.Tests) do sortedTests[i] = t end
-    table.sort(sortedTests, function(a, b)
-        local resA = System.Results[a.name] or "PENDING"
-        local resB = System.Results[b.name] or "PENDING"
-        if resA == "FAIL" and resB ~= "FAIL" then return true end
-        if resB == "FAIL" and resA ~= "FAIL" then return false end
-        return false -- Stable-ish
-    end)
+    local summary = System.GetSuiteSummary()
+    local lines = { "|cffffff00Registered Suites|r" }
+    local totalRegistered = #System.RegisteredTests
+    local totalRuns = #System.RunHistory
 
-    local colWidth = 280
-    local rowHeight = 22
-    for i, test in ipairs(sortedTests) do
-        local col = (i - 1) % 2
-        local rowIdx = math.floor((i - 1) / 2)
+    lines[#lines + 1] = string.format("|cffbbbbbbTests:|r %d   |cffbbbbbbRuns:|r %d", totalRegistered, totalRuns)
 
-        local row = CreateFrame("Frame", nil, UI.statusContent)
-        row:SetSize(colWidth, rowHeight)
-        row:SetPoint("TOPLEFT", col * colWidth, -(rowIdx * rowHeight))
-
-        local name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        name:SetPoint("LEFT", 5, 0)
-        name:SetWidth(colWidth - 80)
-        name:SetJustifyH("LEFT")
-        name:SetText(string.format("|cff999999[%s]|r %s", test.suite:sub(1, 1), test.name))
-
-        local status = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        status:SetPoint("RIGHT", -5, 0)
-
-        local res = System.Results[test.name] or "PENDING"
-        local color = "|cff888888"
-        if res == "PASS" then
-            color = "|cff00ff00"
-        elseif res == "FAIL" then
-            color = "|cffff0000"
+    for _, suite in ipairs(System.GetSuites()) do
+        local bucket = summary[suite]
+        if bucket then
+            local suiteStatus = "PENDING"
+            if bucket.fail > 0 then
+                suiteStatus = "FAIL"
+            elseif bucket.running > 0 then
+                suiteStatus = "RUNNING"
+            elseif bucket.pass > 0 and bucket.pending == 0 then
+                suiteStatus = "PASS"
+            end
+            lines[#lines + 1] = string.format(
+                "%s|r |cff888888(%d)|r  |cff00ff00P:%d|r  |cffff4444F:%d|r  |cff00ccffR:%d|r  |cffaaaaaaQ:%d|r",
+                GetStatusColor(suiteStatus) .. suite,
+                bucket.total,
+                bucket.pass,
+                bucket.fail,
+                bucket.running,
+                bucket.pending
+            )
         end
-        status:SetText(color .. res .. "|r")
     end
 
-    local totalRows = math.ceil(#System.Tests / 2)
-    UI.statusContent:SetHeight(totalRows * rowHeight + 10)
+    UI.statusText:SetText(table.concat(lines, "\n"))
 
-    -- Update Latest Result Widget
     if System.LastResult and UI.lastResultText then
-        local color = (System.LastResult.status == "PASS") and "|cff00ff00" or "|cffff0000"
-        UI.lastResultText:SetText(string.format("|cffbbbbbbLatest Result:|r %s (%s%s|r)", 
-            System.LastResult.name, color, System.LastResult.status))
+        local color = GetStatusColor(System.LastResult.status)
+        UI.lastResultText:SetText(string.format("|cffbbbbbbLatest Result:|r %s%s|r (%s%s|r)",
+            color,
+            System.LastResult.name,
+            color,
+            System.LastResult.status))
+    elseif UI.lastResultText then
+        UI.lastResultText:SetText("|cff888888Latest Result:|r None")
+    end
+
+    if UI.suiteContent then
+        BuildSuiteButtons(UI.suiteContent)
     end
 end
 
-function UI.HighlightSelectedLogBtn()
-    if not UI.leftLogPool then return end
-    for _, btn in ipairs(UI.leftLogPool) do
-        if btn:IsShown() and btn.testName and btn.testName == UI.SelectedDetailTest then
-            btn:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8x8"})
-            btn:SetBackdropColor(1,1,1,0.1)
+function UI.HighlightSelectedRun()
+    if not UI.leftRunPool then
+        return
+    end
+
+    for _, row in ipairs(UI.leftRunPool) do
+        if row:IsShown() and row.runId == UI.SelectedRunId then
+            row:SetBackdrop({
+                bgFile = "Interface\\Buttons\\WHITE8X8",
+                edgeFile = "Interface\\Buttons\\WHITE8X8",
+                edgeSize = 1,
+            })
+            row:SetBackdropColor(1, 1, 1, 0.08)
+            row:SetBackdropBorderColor(1, 1, 1, 0.12)
         else
-            btn:SetBackdrop(nil)
+            row:SetBackdrop({
+                bgFile = "Interface\\Buttons\\WHITE8X8",
+                edgeFile = "Interface\\Buttons\\WHITE8X8",
+                edgeSize = 1,
+            })
+            row:SetBackdropColor(0, 0, 0, 0.25)
+            row:SetBackdropBorderColor(1, 1, 1, 0.04)
         end
     end
 end
 
-function UI.GetLeftLogBtn(index)
-    UI.leftLogPool = UI.leftLogPool or {}
-    if not UI.leftLogPool[index] then
-        local btn = CreateFrame("Button", nil, UI.leftTermContent, "BackdropTemplate")
-        btn.text = btn:CreateFontString(nil, "OVERLAY", "ChatFontNormal")
-        btn.text:SetPoint("LEFT", 5, 0)
-        UI.leftLogPool[index] = btn
+function UI.GetRunRow(index)
+    UI.leftRunPool = UI.leftRunPool or {}
+    if not UI.leftRunPool[index] then
+        local row = CreateFrame("Button", nil, UI.leftTermContent, "BackdropTemplate")
+        row:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8X8",
+            edgeFile = "Interface\\Buttons\\WHITE8X8",
+            edgeSize = 1,
+        })
+        row.nameText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        row.nameText:SetPoint("TOPLEFT", 8, -6)
+        row.nameText:SetPoint("TOPRIGHT", -8, -6)
+        row.nameText:SetJustifyH("LEFT")
+        row.nameText:SetJustifyV("TOP")
+
+        row.statusText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        row.statusText:SetPoint("BOTTOMLEFT", 8, 6)
+        row.statusText:SetPoint("BOTTOMRIGHT", -8, 6)
+        row.statusText:SetJustifyH("LEFT")
+        row.statusText:SetJustifyV("BOTTOM")
+
+        UI.leftRunPool[index] = row
     end
-    return UI.leftLogPool[index]
+
+    return UI.leftRunPool[index]
 end
 
 function UI.UpdateTerminal()
-    if not UI.leftTermContent then return end
-    
-    -- Hide all pooled buttons
-    if UI.leftLogPool then
-        for _, btn in ipairs(UI.leftLogPool) do
-            btn:Hide()
+    if not UI.leftTermContent then
+        return
+    end
+
+    if UI.leftRunPool then
+        for _, row in ipairs(UI.leftRunPool) do
+            row:Hide()
         end
     end
 
-    local drawnCount = 0
-    local lastValidTestName = nil
-
-    for _, log in ipairs(System.Logs) do
-        if System.LogFilter == "ALL" or log.status == System.LogFilter or log.status == "NONE" then
-            local color = "|cffffffff"
-            if log.status == "PASS" then color = "|cff00ff00"
-            elseif log.status == "FAIL" then color = "|cffff0000"
-            elseif log.status == "INFO" then color = "|cff00ccff"
-            end
-
-            drawnCount = drawnCount + 1
-            local btn = UI.GetLeftLogBtn(drawnCount)
-            btn:Show()
-            btn:SetSize(250, 20)
-            btn:SetPoint("TOPLEFT", 0, -((drawnCount - 1) * 22))
-            
-            btn.text:SetText(string.format("%s%s|r", color, log.msg))
-            btn.testName = log.testName
-            
-            btn:SetScript("OnEnter", function(self)
-                if self.testName then
-                    UI.SelectedDetailTest = self.testName
-                    UI.UpdateDetails()
-                    UI.HighlightSelectedLogBtn()
-                end
-            end)
-            btn:SetScript("OnLeave", nil)
-            
-            if log.testName then lastValidTestName = log.testName end
+    local visibleRuns = {}
+    for _, run in ipairs(System.GetRunHistory()) do
+        if MatchesFilter(run) then
+            visibleRuns[#visibleRuns + 1] = run
         end
     end
 
-    UI.leftTermContent:SetHeight(drawnCount * 22 + 10)
-    
-    if lastValidTestName then
-        UI.SelectedDetailTest = lastValidTestName
-        UI.UpdateDetails()
-        UI.HighlightSelectedLogBtn()
+    for index, run in ipairs(visibleRuns) do
+        local row = UI.GetRunRow(index)
+        row:Show()
+        row.runId = run.runId
+        row:SetSize(280, 44)
+        row:SetPoint("TOPLEFT", 0, -((index - 1) * 48))
+
+        row.nameText:SetText(string.format("|cff999999[%s]|r %s", run.suite, run.name))
+        row.statusText:SetText(string.format("%s%s|r", GetStatusColor(run.status), run.status))
+
+        row:SetScript("OnEnter", function(self)
+            UI.SelectedRunId = self.runId
+            UI.UpdateDetails()
+            UI.HighlightSelectedRun()
+        end)
+        row:SetScript("OnClick", function(self)
+            UI.SelectedRunId = self.runId
+            UI.UpdateDetails()
+            UI.HighlightSelectedRun()
+        end)
     end
 
-    -- Auto scroll to bottom
+    UI.leftTermContent:SetHeight(math.max(48, (#visibleRuns * 48) + 10))
+
+    if #visibleRuns == 0 then
+        UI.SelectedRunId = nil
+    elseif not UI.SelectedRunId or not IsVisibleRun(UI.SelectedRunId, visibleRuns) then
+        UI.SelectedRunId = visibleRuns[#visibleRuns].runId
+    end
+
+    UI.HighlightSelectedRun()
+    UI.UpdateDetails()
+
     local scroll = _G["SpeedSplitsTestTermLeftScroll"]
     if scroll then
-        C_Timer.After(0.1, function()
+        C_Timer.After(0.05, function()
             scroll:SetVerticalScroll(scroll:GetVerticalScrollRange())
         end)
     end
 end
 
 function UI.UpdateDetails()
-    if not UI.rightTermText then return end
-    local currentTest = UI.SelectedDetailTest
-    if not currentTest or not System.TestLogs[currentTest] then
-        UI.rightTermText:SetText("|cff888888No details available for this log.|r")
-        if UI.rightTermContent then UI.rightTermContent:SetHeight(UI.rightTermText:GetStringHeight() + 20) end
+    if not UI.rightTermText then
         return
     end
 
-    local lines = { "|cffffff00" .. currentTest .. " Details:|r" }
-    for _, log in ipairs(System.TestLogs[currentTest]) do
-        local color = "|cffffffff"
-        if log.status == "PASS" then color = "|cff00ff00"
-        elseif log.status == "FAIL" then color = "|cffff0000"
-        elseif log.status == "INFO" then color = "|cff00ccff"
+    local run = UI.SelectedRunId and System.GetSelectedOrLastRun(UI.SelectedRunId) or nil
+    if not run then
+        if System.SessionMessages and #System.SessionMessages > 0 then
+            local lines = { "|cffffff00Session Messages|r" }
+            for _, message in ipairs(System.SessionMessages) do
+                lines[#lines + 1] = string.format("%s%s|r", GetStatusColor(message.status), message.message)
+            end
+            UI.rightTermText:SetText(table.concat(lines, "\n"))
+        elseif #System.RunHistory > 0 then
+            UI.rightTermText:SetText("|cff888888No test runs match the current filter.|r")
+        else
+            UI.rightTermText:SetText("|cff888888No executed tests yet. Run a suite or hover a test row once one exists.|r")
         end
-        table.insert(lines, string.format("  - %s%s|r", color, log.msg))
+        UI.rightTermContent:SetHeight(UI.rightTermText:GetStringHeight() + 20)
+        return
     end
-    
-    local content = table.concat(lines, "\n")
-    local old = UI.rightTermText:GetText()
-    if content ~= old then UI.rightTermText:SetText(content) end
-    if UI.rightTermContent then UI.rightTermContent:SetHeight(UI.rightTermText:GetStringHeight() + 20) end
-end
 
+    local lines = {
+        string.format("|cffffff00%s|r", run.name),
+        string.format("|cffbbbbbbSuite:|r %s   |cffbbbbbbSubcategory:|r %s   |cffbbbbbbStatus:|r %s%s|r",
+            run.suite,
+            run.subcategory or "General",
+            GetStatusColor(run.status),
+            run.status),
+    }
+
+    local details = System.GetRunDetails(run.runId)
+    if #details == 0 then
+        lines[#lines + 1] = ""
+        lines[#lines + 1] = "|cff888888No low-level details were recorded for this run.|r"
+    else
+        for _, detail in ipairs(details) do
+            local color = GetStatusColor(detail.status)
+            if detail.kind == "section_start" then
+                lines[#lines + 1] = ""
+                lines[#lines + 1] = string.format("|cffffff00Section: %s|r", detail.label or detail.message or "Unnamed")
+            elseif detail.kind == "section_end" then
+                lines[#lines + 1] = string.format("|cff666666End Section: %s|r", detail.label or detail.message or "Unnamed")
+            elseif detail.kind == "assertion" then
+                lines[#lines + 1] = string.format("%s[%s]|r %s", color, detail.status, detail.label or detail.message or "Assertion")
+                lines[#lines + 1] = string.format("  |cffbbbbbbExpected:|r %s", detail.expected or "nil")
+                lines[#lines + 1] = string.format("  |cffbbbbbbActual:|r %s", detail.actual or "nil")
+            else
+                lines[#lines + 1] = string.format("%s[%s]|r %s", color, detail.status or "INFO", detail.message or "")
+            end
+        end
+    end
+
+    UI.rightTermText:SetText(table.concat(lines, "\n"))
+    UI.rightTermContent:SetHeight(UI.rightTermText:GetStringHeight() + 20)
+end

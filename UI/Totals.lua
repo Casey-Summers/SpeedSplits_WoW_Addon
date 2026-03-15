@@ -5,10 +5,13 @@ local Util = NS.Util
 
 local function SetKillCount(killed, total)
     local displayName = (NS.Run and NS.Run.instanceName ~= "") and NS.Run.instanceName or "Boss"
-    local text = string.format("%s (%d/%d)", displayName, killed or 0, total or 0)
+    local counterText = string.format("(%d/%d)", killed or 0, total or 0)
 
     if UI.killCountText then
-        UI.killCountText:SetText(text)
+        UI.killCountText:SetText(displayName)
+    end
+    if UI.killCountCounterText then
+        UI.killCountCounterText:SetText(counterText)
     end
 
     if UI.st and UI.st.head and UI.st.head.cols and UI.st.head.cols[1] then
@@ -42,11 +45,11 @@ local function SetTotals(pbTotal, splitTotal, deltaTotal, r, g, b)
         if r and g and b then
             UI.totalSplit:SetTextColor(r, g, b, 1)
         else
-            UI.totalSplit:SetTextColor(1, 1, 1, 1)
+            UI.totalSplit:SetTextColor(NS.Colors.white.r, NS.Colors.white.g, NS.Colors.white.b, 1)
         end
     else
         UI.totalSplit:SetText("--:--.---")
-        UI.totalSplit:SetTextColor(1, 1, 1, 1)
+        UI.totalSplit:SetTextColor(NS.Colors.white.r, NS.Colors.white.g, NS.Colors.white.b, 1)
     end
 
     if deltaTotal == nil then
@@ -56,7 +59,7 @@ local function SetTotals(pbTotal, splitTotal, deltaTotal, r, g, b)
         if r and g and b then
             UI.totalDelta:SetTextColor(r, g, b, 1)
         else
-            UI.totalDelta:SetTextColor(1, 1, 1, 1)
+            UI.totalDelta:SetTextColor(NS.Colors.white.r, NS.Colors.white.g, NS.Colors.white.b, 1)
         end
     end
 end

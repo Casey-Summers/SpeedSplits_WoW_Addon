@@ -16,6 +16,9 @@ function HistoryRow.Create(parent, onDelete)
     for i = 1, 8 do
         local fs = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         fs:SetHeight(24)
+        if NS.Colors and NS.Colors.white then
+            fs:SetTextColor(NS.Colors.white.r, NS.Colors.white.g, NS.Colors.white.b, NS.Colors.white.a or 1)
+        end
         row.cols[i] = fs
         if i == 8 then
             local btn = CreateFrame("Button", nil, row)

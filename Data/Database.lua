@@ -90,6 +90,7 @@ local function EnsureDB()
     settings.visibility = settings.visibility or Util.CopyTable(fallbacks.visibility)
     settings.speedrunMode = settings.speedrunMode or fallbacks.speedrunMode
     settings.ignoredBosses = settings.ignoredBosses or {}
+    settings.autoIgnoredBosses = settings.autoIgnoredBosses or {}
 
     if not SpeedSplitsDB.DefaultStyle then
         SpeedSplitsDB.DefaultStyle = Util.CopyTable(NS.FactoryDefaults.Settings)

@@ -48,7 +48,7 @@ function UI.SetHoverBackdrop(frame, alpha)
     frame:SetBackdropBorderColor(1, 1, 1, 0.10)
 end
 
-function UI.StyleHeaderCell(cell, align, multiplier, text)
+function UI.StyleHeaderCell(cell, align, multiplier, text, colorKey)
     if not cell then
         return
     end
@@ -74,9 +74,10 @@ function UI.StyleHeaderCell(cell, align, multiplier, text)
     fs:SetJustifyV("MIDDLE")
     NS.ApplyFontToFS(fs, "header", multiplier)
 
-    local color = (Colors and Colors.turquoise) or { r = 0, g = 0.74, b = 0.76 }
+    local colorName = colorKey or "turquoise"
+    local color = (Colors and Colors[colorName]) or { r = 0, g = 0.74, b = 0.76 }
     fs:SetTextColor(color.r, color.g, color.b, 1)
-    cell.turquoiseSet = true
+    cell.turquoiseSet = (colorName == "turquoise")
     fs:SetDrawLayer("OVERLAY", 7)
     fs:ClearAllPoints()
     fs:SetAllPoints(cell)

@@ -112,6 +112,12 @@ local function ApplyTableLayout()
     local bossWidth = math.max(available - (UI._modelWidth + UI._pbWidth + UI._splitWidth + UI._deltaWidth),
         Const.COL_MIN_BOSS)
 
+    if UI.killCountCounterText and UI.killCountText then
+        local counterWidth = math.max(UI.killCountCounterText:GetStringWidth() or 0, 36)
+        UI.killCountCounterText:SetWidth(counterWidth)
+        UI.killCountText:SetWidth(math.max(bossWidth - counterWidth - 6, 1))
+    end
+
     UI.cols[1].width = UI._modelWidth
     UI.cols[2].width = bossWidth
     UI.cols[3].width = UI._pbWidth
@@ -223,22 +229,37 @@ local function UpdateColDrag()
 end
 
 local function MakeGrip(parent, which)
+    local isDragging = false
     local grip = ResizeGrip.CreateColumnGrip(
         parent,
         10,
         14,
         function()
+            isDragging = true
+            if grip._hoverIndicator then
+                grip._hoverIndicator:Show()
+            end
             local x = GetCursorPosition() / (UI.st.frame:GetEffectiveScale() or 1)
             BeginColDrag(which, x)
         end,
         UpdateColDrag,
         function()
+            isDragging = false
+            if grip._hoverIndicator then
+                grip._hoverIndicator:Hide()
+            end
             EndColDrag()
         end,
         function()
+            if grip._hoverIndicator then
+                grip._hoverIndicator:Show()
+            end
             SetCursor("UI_RESIZE_CURSOR")
         end,
         function()
+            if grip._hoverIndicator and not isDragging then
+                grip._hoverIndicator:Hide()
+            end
             ResetCursor()
         end
     )
@@ -246,6 +267,12 @@ local function MakeGrip(parent, which)
     grip:SetFrameLevel((parent:GetFrameLevel() or 0) + 50)
 
     UI.ApplyThinSeparator(grip)
+    local indicator = grip:CreateTexture(nil, "OVERLAY")
+    indicator:SetAtlas("gradientbar-Spark-arrows", true)
+    indicator:SetPoint("CENTER", grip, "CENTER", 0, 0)
+    indicator:SetSize(18, Const.HEADER_H)
+    indicator:Hide()
+    grip._hoverIndicator = indicator
 
     return grip
 end

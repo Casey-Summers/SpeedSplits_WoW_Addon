@@ -1,7 +1,47 @@
 local _, NS = ...
 
 local Util = NS.Util
-local Migration = NS.Database.Migration
+
+local function NormalizeBestSplitsNode(db, instanceName)
+    db.InstancePersonalBests = db.InstancePersonalBests or {}
+
+    if db.InstancePersonalBests[instanceName] and not db.InstancePersonalBests[instanceName].Segments then
+        local oldInstance = db.InstancePersonalBests[instanceName]
+        local firstDiff
+        for _, val in pairs(oldInstance) do
+            if type(val) == "table" and val.pbBoss then
+                firstDiff = val
+                break
+            end
+        end
+
+        if firstDiff then
+            db.InstancePersonalBests[instanceName] = {
+                Segments = firstDiff.pbBoss or {},
+                FullRun = firstDiff.pbRun or {},
+            }
+        else
+            db.InstancePersonalBests[instanceName] = {
+                Segments = {},
+                FullRun = {},
+            }
+        end
+    end
+
+    db.InstancePersonalBests[instanceName] = db.InstancePersonalBests[instanceName] or {
+        Segments = {},
+        FullRun = {},
+    }
+    return db.InstancePersonalBests[instanceName]
+end
+
+local function ApplySavedVariablesMigrations(db)
+    db.InstancePersonalBests = db.InstancePersonalBests or {}
+
+    for instanceName in pairs(db.InstancePersonalBests) do
+        NormalizeBestSplitsNode(db, instanceName)
+    end
+end
 
 local function EnsureDB()
     if SpeedSplitsDB == nil then
@@ -19,7 +59,7 @@ local function EnsureDB()
     SpeedSplitsDB.pbBoss = nil
     SpeedSplitsDB.pbRun = nil
 
-    Migration.ApplySavedVariablesMigrations(SpeedSplitsDB)
+    ApplySavedVariablesMigrations(SpeedSplitsDB)
 
     local fallbacks = NS.FactoryDefaults.Settings
     local settings = SpeedSplitsDB.Settings
@@ -70,12 +110,7 @@ local function GetBestSplitsSubtable(instanceName)
     if not instanceName or instanceName == "" then
         return nil
     end
-    NS.DB.InstancePersonalBests = NS.DB.InstancePersonalBests or {}
-    NS.DB.InstancePersonalBests[instanceName] = NS.DB.InstancePersonalBests[instanceName] or {
-        Segments = {},
-        FullRun = {},
-    }
-    return NS.DB.InstancePersonalBests[instanceName]
+    return NormalizeBestSplitsNode(NS.DB, instanceName)
 end
 
 local function ResetToFactorySettings()

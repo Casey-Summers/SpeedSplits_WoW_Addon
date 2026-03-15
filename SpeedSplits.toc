@@ -4,7 +4,6 @@
 ## Author: Aceman
 ## Version: 0.1.4
 ## SavedVariables: SpeedSplitsDB
-## OptionalDeps: Ace3, lib-st
 ## IconTexture: Interface/AddOns/SpeedSplits/Config/Icons/SpeedSplitsStopwatchx64.blp
 
 Config/Packages/main_core.xml

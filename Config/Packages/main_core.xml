@@ -40,17 +40,9 @@
     <Script file="..\..\Run\RunLogic.lua"/>
     <Script file="..\..\Settings\Widgets.lua"/>
     <Script file="..\..\Settings\Panel.lua"/>
-
-    <Script file="..\..\Tests\TestRunner.lua"/>
-    <Script file="..\..\Tests\Simulation.lua"/>
-    <Script file="..\..\Tests\Suite_UI.lua"/>
-    <Script file="..\..\Tests\Suite_Discovery.lua"/>
-    <Script file="..\..\Tests\Suite_Logic.lua"/>
-    <Script file="..\..\Tests\Suite_PB.lua"/>
-    <Script file="..\..\Tests\Suite_History.lua"/>
-    <Script file="..\..\Tests\Suite_UX.lua"/>
-    <Script file="..\..\Tests\TestRunnerUI.lua"/>
-    <Script file="..\..\Tests\TestAdapter.lua"/>
     <Script file="..\..\Core\Commands.lua"/>
     <Script file="..\..\Core\Events.lua"/>
+    
+    <!-- Local-only dev test loading lives behind this ignored include. -->
+    <Include file="dev_tests.xml"/>
 </Ui>

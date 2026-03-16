@@ -18,16 +18,12 @@ local function DisableInstanceEvents()
     App:UnregisterEvent("SCENARIO_UPDATE")
 end
 
-function NS.RefreshVisibility()
-    if not NS.DB or not NS.DB.Settings or not NS.DB.Settings.visibility then
+local function EvaluateVisibility(settings, inInstance)
+    if not settings or not settings.visibility then
         return false, false
     end
 
-    NS.UI.EnsureUI()
-
-    local inInstance = IsInInstance()
-    local visibility = NS.DB.Settings.visibility
-
+    local visibility = settings.visibility
     local function ShouldShow(typeKey)
         local setting = visibility[typeKey]
         if setting == "both" then
@@ -40,15 +36,28 @@ function NS.RefreshVisibility()
         return false
     end
 
-    local timerVisible = ShouldShow("timer")
-    local splitsVisible = ShouldShow("splits")
+    return ShouldShow("timer"), ShouldShow("splits")
+end
 
+local function ApplyVisibility(timerVisible, splitsVisible)
     if NS.UI.timerFrame then
         if timerVisible then NS.UI.timerFrame:Show() else NS.UI.timerFrame:Hide() end
     end
     if NS.UI.bossFrame then
         if splitsVisible then NS.UI.bossFrame:Show() else NS.UI.bossFrame:Hide() end
     end
+end
+
+function NS.RefreshVisibility()
+    if not NS.DB or not NS.DB.Settings or not NS.DB.Settings.visibility then
+        return false, false
+    end
+
+    NS.UI.EnsureUI()
+
+    local inInstance = IsInInstance()
+    local timerVisible, splitsVisible = EvaluateVisibility(NS.DB.Settings, inInstance)
+    ApplyVisibility(timerVisible, splitsVisible)
 
     if not inInstance and timerVisible and not NS.Run.active and not NS.Run.waitingForMove then
         App:RegisterEvent("PLAYER_STARTED_MOVING")
@@ -61,6 +70,9 @@ function NS.RefreshVisibility()
     elseif not inInstance and not timerVisible and (NS.Run.active or NS.Run.waitingForMove) then
         NS.RunLogic.StopRun(false)
         NS.RunLogic.ResetRun()
+        if NS.UI.ResetRunPresentation then
+            NS.UI.ResetRunPresentation()
+        end
     end
 
     return timerVisible, splitsVisible
@@ -77,6 +89,9 @@ local function EnterOrUpdateWorld()
         end
 
         NS.RunLogic.ResetRun()
+        if NS.UI.ResetRunPresentation then
+            NS.UI.ResetRunPresentation()
+        end
         local timerVisible = NS.RefreshVisibility()
         if timerVisible then
             App:RegisterEvent("PLAYER_STARTED_MOVING")
@@ -92,6 +107,9 @@ local function EnterOrUpdateWorld()
 
     EnableInstanceEvents()
     NS.RunLogic.ResetRun()
+    if NS.UI.ResetRunPresentation then
+        NS.UI.ResetRunPresentation()
+    end
     NS.RunLogic.BeginInstanceSession()
 
     if GetUnitSpeed("player") > 0 then
@@ -110,6 +128,9 @@ App:SetScript("OnEvent", function(_, event, ...)
         NS.UpdateColorsFromSettings()
         NS.UI.EnsureUI()
         NS.RunLogic.ResetRun()
+        if NS.UI.ResetRunPresentation then
+            NS.UI.ResetRunPresentation()
+        end
         if NS.CreateOptionsPanel then
             NS.CreateOptionsPanel()
         end
@@ -129,6 +150,9 @@ App:SetScript("OnEvent", function(_, event, ...)
         DisableInstanceEvents()
         NS.UI.HideAddonFrames()
         NS.RunLogic.ResetRun()
+        if NS.UI.ResetRunPresentation then
+            NS.UI.ResetRunPresentation()
+        end
         return
     end
 

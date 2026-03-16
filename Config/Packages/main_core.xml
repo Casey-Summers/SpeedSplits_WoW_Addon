@@ -22,6 +22,9 @@
     <Script file="..\..\Run\State.lua"/>
     <Script file="..\..\Run\BossDiscovery.lua"/>
     <Script file="..\..\Run\PB.lua"/>
+    <Script file="..\..\Run\Ignore.lua"/>
+    <Script file="..\..\Run\Recorder.lua"/>
+    <Script file="..\..\Run\Session.lua"/>
 
     <Script file="..\..\UI\Shared.lua"/>
     <Script file="..\..\UI\Layout.lua"/>
@@ -37,7 +40,7 @@
     <Script file="..\..\Settings\Widgets.lua"/>
     <Script file="..\..\Settings\Panel.lua"/>
 
-    <Script file="..\..\Tests\Framework.lua"/>
+    <Script file="..\..\Tests\TestRunner.lua"/>
     <Script file="..\..\Tests\Simulation.lua"/>
     <Script file="..\..\Tests\Suite_UI.lua"/>
     <Script file="..\..\Tests\Suite_Discovery.lua"/>
@@ -45,8 +48,7 @@
     <Script file="..\..\Tests\Suite_PB.lua"/>
     <Script file="..\..\Tests\Suite_History.lua"/>
     <Script file="..\..\Tests\Suite_UX.lua"/>
-    <Script file="..\..\Tests\TestingFramework.lua"/>
-    <!-- Keep the in-game test harness loaded in the normal build so /ss test remains available. -->
+    <Script file="..\..\Tests\TestRunnerUI.lua"/>
     <Script file="..\..\Tests\TestAdapter.lua"/>
     <Script file="..\..\Core\Commands.lua"/>
     <Script file="..\..\Core\Events.lua"/>

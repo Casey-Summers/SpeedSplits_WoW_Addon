@@ -64,7 +64,9 @@ local function ResetRun()
     Run.lastColorR, Run.lastColorG, Run.lastColorB, Run.lastColorHex = nil, nil, nil, nil
     Run._bossLoadTries = 0
     Run._bossLoaded = false
+end
 
+local function ResetRunPresentation()
     if NS.UI.SetTimerText then
         NS.UI.SetTimerText(0, false)
     end
@@ -84,4 +86,5 @@ end
 
 NS.RunLogic.IsBossIgnored = IsBossIgnored
 NS.RunLogic.ResetRun = ResetRun
+NS.UI.ResetRunPresentation = ResetRunPresentation
 NS.IsBossIgnored = IsBossIgnored

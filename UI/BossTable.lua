@@ -174,7 +174,7 @@ local function ClearBossRows()
     end
 end
 
-local function FinalizeBossTablePresentation()
+local function RefreshBossTablePresentation()
     if UI.st and UI.st.scrollframe then
         local scrollbar = _G[UI.st.scrollframe:GetName() .. "ScrollBar"]
         if scrollbar then
@@ -188,13 +188,6 @@ local function FinalizeBossTablePresentation()
 
     if UI.RestyleBossTableHeaders then
         UI.RestyleBossTableHeaders(1.0)
-    end
-
-    if NS.UpdateColorsOnly then
-        NS.UpdateColorsOnly()
-    end
-    if NS.UpdateFontsOnly then
-        NS.UpdateFontsOnly()
     end
 end
 
@@ -242,7 +235,7 @@ local function RefreshBossTableData(entries, pbSegments)
     ClearBossRows()
 
     if #entries == 0 then
-        FinalizeBossTablePresentation()
+        RefreshBossTablePresentation()
         return
     end
 
@@ -276,11 +269,7 @@ local function RefreshBossTableData(entries, pbSegments)
         UI.st:SetData(data, true)
     end
 
-    FinalizeBossTablePresentation()
-end
-
-local function RenderBossTable(entries, pbSegments)
-    RefreshBossTableData(entries, pbSegments)
+    RefreshBossTablePresentation()
 end
 
 local function GetPreviousKilledCumulativeInTableOrder(run, bossKey)
@@ -325,7 +314,7 @@ local function SetRowKilled(bossKey, splitCumulative, cumulativePB, deltaSeconds
     if UI.st and UI.st.Refresh then
         UI.st:Refresh()
     end
-    FinalizeBossTablePresentation()
+    RefreshBossTablePresentation()
 end
 
 UI.Boss_DoCellUpdate = Boss_DoCellUpdate
@@ -334,8 +323,7 @@ UI.PBColor = PBColor
 UI.DeltaColor = DeltaColor
 UI.SplitColor = SplitColor
 UI.ClearBossRows = ClearBossRows
-UI.FinalizeBossTablePresentation = FinalizeBossTablePresentation
+UI.RefreshBossTablePresentation = RefreshBossTablePresentation
 UI.RefreshBossTableData = RefreshBossTableData
-UI.RenderBossTable = RenderBossTable
 UI.GetPreviousKilledCumulativeInTableOrder = GetPreviousKilledCumulativeInTableOrder
 UI.SetRowKilled = SetRowKilled

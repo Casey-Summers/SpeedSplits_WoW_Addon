@@ -83,7 +83,8 @@ local function EnsureDB()
     end
 
     SpeedSplitsDB.RunHistory = SpeedSplitsDB.RunHistory or SpeedSplitsDB.runs or {}
-    SpeedSplitsDB.InstancePersonalBests = SpeedSplitsDB.InstancePersonalBests or SpeedSplitsDB.PersonalBests or SpeedSplitsDB.bestSplits or {}
+    SpeedSplitsDB.InstancePersonalBests = SpeedSplitsDB.InstancePersonalBests or SpeedSplitsDB.PersonalBests or
+    SpeedSplitsDB.bestSplits or {}
     SpeedSplitsDB.Settings = SpeedSplitsDB.Settings or SpeedSplitsDB.settings or {}
 
     SpeedSplitsDB.runs = nil

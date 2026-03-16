@@ -142,7 +142,7 @@ function UI.CreateTestFrame()
     end)
     CreateActionButton(pinned, "Simulate This Instance", -45, function()
         System.LogInfo("Simulation helper: finding current instance data.", "INFO")
-        NS.BeginInstanceSession()
+        NS.RunLogic.BeginInstanceSession()
     end)
     CreateActionButton(pinned, "Simulate speedrun", -80, function()
         if System.RunTestById and System.RegisteredTestsById["logic_scenario_speedrun_regression"] then

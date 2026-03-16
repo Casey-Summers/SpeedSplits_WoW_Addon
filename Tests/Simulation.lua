@@ -61,7 +61,7 @@ local function RunScenarioSpeedrunRegression()
             end
         end
 
-        NS.ApplyBossEntries(entries, "simulation", run.tier, run.journalID)
+        NS.RunLogic.ApplyBossEntries(entries, "simulation", run.tier, run.journalID)
         local node = NS.GetBestSplitsSubtable()
         node.Segments = node.Segments or {}
         node.FullRun = node.FullRun or {}
@@ -90,7 +90,7 @@ local function RunScenarioSpeedrunRegression()
                 tostring(boss.ignored),
                 expectedDeltas[boss.name]))
 
-            NS.RecordBossKill(nil, boss.name)
+            NS.RunLogic.RecordBossKill(nil, boss.name)
 
             local actualDelta = run.lastDelta or 0
             local expectedDelta = expectedDeltas[boss.name]

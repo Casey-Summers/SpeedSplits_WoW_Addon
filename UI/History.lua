@@ -11,7 +11,6 @@ local HeaderCell = UI.Templates.HeaderCell
 local HistoryRowTemplate = UI.Templates.HistoryRow
 
 local UIDropDownMenu_SetWidth = _G.UIDropDownMenu_SetWidth
-local UIDropDownMenu_SetText = _G.UIDropDownMenu_SetText
 local function FormatEpochShort(epoch)
     return (not epoch or epoch <= 0) and "â€”" or date("%H:%M %d/%m/%Y", epoch)
 end
@@ -227,17 +226,6 @@ local function InitHistoryDropDown(dropdown, buildItems, getValue, setValue)
     end)
 end
 
-local function History_SaveColWidths()
-    local ui = UI.GetUISaved()
-    if not ui or not UI.history or not UI.history.colWidths then
-        return
-    end
-    ui.historyCols = ui.historyCols or {}
-    for k, v in pairs(UI.history.colWidths) do
-        ui.historyCols[k] = v
-    end
-end
-
 local function History_RestoreColWidths()
     UI.history.colWidths = {}
     local ui = UI.GetUISaved()
@@ -323,7 +311,9 @@ end
 
 local function History_EndColDrag()
     UI.history.drag = nil
-    History_SaveColWidths()
+    if UI.CaptureCurrentLayout then
+        UI.CaptureCurrentLayout()
+    end
 end
 
 local function History_UpdateColDrag()
@@ -478,7 +468,6 @@ local function EnsureHistoryUI()
     local tierDropDown = CreateFrame("Frame", nil, controls, "UIDropDownMenuTemplate")
     tierDropDown:SetPoint("LEFT", searchBox, "RIGHT", -12, -2)
     UIDropDownMenu_SetWidth(tierDropDown, 100)
-    UIDropDownMenu_SetText(tierDropDown, "Expansion")
     InitHistoryDropDown(tierDropDown, BuildHistoryTierItems, function()
         return UI.history.filters and UI.history.filters.tier or 0
     end, function(v)
@@ -486,12 +475,14 @@ local function EnsureHistoryUI()
             UI.history.filters.tier = tonumber(v) or 0
         end
     end)
+    DropDown.Refresh(tierDropDown, BuildHistoryTierItems, function()
+        return UI.history.filters and UI.history.filters.tier or 0
+    end, "Expansion")
     UI.history.tierDropDown = tierDropDown
 
     local resultDropDown = CreateFrame("Frame", nil, controls, "UIDropDownMenuTemplate")
     resultDropDown:SetPoint("LEFT", tierDropDown, "RIGHT", -24, 0)
     UIDropDownMenu_SetWidth(resultDropDown, 90)
-    UIDropDownMenu_SetText(resultDropDown, "Result")
     InitHistoryDropDown(resultDropDown, BuildHistoryResultItems, function()
         return UI.history.filters and UI.history.filters.result or "Any"
     end, function(v)
@@ -499,6 +490,9 @@ local function EnsureHistoryUI()
             UI.history.filters.result = v
         end
     end)
+    DropDown.Refresh(resultDropDown, BuildHistoryResultItems, function()
+        return UI.history.filters and UI.history.filters.result or "Any"
+    end, "Result")
 
     local listFrame = FrameFactory.CreateBorderedFrame(historyFrame, 0.4, NS.Colors.turquoise)
     listFrame:SetPoint("TOPLEFT", controls, "BOTTOMLEFT", 0, -34)
@@ -683,7 +677,6 @@ NS.UpdateHistoryLayout = History_ApplyTableLayout
 UI.FormatEpochShort = FormatEpochShort
 UI.GetTierNameSafe = GetTierNameSafe
 UI.IsRunPB = IsRunPB
-UI.History_SaveColWidths = History_SaveColWidths
 UI.History_RestoreColWidths = History_RestoreColWidths
 UI.History_ApplyTableLayout = History_ApplyTableLayout
 UI.History_EnsureColGrips = History_EnsureColGrips

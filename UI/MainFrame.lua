@@ -58,10 +58,6 @@ local function BuildBossColumns()
     }
 end
 
-local function GetHeaderColorKey(index)
-    return "turquoise"
-end
-
 function UI.RestyleBossTableHeaders(scale)
     if UI.st and UI.st.head then
         UI.st.head:SetAlpha(0)
@@ -77,7 +73,7 @@ function UI.RestyleBossTableHeaders(scale)
         local align = (UI.cols[i] and UI.cols[i].align) or "CENTER"
         local text = BOSS_HEADER_LABELS[i] or ""
         if UI.cols[i] and UI.customBossHeaders[i] then
-            UI.StyleHeaderCell(UI.customBossHeaders[i], align, scale or 1.0, text, GetHeaderColorKey(i))
+            UI.StyleHeaderCell(UI.customBossHeaders[i], align, scale or 1.0, text, "turquoise")
             UI.customBossHeaders[i]:EnableMouse(false)
         end
     end
@@ -236,21 +232,6 @@ function UI.EnsureUI()
     if not bossRestored then
         bossFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     end
-
-    local titleBar = CreateFrame("Frame", nil, bossFrame)
-    titleBar:SetHeight(Const.TOP_BAR_H)
-    titleBar:SetPoint("TOPLEFT", bossFrame, "TOPLEFT", 0, 0)
-    titleBar:SetPoint("TOPRIGHT", bossFrame, "TOPRIGHT", 0, 0)
-    titleBar:EnableMouse(true)
-    titleBar:RegisterForDrag("LeftButton")
-    titleBar:SetScript("OnDragStart", function()
-        bossFrame:StartMoving()
-    end)
-    titleBar:SetScript("OnDragStop", function()
-        bossFrame:StopMovingOrSizing()
-        UI.SaveFrameGeom("boss", bossFrame)
-    end)
-    titleBar:Hide()
 
     local ST = Util.ResolveScrollingTable()
     if not ST and NS.Print then
@@ -555,6 +536,8 @@ function NS.RefreshAllUI()
     end
 
     NS.UpdateColorsFromSettings()
+    NS.UpdateColorsOnly()
+    NS.UpdateFontsOnly()
     NS.UpdateToastLayout()
     if NS.RefreshVisibility then
         NS.RefreshVisibility()
@@ -568,16 +551,6 @@ function NS.RefreshAllUI()
         end
     end
 
-    if UI.history and UI.history.st and UI.history.st.head and UI.history.st.head.cols then
-        local historyScale = (NS.DB and NS.DB.Settings and NS.DB.Settings.historyScale) or 1.0
-        for i = 1, #UI.history.st.head.cols do
-            local cols = UI.history.st.cols
-            if cols and cols[i] then
-                UI.StyleHeaderCell(UI.history.st.head.cols[i], cols[i].align, historyScale)
-            end
-        end
-    end
-
     UI.UpdateTimerFrameBounds()
     if NS.UpdateHistoryLayout then
         NS.UpdateHistoryLayout()
@@ -588,20 +561,20 @@ function NS.RefreshAllUI()
     UI.RefreshBossTableData(NS.Run.entries or {}, pbTable)
 
     if NS.Run.entries and #NS.Run.entries > 0 then
-        local runningPBTotal = 0
         for _, entry in ipairs(NS.Run.entries) do
-            if not NS.IsBossIgnored(entry.name) then
-                runningPBTotal = runningPBTotal + (pbTable[entry.name] or 0)
-            end
-            local splitCumulative = NS.Run.kills[entry.key]
-            if splitCumulative then
-                local prevCumulative = UI.GetPreviousKilledCumulativeInTableOrder(NS.Run, entry.key)
-                local segTime = prevCumulative and (splitCumulative - prevCumulative) or splitCumulative
-                local oldSegPB = pbTable[entry.name]
-                local isGold = (not oldSegPB) or (segTime <= oldSegPB + 0.001)
-                local delta = splitCumulative - runningPBTotal
-                local r, g, b, hex = NS.GetPaceColor(delta, false)
-                UI.SetRowKilled(entry.key, splitCumulative, runningPBTotal, delta, r, g, b, hex, isGold)
+            local visualState = NS.RunLogic.BuildRowVisualState(NS.Run, pbTable, entry.key)
+            if visualState then
+                UI.SetRowKilled(
+                    entry.key,
+                    visualState.splitCumulative,
+                    visualState.cumulativePB,
+                    visualState.delta,
+                    visualState.r,
+                    visualState.g,
+                    visualState.b,
+                    visualState.hex,
+                    visualState.isGold
+                )
             end
         end
         UI.RefreshTotals(not NS.Run.active and NS.Run.endGameTime > 0)
@@ -614,38 +587,14 @@ function NS.RefreshAllUI()
     if NS.DB and NS.DB.Settings then
         NS.Run.speedrunMode = NS.DB.Settings.speedrunMode or "all"
         if NS.Run.active then
-            local isRunComplete = false
-            local completionTime
-            if NS.Run.speedrunMode == "last" then
-                local lastEntry = NS.Run.entries[#NS.Run.entries]
-                if lastEntry and NS.Run.kills[lastEntry.key] then
-                    isRunComplete = true
-                    completionTime = NS.Run.startGameTime + NS.Run.kills[lastEntry.key]
-                end
-            else
-                if (NS.Run.remainingCount or 0) == 0 and #NS.Run.entries > 0 then
-                    isRunComplete = true
-                    local maxKill = 0
-                    for _, killTime in pairs(NS.Run.kills) do
-                        if killTime > maxKill then
-                            maxKill = killTime
-                        end
-                    end
-                    completionTime = NS.Run.startGameTime + maxKill
-                end
-            end
-
+            local isRunComplete, completionTime = NS.RunLogic.GetRunCompletionState(NS.Run)
             if isRunComplete then
                 NS.RunLogic.StopRun(true, completionTime)
             end
         end
     end
 
-    if UI.st and UI.st.Refresh then
-        UI.st:Refresh()
+    if UI.RefreshBossTablePresentation then
+        UI.RefreshBossTablePresentation()
     end
-
-    -- Re-apply accent colors and fonts after potential table resets
-    NS.UpdateColorsOnly()
-    NS.UpdateFontsOnly()
 end

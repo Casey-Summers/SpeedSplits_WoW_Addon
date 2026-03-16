@@ -394,3 +394,118 @@ System.RegisterTest({
         end)
     end,
 })
+
+System.RegisterTest({
+    id = "logic_reset_run_no_longer_requires_ui",
+    suite = "Logic",
+    subcategory = "State Reset",
+    name = "Keeps ResetRun state-only and UI-agnostic",
+    func = function()
+        local oldSetTimerText = NS.UI.SetTimerText
+        local oldSetKillCount = NS.UI.SetKillCount
+        local oldClearBossRows = NS.UI.ClearBossRows
+        local oldSetTotals = NS.SetTotals
+        local oldSetTimerDelta = NS.UI.SetTimerDelta
+        local called = false
+
+        System.WithCleanup(function()
+            System.BeginSection("Reset run state without touching presentation")
+            NS.UI.SetTimerText = function() called = true end
+            NS.UI.SetKillCount = function() called = true end
+            NS.UI.ClearBossRows = function() called = true end
+            NS.SetTotals = function() called = true end
+            NS.UI.SetTimerDelta = function() called = true end
+
+            NS.Run.active = true
+            NS.Run.kills = { A = 1 }
+            NS.RunLogic.ResetRun()
+
+            System.AssertTrue(called == false, "ResetRun no longer performs UI side effects", called)
+            System.EndSection("Reset run state without touching presentation", "PASS")
+        end, function()
+            NS.UI.SetTimerText = oldSetTimerText
+            NS.UI.SetKillCount = oldSetKillCount
+            NS.UI.ClearBossRows = oldClearBossRows
+            NS.SetTotals = oldSetTotals
+            NS.UI.SetTimerDelta = oldSetTimerDelta
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_build_pb_progress_respects_ignored_bosses",
+    suite = "Logic",
+    subcategory = "Pace Calculation",
+    name = "BuildPBProgress excludes ignored bosses from cumulative totals",
+    func = function()
+        NS.Database.EnsureDB()
+        local instanceName = "PB Progress Ignore Test"
+        local oldInstanceName = NS.Run.instanceName
+        local oldIgnored = NS.Util.CopyTable(NS.DB.Settings.ignoredBosses)
+        local oldAutoIgnored = NS.Util.CopyTable(NS.DB.Settings.autoIgnoredBosses)
+
+        System.WithCleanup(function()
+            System.BeginSection("Calculate cumulative PB progress with one ignored boss")
+            NS.Run.instanceName = instanceName
+            NS.DB.Settings.ignoredBosses[instanceName] = { ["Boss B"] = true }
+            NS.DB.Settings.autoIgnoredBosses[instanceName] = {}
+
+            local progress = NS.RunLogic.BuildPBProgress({
+                { key = "A", name = "Boss A" },
+                { key = "B", name = "Boss B" },
+                { key = "C", name = "Boss C" },
+            }, {
+                ["Boss A"] = 10,
+                ["Boss B"] = 20,
+                ["Boss C"] = 30,
+            })
+
+            System.AssertEqual(progress.cumulativeDisplayByKey.A, 10, "Boss A cumulative PB includes its own segment")
+            System.AssertEqual(progress.cumulativeDisplayByKey.B, 10, "Ignored boss does not increase cumulative PB")
+            System.AssertEqual(progress.cumulativeDisplayByKey.C, 40, "Later non-ignored bosses still accumulate")
+            System.AssertEqual(progress.totalPB, 40, "Total PB excludes ignored segments")
+            System.EndSection("Calculate cumulative PB progress with one ignored boss", "PASS")
+        end, function()
+            NS.Run.instanceName = oldInstanceName
+            NS.DB.Settings.ignoredBosses = oldIgnored
+            NS.DB.Settings.autoIgnoredBosses = oldAutoIgnored
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_completion_helper_supports_last_boss_mode",
+    suite = "Logic",
+    subcategory = "Pace Calculation",
+    name = "GetRunCompletionState completes only on the final kill in last boss mode",
+    func = function()
+        local oldRun = NS.Util.CopyTable(NS.Run)
+
+        System.WithCleanup(function()
+            System.BeginSection("Evaluate last-boss mode completion")
+            NS.Run.speedrunMode = "last"
+            NS.Run.startGameTime = 100
+            NS.Run.entries = {
+                { key = "A", name = "Boss A" },
+                { key = "B", name = "Boss B" },
+            }
+            NS.Run.kills = { A = 15 }
+
+            local completeA = NS.RunLogic.GetRunCompletionState(NS.Run)
+            System.AssertTrue(completeA == false, "Killing a non-final boss does not complete a last-boss run", completeA)
+
+            NS.Run.kills.B = 40
+            local completeB, endTime = NS.RunLogic.GetRunCompletionState(NS.Run)
+            System.AssertTrue(completeB == true, "The final boss completes a last-boss run", completeB)
+            System.AssertEqual(endTime, 140, "Completion time uses the last boss cumulative split")
+            System.EndSection("Evaluate last-boss mode completion", "PASS")
+        end, function()
+            for key in pairs(NS.Run) do
+                NS.Run[key] = nil
+            end
+            for key, value in pairs(oldRun) do
+                NS.Run[key] = value
+            end
+        end)
+    end,
+})

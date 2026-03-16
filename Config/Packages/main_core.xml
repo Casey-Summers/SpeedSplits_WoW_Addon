@@ -1,0 +1,56 @@
+<Ui>
+    <Include file="main_lib.xml"/>
+
+    <Script file="..\..\Core\Init.lua"/>
+    <Script file="..\..\Config\Constants.lua"/>
+    <Script file="..\..\Config\ThemeAssets.lua"/>
+    <Script file="..\..\Config\FactoryDefaults.lua"/>
+    <Script file="..\..\UI\Templates\Popups.lua"/>
+    <Script file="..\..\UI\Templates\FrameFactory.lua"/>
+    <Script file="..\..\UI\Templates\ResizeGrip.lua"/>
+    <Script file="..\..\UI\Templates\ScrollBarSkin.lua"/>
+    <Script file="..\..\UI\Templates\DropDown.lua"/>
+    <Script file="..\..\UI\Templates\IconButton.lua"/>
+    <Script file="..\..\UI\Templates\HeaderCell.lua"/>
+    <Script file="..\..\UI\Templates\HistoryRow.lua"/>
+    <Script file="..\..\UI\Templates\HoverFadeFrame.lua"/>
+    <Script file="..\..\Core\Debug.lua"/>
+    <Script file="..\..\Core\Utils.lua"/>
+    <Script file="..\..\Core\Colors.lua"/>
+
+    <Script file="..\..\Data\Database.lua"/>
+
+    <Script file="..\..\Run\State.lua"/>
+    <Script file="..\..\Run\BossDiscovery.lua"/>
+    <Script file="..\..\Run\PB.lua"/>
+    <Script file="..\..\Run\Ignore.lua"/>
+    <Script file="..\..\Run\Recorder.lua"/>
+    <Script file="..\..\Run\Session.lua"/>
+
+    <Script file="..\..\UI\Shared.lua"/>
+    <Script file="..\..\UI\Layout.lua"/>
+    <Script file="..\..\UI\BossTable.lua"/>
+    <Script file="..\..\UI\TimerFrame.lua"/>
+    <Script file="..\..\UI\Totals.lua"/>
+    <Script file="..\..\UI\Toast.lua"/>
+    <Script file="..\..\UI\History.lua"/>
+    <Script file="..\..\UI\MainFrame.lua"/>
+
+    <Script file="..\..\Run\Timer.lua"/>
+    <Script file="..\..\Run\RunLogic.lua"/>
+    <Script file="..\..\Settings\Widgets.lua"/>
+    <Script file="..\..\Settings\Panel.lua"/>
+
+    <Script file="..\..\Tests\TestRunner.lua"/>
+    <Script file="..\..\Tests\Simulation.lua"/>
+    <Script file="..\..\Tests\Suite_UI.lua"/>
+    <Script file="..\..\Tests\Suite_Discovery.lua"/>
+    <Script file="..\..\Tests\Suite_Logic.lua"/>
+    <Script file="..\..\Tests\Suite_PB.lua"/>
+    <Script file="..\..\Tests\Suite_History.lua"/>
+    <Script file="..\..\Tests\Suite_UX.lua"/>
+    <Script file="..\..\Tests\TestRunnerUI.lua"/>
+    <Script file="..\..\Tests\TestAdapter.lua"/>
+    <Script file="..\..\Core\Commands.lua"/>
+    <Script file="..\..\Core\Events.lua"/>
+</Ui>

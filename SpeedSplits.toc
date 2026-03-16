@@ -1,5 +1,5 @@
 ## Interface: 110207, 120000, 120001
-## Title: SpeedSplits
+## Title: Speed Splits
 ## Notes: Speedrun addon for tracking splits and PBs for boss kills.
 ## Author: Aceman
 ## Version: 2.0.0

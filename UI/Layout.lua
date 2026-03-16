@@ -74,9 +74,62 @@ local function GetScrollBarInset(st)
     if not st or not st.frame then
         return UI._rightInset
     end
-    local sb = (st.scrollframe and st.scrollframe.ScrollBar) or st.frame.ScrollBar or st.scrollbar
-    local width = (sb and sb.GetWidth and sb:GetWidth()) or UI._rightInset
-    return math.max(16, math.floor(width + 8))
+    return UI._rightInset or 2
+end
+
+local function GetBossTableDataCount()
+    if UI.st and UI.st.filtered then
+        return #UI.st.filtered
+    end
+    return #(UI.data or {})
+end
+
+local function GetBossScrollBarWidth()
+    local sb = (UI.st and UI.st.scrollframe and UI.st.scrollframe.ScrollBar) or (UI.st and UI.st.frame and UI.st.frame.ScrollBar) or
+        (UI.st and UI.st.scrollbar)
+    local width = (sb and sb.GetWidth and sb:GetWidth()) or 10
+    return math.max(10, math.floor(width))
+end
+
+local function SetBossScrollLaneVisible(visible, laneWidth)
+    local lane = UI.scrollLane
+    local scrollbar = UI.st and UI.st.scrollframe and _G[UI.st.scrollframe:GetName() .. "ScrollBar"]
+    local trough = scrollbar and scrollbar._ssTrough
+    local troughBorder = scrollbar and scrollbar._ssTroughBorder
+
+    if lane then
+        lane:ClearAllPoints()
+        if visible then
+            lane:SetPoint("TOPRIGHT", UI.st.frame, "TOPRIGHT", 0, 0)
+            lane:SetPoint("BOTTOMRIGHT", UI.st.frame, "BOTTOMRIGHT", 0, 0)
+            lane:SetWidth(laneWidth)
+            lane:Show()
+        else
+            lane:Hide()
+        end
+    end
+
+    if scrollbar then
+        if visible then
+            scrollbar:Show()
+        else
+            scrollbar:Hide()
+        end
+    end
+    if trough then
+        if visible then
+            trough:Show()
+        else
+            trough:Hide()
+        end
+    end
+    if troughBorder then
+        if visible then
+            troughBorder:Show()
+        else
+            troughBorder:Hide()
+        end
+    end
 end
 
 local function ApplyTableLayout()
@@ -91,6 +144,22 @@ local function ApplyTableLayout()
     UI.st.frame:SetPoint("TOPLEFT", UI.bossFrame, "TOPLEFT", 0, -UI._topInset)
     UI.st.frame:SetPoint("BOTTOMRIGHT", UI.bossFrame, "BOTTOMRIGHT", 0, UI._bottomInset)
 
+    local height = UI.st.frame:GetHeight() or 1
+    local rowHeight = 24
+    local displayRows = math.max(1, math.floor(height / rowHeight))
+    local laneWidth = GetBossScrollBarWidth() + 6
+    local needsScroll = GetBossTableDataCount() > displayRows
+    local contentRightInset = (needsScroll and laneWidth or 0) + 2
+    UI._bossScrollLaneVisible = needsScroll
+    UI._bossScrollLaneWidth = needsScroll and laneWidth or 0
+    UI._rightInset = contentRightInset
+
+    if UI.st.scrollframe then
+        UI.st.scrollframe:ClearAllPoints()
+        UI.st.scrollframe:SetPoint("TOPLEFT", UI.st.frame, "TOPLEFT", 0, -4)
+        UI.st.scrollframe:SetPoint("BOTTOMRIGHT", UI.st.frame, "BOTTOMRIGHT", -(needsScroll and laneWidth or 0), 3)
+    end
+
     if UI.titleTab then
         UI.titleTab:ClearAllPoints()
         UI.titleTab:SetPoint("TOPLEFT", UI.bossFrame, "TOPLEFT", 0, 0)
@@ -103,21 +172,24 @@ local function ApplyTableLayout()
         UI.totalFrame:SetPoint("BOTTOMRIGHT", UI.bossFrame, "BOTTOMRIGHT", 0, 0)
     end
 
-    UI._rightInset = GetScrollBarInset(UI.st)
     UI._modelWidth = GetModelColumnWidth()
     local width = UI.st.frame:GetWidth() or 1
-    local available = math.max(width - UI._rightInset, 1)
+    local available = math.max(width - contentRightInset, 1)
     local splitMin = Const.SPLITS_COL_MIN
+    local globalMin = splitMin.GLOBAL or 1
+    local bossMin = math.max(globalMin, splitMin.BOSS or globalMin)
+    local pbMin = math.max(globalMin, splitMin.PB or globalMin)
+    local splitColMin = math.max(globalMin, splitMin.SPLIT or globalMin)
+    local deltaMin = math.max(globalMin, splitMin.DIFFERENCE or globalMin)
 
-    local minDelta = splitMin.NUM
-    UI._pbWidth = Util.Clamp(UI._pbWidth, splitMin.NUM,
-        math.max(available - (UI._modelWidth + splitMin.BOSS + UI._splitWidth + minDelta), splitMin.NUM))
-    UI._splitWidth = Util.Clamp(UI._splitWidth, splitMin.NUM,
-        math.max(available - (UI._modelWidth + splitMin.BOSS + UI._pbWidth + minDelta), splitMin.NUM))
-    UI._deltaWidth = Util.Clamp(UI._deltaWidth, minDelta,
-        math.max(available - (UI._modelWidth + splitMin.BOSS + UI._pbWidth + UI._splitWidth), minDelta))
+    UI._pbWidth = Util.Clamp(UI._pbWidth, pbMin,
+        math.max(available - (UI._modelWidth + bossMin + UI._splitWidth + deltaMin), pbMin))
+    UI._splitWidth = Util.Clamp(UI._splitWidth, splitColMin,
+        math.max(available - (UI._modelWidth + bossMin + UI._pbWidth + deltaMin), splitColMin))
+    UI._deltaWidth = Util.Clamp(UI._deltaWidth, deltaMin,
+        math.max(available - (UI._modelWidth + bossMin + UI._pbWidth + UI._splitWidth), deltaMin))
     local bossWidth = math.max(available - (UI._modelWidth + UI._pbWidth + UI._splitWidth + UI._deltaWidth),
-        splitMin.BOSS)
+        bossMin)
 
     if UI.killCountCounterText and UI.killCountText then
         local counterWidth = math.max(UI.killCountCounterText:GetStringWidth() or 0, 36)
@@ -136,13 +208,6 @@ local function ApplyTableLayout()
         UI.st.cols = UI.cols
     end
 
-    local height = UI.st.frame:GetHeight() or 1
-    local rowHeight = 24
-    local displayRows = math.floor(height / rowHeight)
-    if displayRows < 1 then
-        displayRows = 1
-    end
-
     if UI.st.SetDisplayRows then
         UI.st:SetDisplayRows(displayRows, rowHeight)
     end
@@ -150,9 +215,11 @@ local function ApplyTableLayout()
         UI.st:Refresh()
     end
 
+    SetBossScrollLaneVisible(needsScroll, laneWidth)
+
     local totalFrame = UI.totalFrame
     if totalFrame then
-        local rightInset = UI._rightInset + 4
+        local rightInset = contentRightInset
 
         UI.totalDelta:ClearAllPoints()
         UI.totalDelta:SetPoint("RIGHT", totalFrame, "RIGHT", -rightInset, 0)
@@ -218,18 +285,22 @@ local function UpdateColDrag()
     local dx = curX - UI._colDrag.startX
     local available = (UI.st.frame:GetWidth() or 0) - UI._rightInset
     local splitMin = Const.SPLITS_COL_MIN
+    local globalMin = splitMin.GLOBAL or 1
+    local bossMin = math.max(globalMin, splitMin.BOSS or globalMin)
+    local pbMin = math.max(globalMin, splitMin.PB or globalMin)
+    local splitColMin = math.max(globalMin, splitMin.SPLIT or globalMin)
+    local deltaMin = math.max(globalMin, splitMin.DIFFERENCE or globalMin)
 
     if UI._colDrag.which == 1 then
-        local maxPB = math.max(splitMin.NUM,
-            available - (UI._modelWidth + UI._splitWidth + UI._deltaWidth + splitMin.BOSS))
-        UI._pbWidth = Util.Clamp(UI._colDrag.pb - dx, splitMin.NUM, math.min(Const.COL_MAX_PB_SPLIT, maxPB))
+        local maxPB = math.max(pbMin,
+            available - (UI._modelWidth + UI._splitWidth + UI._deltaWidth + bossMin))
+        UI._pbWidth = Util.Clamp(UI._colDrag.pb - dx, pbMin, math.min(Const.COL_MAX_PB_SPLIT, maxPB))
     elseif UI._colDrag.which == 2 then
-        UI._pbWidth = Util.Clamp(UI._colDrag.pb + dx, splitMin.NUM, Const.COL_MAX_PB_SPLIT)
-        UI._splitWidth = Util.Clamp(UI._colDrag.split - dx, splitMin.NUM, Const.COL_MAX_PB_SPLIT)
+        UI._pbWidth = Util.Clamp(UI._colDrag.pb + dx, pbMin, Const.COL_MAX_PB_SPLIT)
+        UI._splitWidth = Util.Clamp(UI._colDrag.split - dx, splitColMin, Const.COL_MAX_PB_SPLIT)
     elseif UI._colDrag.which == 3 then
-        local minDelta = math.max(splitMin.NUM, splitMin.DELTA_TITLE)
-        UI._splitWidth = Util.Clamp(UI._colDrag.split + dx, splitMin.NUM, Const.COL_MAX_PB_SPLIT)
-        UI._deltaWidth = Util.Clamp(UI._colDrag.delta - dx, minDelta, Const.COL_MAX_DELTA)
+        UI._splitWidth = Util.Clamp(UI._colDrag.split + dx, splitColMin, Const.COL_MAX_PB_SPLIT)
+        UI._deltaWidth = Util.Clamp(UI._colDrag.delta - dx, deltaMin, Const.COL_MAX_DELTA)
     end
 
     ApplyTableLayout()

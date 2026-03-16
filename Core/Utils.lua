@@ -166,7 +166,9 @@ function Util.ResolveScrollingTable()
         local oldSetDisplayCols = lib.SetDisplayCols
         lib.SetDisplayCols = function(self, cols)
             oldSetDisplayCols(self, cols)
-            if self.head and self.head.cols and NS.UI and NS.UI.StyleHeaderCell then
+            if self == (NS.UI and NS.UI.st) and NS.UI and NS.UI.RestyleBossTableHeaders then
+                NS.UI.RestyleBossTableHeaders(1.0)
+            elseif self.head and self.head.cols and NS.UI and NS.UI.StyleHeaderCell then
                 for i = 1, #self.head.cols do
                     NS.UI.StyleHeaderCell(self.head.cols[i], cols[i].align, 1.0, cols[i].name, "turquoise")
                 end

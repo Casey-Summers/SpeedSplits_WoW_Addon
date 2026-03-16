@@ -3,6 +3,7 @@ local _, NS = ...
 local UI = NS.UI
 local Util = NS.Util
 local Colors = NS.Colors
+local ScrollBarSkin = UI.Templates.ScrollBarSkin
 
 local MODEL_DISPLAY_IDS = { 52047, 6110, 52515, 52595, 31042 }
 
@@ -170,50 +171,21 @@ local function ClearBossRows()
     end
 end
 
-local function RenderBossTable(entries, pbSegments)
-    ClearBossRows()
-
-    entries = entries or {}
-    pbSegments = pbSegments or {}
-
-    local data = UI.data
-    local map = UI.rowByBossKey
-
-    local cumulativePB = 0
-    local function AddToData(entry, isIgnored)
-        local pbSegment = pbSegments[entry.name] or 0
-        cumulativePB = cumulativePB + pbSegment
-
-        data[#data + 1] = {
-            key = entry.key,
-            cols = {
-                { value = entry.name or "Unknown" },
-                {
-                    value = (pbSegment > 0 and (not isIgnored) and cumulativePB > 0) and Util.FormatTime(cumulativePB)
-                        or (isIgnored and (pbSegment > 0 and Util.FormatTime(pbSegment) or "--:--.---")
-                            or "--:--.---"),
-                    color = isIgnored and { r = 0.4, g = 0.4, b = 0.4, a = 1 } or Colors.gold,
-                },
-                { value = "" },
-                { value = "" },
-            },
-        }
-        data[#data].cols[2].value = (pbSegment > 0 and cumulativePB > 0) and Util.FormatTime(cumulativePB) or "--:--.---"
-        map[entry.key] = #data
+local function FinalizeBossTablePresentation()
+    if UI.st and UI.st.scrollframe then
+        local scrollbar = _G[UI.st.scrollframe:GetName() .. "ScrollBar"]
+        if scrollbar then
+            ScrollBarSkin.Apply(scrollbar, 10)
+        end
     end
 
-    for _, entry in ipairs(entries) do
-        AddToData(entry, NS.IsBossIgnored(entry.name))
+    if UI.ApplyTableLayout then
+        UI.ApplyTableLayout()
     end
 
-    if UI.st and UI.st.SetData then
-        UI.st:SetData(data, true)
+    if UI.RestyleBossTableHeaders then
+        UI.RestyleBossTableHeaders(1.0)
     end
-    if UI.st and UI.st.Refresh then
-        UI.st:Refresh()
-    end
-
-    UI.ApplyTableLayout()
 
     if NS.UpdateColorsOnly then
         NS.UpdateColorsOnly()
@@ -221,6 +193,91 @@ local function RenderBossTable(entries, pbSegments)
     if NS.UpdateFontsOnly then
         NS.UpdateFontsOnly()
     end
+end
+
+local function BuildBossTableOrder(entries)
+    local visible = {}
+    local ignored = {}
+
+    for _, entry in ipairs(entries or {}) do
+        if NS.IsBossIgnored(entry.name) then
+            ignored[#ignored + 1] = entry
+        else
+            visible[#visible + 1] = entry
+        end
+    end
+
+    local ordered = {}
+    for _, entry in ipairs(visible) do
+        ordered[#ordered + 1] = entry
+    end
+    for _, entry in ipairs(ignored) do
+        ordered[#ordered + 1] = entry
+    end
+
+    return ordered
+end
+
+local function BuildBossPBCumulativeMap(entries, pbSegments)
+    local cumulativeByKey = {}
+    local cumulativePB = 0
+
+    for _, entry in ipairs(entries or {}) do
+        if not NS.IsBossIgnored(entry.name) then
+            cumulativePB = cumulativePB + (pbSegments[entry.name] or 0)
+        end
+        cumulativeByKey[entry.key] = cumulativePB
+    end
+
+    return cumulativeByKey
+end
+
+local function RefreshBossTableData(entries, pbSegments)
+    entries = entries or {}
+    pbSegments = pbSegments or {}
+
+    ClearBossRows()
+
+    if #entries == 0 then
+        FinalizeBossTablePresentation()
+        return
+    end
+
+    local orderedEntries = BuildBossTableOrder(entries)
+    local cumulativePBByKey = BuildBossPBCumulativeMap(entries, pbSegments)
+    local data = UI.data
+    local map = UI.rowByBossKey
+    local function AddToData(entry, isIgnored)
+        local cumulativePB = cumulativePBByKey[entry.key] or 0
+
+        data[#data + 1] = {
+            key = entry.key,
+            cols = {
+                { value = entry.name or "Unknown" },
+                {
+                    value = (cumulativePB > 0) and Util.FormatTime(cumulativePB) or "--:--.---",
+                    color = isIgnored and { r = 0.4, g = 0.4, b = 0.4, a = 1 } or Colors.gold,
+                },
+                { value = "" },
+                { value = "" },
+            },
+        }
+        map[entry.key] = #data
+    end
+
+    for _, entry in ipairs(orderedEntries) do
+        AddToData(entry, NS.IsBossIgnored(entry.name))
+    end
+
+    if UI.st and UI.st.SetData then
+        UI.st:SetData(data, true)
+    end
+
+    FinalizeBossTablePresentation()
+end
+
+local function RenderBossTable(entries, pbSegments)
+    RefreshBossTableData(entries, pbSegments)
 end
 
 local function GetPreviousKilledCumulativeInTableOrder(run, bossKey)
@@ -265,6 +322,7 @@ local function SetRowKilled(bossKey, splitCumulative, cumulativePB, deltaSeconds
     if UI.st and UI.st.Refresh then
         UI.st:Refresh()
     end
+    FinalizeBossTablePresentation()
 end
 
 UI.Boss_DoCellUpdate = Boss_DoCellUpdate
@@ -273,6 +331,8 @@ UI.PBColor = PBColor
 UI.DeltaColor = DeltaColor
 UI.SplitColor = SplitColor
 UI.ClearBossRows = ClearBossRows
+UI.FinalizeBossTablePresentation = FinalizeBossTablePresentation
+UI.RefreshBossTableData = RefreshBossTableData
 UI.RenderBossTable = RenderBossTable
 UI.GetPreviousKilledCumulativeInTableOrder = GetPreviousKilledCumulativeInTableOrder
 UI.SetRowKilled = SetRowKilled

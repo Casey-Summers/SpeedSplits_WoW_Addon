@@ -149,6 +149,53 @@ System.RegisterTest({
 })
 
 System.RegisterTest({
+    id = "logic_reset_layout_restores_saved_default",
+    suite = "Logic",
+    subcategory = "Layout Reset",
+    name = "Restores the saved default layout when ResetLayout is used",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldUI = NS.Util.CopyTable(NS.DB.ui or {})
+        local oldDefaultLayout = NS.DB.DefaultLayout and NS.Util.CopyTable(NS.DB.DefaultLayout) or nil
+        local oldReloadUI = ReloadUI
+        local oldRefreshAllUI = NS.RefreshAllUI
+        local reloaded = false
+
+        System.WithCleanup(function()
+            System.BeginSection("Reset from a modified layout back to the saved default")
+            NS.DB.ui = {
+                cols = { pb = 111, split = 112, delta = 113 },
+                frames = { boss = { x = 99, y = 98 } },
+            }
+            NS.DB.DefaultLayout = {
+                ui = {
+                    cols = { pb = 85, split = 90, delta = 95 },
+                    frames = { boss = { x = 12, y = 34 } },
+                },
+            }
+
+            ReloadUI = function()
+                reloaded = true
+            end
+            NS.RefreshAllUI = function() end
+
+            NS.ResetLayout()
+
+            System.AssertEqual(NS.DB.ui.cols.pb, 85, "ResetLayout restores saved PB column width")
+            System.AssertEqual(NS.DB.ui.frames.boss.x, 12, "ResetLayout restores saved boss-frame position")
+            System.AssertTrue(reloaded == true, "ResetLayout still triggers a UI reload", reloaded)
+            System.EndSection("Reset from a modified layout back to the saved default", "PASS")
+        end, function()
+            NS.DB.ui = oldUI
+            NS.DB.DefaultLayout = oldDefaultLayout
+            ReloadUI = oldReloadUI
+            NS.RefreshAllUI = oldRefreshAllUI
+        end)
+    end,
+})
+
+System.RegisterTest({
     id = "logic_equal_pace_delta_is_zero",
     suite = "Logic",
     subcategory = "Pace Calculation",

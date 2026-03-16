@@ -59,6 +59,19 @@ local function GetHeaderColorKey(index)
     return "turquoise"
 end
 
+function UI.RestyleBossTableHeaders(scale)
+    if not (UI.st and UI.st.head and UI.st.head.cols and UI.cols) then
+        return
+    end
+
+    for i = 1, #UI.st.head.cols do
+        local align = (UI.cols[i] and UI.cols[i].align) or "CENTER"
+        if UI.cols[i] then
+            UI.StyleHeaderCell(UI.st.head.cols[i], align, scale or 1.0, UI.cols[i].name, GetHeaderColorKey(i))
+        end
+    end
+end
+
 function UI.EnsureUI()
     if UI.bossFrame and UI.timerFrame then
         return
@@ -220,6 +233,7 @@ function UI.EnsureUI()
     end
 
     local cols = BuildBossColumns()
+    UI.cols = cols
     local st = ST and ST:CreateST(cols, 6, 24, nil, bossFrame)
     if st then
         st.frame:SetClipsChildren(true)
@@ -283,9 +297,44 @@ function UI.EnsureUI()
             st.head:SetFrameStrata("HIGH")
             st.head:SetFrameLevel(100)
             if st.head.cols then
-                for i = 1, #cols do
-                    UI.StyleHeaderCell(st.head.cols[i], cols[i].align, 1.0, cols[i].name, GetHeaderColorKey(i))
-                end
+                UI.RestyleBossTableHeaders(1.0)
+            end
+        end
+
+        local scrollLane = CreateFrame("Frame", nil, st.frame, "BackdropTemplate")
+        scrollLane:EnableMouse(false)
+        scrollLane:SetBackdrop({
+            bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+            edgeFile = "Interface\\Buttons\\WHITE8X8",
+            edgeSize = 1,
+            insets = { left = 0, right = 0, top = 0, bottom = 0 },
+        })
+        scrollLane:SetBackdropColor(0, 0, 0, 0.35)
+        scrollLane:SetBackdropBorderColor(1, 1, 1, 0.08)
+        scrollLane:Hide()
+        UI.scrollLane = scrollLane
+
+        local laneDivider = scrollLane:CreateTexture(nil, "ARTWORK")
+        laneDivider:SetPoint("TOPLEFT", scrollLane, "TOPLEFT", 0, 0)
+        laneDivider:SetPoint("BOTTOMLEFT", scrollLane, "BOTTOMLEFT", 0, 0)
+        laneDivider:SetWidth(1)
+        laneDivider:SetColorTexture(1, 1, 1, 0.12)
+        scrollLane._divider = laneDivider
+
+        if st.scrollframe then
+            local scrollbar = _G[st.scrollframe:GetName() .. "ScrollBar"]
+            local trough = _G[st.frame:GetName() .. "ScrollTrough"]
+            local troughBorder = _G[st.frame:GetName() .. "ScrollTroughBorder"]
+            if scrollbar then
+                scrollbar:SetParent(scrollLane)
+                scrollbar._ssTrough = trough
+                scrollbar._ssTroughBorder = troughBorder
+            end
+            if trough then
+                trough:SetParent(scrollLane)
+            end
+            if troughBorder then
+                troughBorder:SetParent(scrollLane)
             end
         end
     end
@@ -305,9 +354,7 @@ function UI.EnsureUI()
         UI.st.head:SetAllPoints(bgFrame)
         UI.st.head:SetFrameLevel(bgFrame:GetFrameLevel() + 2)
         if UI.st.head.cols then
-            for i = 1, #cols do
-                UI.StyleHeaderCell(UI.st.head.cols[i], cols[i].align, 1.0, cols[i].name, GetHeaderColorKey(i))
-            end
+            UI.RestyleBossTableHeaders(1.0)
         end
     end
 
@@ -390,7 +437,6 @@ function UI.EnsureUI()
     UI.timerTextMin = timerTextMin
     UI.timerTextSec = timerTextSec
     UI.timerTextMs = timerTextMs
-    UI.cols = cols
     UI.data = {}
     UI.rowByBossKey = {}
     UI.timerDeltaText = timerDeltaText
@@ -458,9 +504,7 @@ function NS.UpdateColorsOnly()
     end
 
     if UI.st and UI.st.head and UI.st.head.cols then
-        for i = 1, #UI.st.head.cols do
-            UI.StyleHeaderCell(UI.st.head.cols[i], UI.cols[i].align, 1.0, UI.cols[i].name, GetHeaderColorKey(i))
-        end
+        UI.RestyleBossTableHeaders(1.0)
     end
 end
 
@@ -490,9 +534,7 @@ function NS.UpdateFontsOnly()
         UI.st:Refresh()
     end
     if UI.st and UI.st.head and UI.st.head.cols then
-        for i = 1, #UI.st.head.cols do
-            UI.StyleHeaderCell(UI.st.head.cols[i], UI.cols[i].align, 1.0, UI.cols[i].name, GetHeaderColorKey(i))
-        end
+        UI.RestyleBossTableHeaders(1.0)
     end
 end
 
@@ -530,11 +572,11 @@ function NS.RefreshAllUI()
         NS.UpdateHistoryLayout()
     end
 
-    if NS.Run.entries and #NS.Run.entries > 0 then
-        local node = NS.GetBestSplitsSubtable()
-        local pbTable = node and node.Segments or {}
-        UI.RenderBossTable(NS.Run.entries, pbTable)
+    local node = NS.GetBestSplitsSubtable()
+    local pbTable = node and node.Segments or {}
+    UI.RefreshBossTableData(NS.Run.entries or {}, pbTable)
 
+    if NS.Run.entries and #NS.Run.entries > 0 then
         local runningPBTotal = 0
         for _, entry in ipairs(NS.Run.entries) do
             if not NS.IsBossIgnored(entry.name) then

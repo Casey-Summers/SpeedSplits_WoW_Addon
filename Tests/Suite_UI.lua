@@ -166,6 +166,75 @@ System.RegisterTest({
 })
 
 System.RegisterTest({
+    id = "ui_refresh_boss_table_does_not_duplicate_rows",
+    suite = "UI",
+    subcategory = "Boss Table",
+    name = "Rebuilds the boss table without appending duplicate rows",
+    func = function()
+        NS.Database.EnsureDB()
+        NS.UI.EnsureUI()
+
+        local entries = {
+            { key = "A", name = "Boss A" },
+            { key = "B", name = "Boss B" },
+        }
+        local pbSegments = {
+            ["Boss A"] = 30,
+            ["Boss B"] = 40,
+        }
+
+        System.BeginSection("Refresh the splits table twice with the same data")
+        NS.UI.RefreshBossTableData(entries, pbSegments)
+        NS.UI.RefreshBossTableData(entries, pbSegments)
+        System.AssertEqual(#NS.UI.data, 2, "Repeated refreshes keep exactly one row per boss")
+        System.AssertEqual(NS.UI.data[1].key, "A", "The first boss row stays stable after repeated refreshes")
+        System.EndSection("Refresh the splits table twice with the same data", "PASS")
+    end,
+})
+
+System.RegisterTest({
+    id = "ui_ignored_bosses_move_to_bottom",
+    suite = "UI",
+    subcategory = "Boss Table",
+    name = "Moves ignored bosses to the bottom while keeping them visible",
+    func = function()
+        NS.Database.EnsureDB()
+        NS.UI.EnsureUI()
+
+        local instanceName = "Ignored Boss UI Test"
+        local oldInstanceName = NS.Run.instanceName
+        local oldIgnored = NS.Util.CopyTable(NS.DB.Settings.ignoredBosses)
+        local oldAutoIgnored = NS.Util.CopyTable(NS.DB.Settings.autoIgnoredBosses)
+
+        System.WithCleanup(function()
+            System.BeginSection("Build a table with one manually ignored boss")
+            NS.Run.instanceName = instanceName
+            NS.DB.Settings.ignoredBosses[instanceName] = { ["Boss B"] = true }
+            NS.DB.Settings.autoIgnoredBosses[instanceName] = {}
+
+            NS.UI.RefreshBossTableData({
+                { key = "A", name = "Boss A" },
+                { key = "B", name = "Boss B" },
+                { key = "C", name = "Boss C" },
+            }, {
+                ["Boss A"] = 10,
+                ["Boss B"] = 20,
+                ["Boss C"] = 30,
+            })
+
+            System.AssertEqual(NS.UI.data[1].cols[1].value, "Boss A", "Non-ignored bosses stay at the top")
+            System.AssertEqual(NS.UI.data[2].cols[1].value, "Boss C", "Other non-ignored bosses preserve encounter order")
+            System.AssertEqual(NS.UI.data[3].cols[1].value, "Boss B", "Ignored bosses move to the bottom")
+            System.EndSection("Build a table with one manually ignored boss", "PASS")
+        end, function()
+            NS.Run.instanceName = oldInstanceName
+            NS.DB.Settings.ignoredBosses = oldIgnored
+            NS.DB.Settings.autoIgnoredBosses = oldAutoIgnored
+        end)
+    end,
+})
+
+System.RegisterTest({
     id = "ui_column_grip_parent_matches_archive",
     suite = "UI",
     subcategory = "Column Grips",

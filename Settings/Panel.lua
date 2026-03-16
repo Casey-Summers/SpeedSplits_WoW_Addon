@@ -393,11 +393,8 @@ function NS.CreateSettingsPanel()
     layoutBtn:SetPoint("TOPLEFT", defBtn, "BOTTOMLEFT", 0, -6)
 
     local resetLayoutBtn = Q("Reset Layout", function()
-        if NS.DB.DefaultLayout and NS.DB.DefaultLayout.ui then
-            NS.DB.ui = Widgets.CopyTable(NS.DB.DefaultLayout.ui)
-            ReloadUI()
-        else
-            StaticPopup_Show("SPEEDSPLITS_FACTORY_RESET")
+        if NS.ResetLayout then
+            NS.ResetLayout()
         end
     end)
     resetLayoutBtn:SetPoint("LEFT", layoutBtn, "RIGHT", 15, 0)

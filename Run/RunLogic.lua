@@ -290,7 +290,7 @@ local function ApplyBossEntries(entries, source, tier, journalID)
 
     local node = NS.GetBestSplitsSubtable()
     local pbSplits = node and node.Segments or {}
-    NS.UI.RenderBossTable(NS.Run.entries, pbSplits)
+    NS.UI.RefreshBossTableData(NS.Run.entries, pbSplits)
     NS.UI.SetKillCount(0, #NS.Run.entries)
     NS.UI.RefreshTotals(false)
     NS.Run._bossLoaded = true

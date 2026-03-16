@@ -181,7 +181,13 @@ end
 
 local function ResetLayout()
     if SpeedSplitsDB then
-        SpeedSplitsDB.ui = nil
+        local defaultUI = nil
+        if SpeedSplitsDB.DefaultLayout and SpeedSplitsDB.DefaultLayout.ui then
+            defaultUI = Util.CopyTable(SpeedSplitsDB.DefaultLayout.ui)
+        else
+            defaultUI = Util.CopyTable(NS.FactoryDefaults.ui)
+        end
+        SpeedSplitsDB.ui = defaultUI
         if NS.RefreshAllUI then
             NS.RefreshAllUI()
         end

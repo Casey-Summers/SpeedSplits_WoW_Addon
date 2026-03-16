@@ -13,13 +13,14 @@ function Skin.Apply(scrollbar, width)
 
     local appliedWidth = width or 10
     local parent = scrollbar:GetParent()
+    local anchorParent = scrollbar._ssAnchorParent or parent
     local trough = scrollbar._ssTrough
     local troughBorder = scrollbar._ssTroughBorder
     scrollbar:SetWidth(appliedWidth)
     scrollbar:ClearAllPoints()
-    if parent then
-        scrollbar:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -3, -3)
-        scrollbar:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -3, 3)
+    if anchorParent then
+        scrollbar:SetPoint("TOPRIGHT", anchorParent, "TOPRIGHT", -3, -3)
+        scrollbar:SetPoint("BOTTOMRIGHT", anchorParent, "BOTTOMRIGHT", -3, 3)
     end
 
     local up = _G[scrollbar:GetName() .. "ScrollUpButton"]
@@ -47,9 +48,9 @@ function Skin.Apply(scrollbar, width)
     if trough then
         trough:ClearAllPoints()
         trough:SetWidth(appliedWidth)
-        if parent then
-            trough:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -3, -3)
-            trough:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -3, 3)
+        if anchorParent then
+            trough:SetPoint("TOPRIGHT", anchorParent, "TOPRIGHT", -3, -3)
+            trough:SetPoint("BOTTOMRIGHT", anchorParent, "BOTTOMRIGHT", -3, 3)
         end
     end
 

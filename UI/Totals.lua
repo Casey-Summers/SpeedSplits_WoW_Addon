@@ -14,21 +14,8 @@ local function SetKillCount(killed, total)
         UI.killCountCounterText:SetText(counterText)
     end
 
-    if UI.st and UI.st.head and UI.st.head.cols and UI.st.head.cols[1] then
-        local cell = UI.st.head.cols[1]
-        local fs = cell.text or cell.label or (cell.GetFontString and cell:GetFontString())
-        if not fs then
-            local regions = { cell:GetRegions() }
-            for _, region in ipairs(regions) do
-                if region and region.IsObjectType and region:IsObjectType("FontString") then
-                    fs = region
-                    break
-                end
-            end
-        end
-        if fs then
-            fs:SetText("")
-        end
+    if UI.RestyleBossTableHeaders then
+        UI.RestyleBossTableHeaders(1.0)
     end
 end
 

@@ -202,6 +202,19 @@ local function ApplyTableLayout()
     UI.cols[3].width = UI._splitWidth
     UI.cols[4].width = UI._deltaWidth
 
+    if UI.customBossHeaders then
+        local headerLeft = 0
+        for i = 1, #UI.customBossHeaders do
+            local header = UI.customBossHeaders[i]
+            local colWidth = (UI.cols[i] and UI.cols[i].width) or 0
+            header:ClearAllPoints()
+            header:SetPoint("TOPLEFT", UI.titleTab, "TOPLEFT", headerLeft, 0)
+            header:SetPoint("BOTTOMLEFT", UI.titleTab, "BOTTOMLEFT", headerLeft, 0)
+            header:SetWidth(colWidth)
+            headerLeft = headerLeft + colWidth
+        end
+    end
+
     if UI.st.SetDisplayCols then
         UI.st:SetDisplayCols(UI.cols)
     else
@@ -219,22 +232,25 @@ local function ApplyTableLayout()
 
     local totalFrame = UI.totalFrame
     if totalFrame then
-        local rightInset = contentRightInset
+        local xBossRight = bossWidth
+        local xPBLeft = xBossRight
+        local xSplitLeft = xPBLeft + UI._pbWidth
+        local xDeltaLeft = xSplitLeft + UI._splitWidth
 
         UI.totalDelta:ClearAllPoints()
-        UI.totalDelta:SetPoint("RIGHT", totalFrame, "RIGHT", -rightInset, 0)
+        UI.totalDelta:SetPoint("CENTER", totalFrame, "LEFT", xDeltaLeft + (UI._deltaWidth / 2), 0)
         UI.totalDelta:SetWidth(UI._deltaWidth)
-        UI.totalDelta:SetJustifyH("RIGHT")
+        UI.totalDelta:SetJustifyH("CENTER")
 
         UI.totalSplit:ClearAllPoints()
-        UI.totalSplit:SetPoint("RIGHT", UI.totalDelta, "LEFT", 0, 0)
+        UI.totalSplit:SetPoint("CENTER", totalFrame, "LEFT", xSplitLeft + (UI._splitWidth / 2), 0)
         UI.totalSplit:SetWidth(UI._splitWidth)
-        UI.totalSplit:SetJustifyH("RIGHT")
+        UI.totalSplit:SetJustifyH("CENTER")
 
         UI.totalPB:ClearAllPoints()
-        UI.totalPB:SetPoint("RIGHT", UI.totalSplit, "LEFT", 0, 0)
+        UI.totalPB:SetPoint("CENTER", totalFrame, "LEFT", xPBLeft + (UI._pbWidth / 2), 0)
         UI.totalPB:SetWidth(UI._pbWidth)
-        UI.totalPB:SetJustifyH("RIGHT")
+        UI.totalPB:SetJustifyH("CENTER")
     end
 
     if UI._colGrips then

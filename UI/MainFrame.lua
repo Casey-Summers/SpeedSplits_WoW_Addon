@@ -7,6 +7,9 @@ local FrameFactory = UI.Templates.FrameFactory
 local ScrollBarSkin = UI.Templates.ScrollBarSkin
 local IconButton = UI.Templates.IconButton
 local HoverFadeFrame = UI.Templates.HoverFadeFrame
+local HeaderCell = UI.Templates.HeaderCell
+
+local BOSS_HEADER_LABELS = { "", "PB", "Split", "Diff" }
 
 function UI.ShowAddonFrames()
     if NS.RefreshVisibility then
@@ -32,21 +35,21 @@ local function BuildBossColumns()
             DoCellUpdate = UI.Boss_DoCellUpdate,
         },
         {
-            name = "PB",
+            name = "",
             width = UI._pbWidth,
             align = "CENTER",
             DoCellUpdate = UI.Num_DoCellUpdate,
             color = UI.PBColor,
         },
         {
-            name = "Split",
+            name = "",
             width = UI._splitWidth,
             align = "CENTER",
             DoCellUpdate = UI.Num_DoCellUpdate,
             color = UI.SplitColor,
         },
         {
-            name = "Difference",
+            name = "",
             width = UI._deltaWidth,
             align = "CENTER",
             DoCellUpdate = UI.Num_DoCellUpdate,
@@ -60,15 +63,37 @@ local function GetHeaderColorKey(index)
 end
 
 function UI.RestyleBossTableHeaders(scale)
-    if not (UI.st and UI.st.head and UI.st.head.cols and UI.cols) then
+    if UI.st and UI.st.head then
+        UI.st.head:SetAlpha(0)
+        UI.st.head:Hide()
+        UI.st.head:EnableMouse(false)
+    end
+
+    if not (UI.customBossHeaders and UI.cols) then
         return
     end
 
-    for i = 1, #UI.st.head.cols do
+    for i = 1, #UI.customBossHeaders do
         local align = (UI.cols[i] and UI.cols[i].align) or "CENTER"
-        if UI.cols[i] then
-            UI.StyleHeaderCell(UI.st.head.cols[i], align, scale or 1.0, UI.cols[i].name, GetHeaderColorKey(i))
+        local text = BOSS_HEADER_LABELS[i] or ""
+        if UI.cols[i] and UI.customBossHeaders[i] then
+            UI.StyleHeaderCell(UI.customBossHeaders[i], align, scale or 1.0, text, GetHeaderColorKey(i))
+            UI.customBossHeaders[i]:EnableMouse(false)
         end
+    end
+end
+
+local function EnsureBossHeaderCells(parent)
+    if UI.customBossHeaders or not parent then
+        return
+    end
+
+    UI.customBossHeaders = {}
+    for i = 1, #BOSS_HEADER_LABELS do
+        local cell = HeaderCell.Create(parent, BOSS_HEADER_LABELS[i], "CENTER")
+        cell:SetFrameLevel(parent:GetFrameLevel() + 3)
+        cell:EnableMouse(false)
+        UI.customBossHeaders[i] = cell
     end
 end
 
@@ -294,11 +319,9 @@ function UI.EnsureUI()
         })
 
         if st.head then
-            st.head:SetFrameStrata("HIGH")
-            st.head:SetFrameLevel(100)
-            if st.head.cols then
-                UI.RestyleBossTableHeaders(1.0)
-            end
+            st.head:SetAlpha(0)
+            st.head:Hide()
+            st.head:EnableMouse(false)
         end
 
         local scrollLane = CreateFrame("Frame", nil, st.frame, "BackdropTemplate")
@@ -326,15 +349,9 @@ function UI.EnsureUI()
             local trough = _G[st.frame:GetName() .. "ScrollTrough"]
             local troughBorder = _G[st.frame:GetName() .. "ScrollTroughBorder"]
             if scrollbar then
-                scrollbar:SetParent(scrollLane)
+                scrollbar._ssAnchorParent = scrollLane
                 scrollbar._ssTrough = trough
                 scrollbar._ssTroughBorder = troughBorder
-            end
-            if trough then
-                trough:SetParent(scrollLane)
-            end
-            if troughBorder then
-                troughBorder:SetParent(scrollLane)
             end
         end
     end
@@ -349,14 +366,8 @@ function UI.EnsureUI()
     titleBg:SetPoint("BOTTOMRIGHT", bgFrame, "BOTTOMRIGHT", 200, -20)
     UI.titleBg = titleBg
 
-    if UI.st and UI.st.head then
-        UI.st.head:SetParent(bgFrame)
-        UI.st.head:SetAllPoints(bgFrame)
-        UI.st.head:SetFrameLevel(bgFrame:GetFrameLevel() + 2)
-        if UI.st.head.cols then
-            UI.RestyleBossTableHeaders(1.0)
-        end
-    end
+    EnsureBossHeaderCells(bgFrame)
+    UI.RestyleBossTableHeaders(1.0)
 
     local killCountCounterText = bgFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     killCountCounterText:SetDrawLayer("OVERLAY", 7)
@@ -503,7 +514,7 @@ function NS.UpdateColorsOnly()
         Util.ApplyBackgroundTexture(UI.titleBg, texName)
     end
 
-    if UI.st and UI.st.head and UI.st.head.cols then
+    if UI.customBossHeaders then
         UI.RestyleBossTableHeaders(1.0)
     end
 end
@@ -533,7 +544,7 @@ function NS.UpdateFontsOnly()
     if UI.st and UI.st.Refresh then
         UI.st:Refresh()
     end
-    if UI.st and UI.st.head and UI.st.head.cols then
+    if UI.customBossHeaders then
         UI.RestyleBossTableHeaders(1.0)
     end
 end

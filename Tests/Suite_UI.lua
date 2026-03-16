@@ -41,8 +41,8 @@ System.RegisterTest({
         NS.Database.EnsureDB()
         NS.UI.EnsureUI()
         System.BeginSection("Read header colours from the boss table")
-        local bossHeader = NS.UI.st.head.cols[1]:GetFontString()
-        local pbHeader = NS.UI.st.head.cols[2]:GetFontString()
+        local bossHeader = NS.UI.customBossHeaders[1]:GetFontString()
+        local pbHeader = NS.UI.customBossHeaders[2]:GetFontString()
         local br, bg, bb = bossHeader:GetTextColor()
         local pr, pg, pb = pbHeader:GetTextColor()
 
@@ -162,6 +162,23 @@ System.RegisterTest({
         System.AssertEqual(row.cols[1].text:GetText(), "Boss A", "Boss name remains in the boss-name display column")
         System.AssertEqual(row.cols[4].text:GetText(), "+00:05.000", "Difference display column reads the difference payload")
         System.EndSection("Populate a synthetic boss row", "PASS")
+    end,
+})
+
+System.RegisterTest({
+    id = "ui_custom_headers_replace_lib_headers",
+    suite = "UI",
+    subcategory = "Header",
+    name = "Uses custom splits headers instead of the lib-st header row",
+    func = function()
+        NS.Database.EnsureDB()
+        NS.UI.EnsureUI()
+        System.BeginSection("Inspect the custom header strip")
+        System.AssertTrue(NS.UI.customBossHeaders ~= nil, "Custom boss headers are created", NS.UI.customBossHeaders ~= nil)
+        System.AssertEqual(NS.UI.customBossHeaders[2]:GetFontString():GetText(), "PB", "The PB custom header uses the expected label")
+        System.AssertTrue(NS.UI.st.head:IsShown() == false or NS.UI.st.head:GetAlpha() == 0,
+            "The lib-st header row is hidden for the splits table", NS.UI.st.head:GetAlpha())
+        System.EndSection("Inspect the custom header strip", "PASS")
     end,
 })
 

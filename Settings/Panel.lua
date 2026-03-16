@@ -141,7 +141,7 @@ function NS.CreateSettingsPanel()
     end
 
     local toastHeader = Widgets.Header(panel, "PB Reward Toast")
-    toastHeader:SetPoint("TOPLEFT", textureHeader, "BOTTOMLEFT", 0, -110)
+    toastHeader:SetPoint("TOPLEFT", textureHeader, "BOTTOMLEFT", 0, -95)
 
     local rewardRow = CreateFrame("Frame", nil, panel)
     rewardRow:SetPoint("TOPLEFT", toastHeader, "BOTTOMLEFT", 0, -10)
@@ -357,7 +357,7 @@ function NS.CreateSettingsPanel()
     end)
     defBtn:SetPoint("TOPLEFT", managementHeader, "BOTTOMLEFT", 10, -10)
 
-    local resetBtn = Q("Reset Styles", function()
+    local resetBtn = Q("Restore Styles", function()
         if NS.DB.DefaultStyle then
             local d = NS.DB.DefaultStyle
             NS.DB.Settings.colors = Widgets.CopyTable(d.colors)
@@ -400,7 +400,7 @@ function NS.CreateSettingsPanel()
     layoutBtn:SetPoint("TOPLEFT", defBtn, "BOTTOMLEFT", 0, -6)
     panel._buttons.saveDefaultLayout = layoutBtn
 
-    local resetLayoutBtn = Q("Reset Layout", function()
+    local resetLayoutBtn = Q("Restore Layout", function()
         if NS.ResetLayout then
             NS.ResetLayout()
         end

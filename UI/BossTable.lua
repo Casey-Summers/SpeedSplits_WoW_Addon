@@ -120,7 +120,11 @@ local function Num_DoCellUpdate(rowFrame, cellFrame, data, cols, row, realrow, c
     cellFrame.text:SetJustifyH("RIGHT")
     cellFrame.text:SetJustifyV("MIDDLE")
     cellFrame.text:ClearAllPoints()
-    cellFrame.text:SetPoint("RIGHT", cellFrame, "CENTER", 34, 0)
+    if dataIndex == 4 then
+        cellFrame.text:SetPoint("RIGHT", cellFrame, "RIGHT", -10, 0)
+    else
+        cellFrame.text:SetPoint("RIGHT", cellFrame, "CENTER", 34, 0)
+    end
     cellFrame.text:SetWidth(0)
 
     local color = (cols[column].color and cols[column].color(data, cols, realrow, column, stable)) or cell.color

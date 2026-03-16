@@ -134,6 +134,10 @@ local function EnsureDB()
         SpeedSplitsDB.DefaultStyle = Util.CopyTable(NS.FactoryDefaults.Settings)
     end
 
+    if not SpeedSplitsDB.ui then
+        SpeedSplitsDB.ui = Util.CopyTable(NS.FactoryDefaults.ui)
+    end
+
     NS.DB = SpeedSplitsDB
 
     if NS.UI and NS.UI.history then

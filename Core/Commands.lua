@@ -9,10 +9,8 @@ SlashCmdList.SPEEDSPLITS = function(msg)
     if cmd == "history" or cmd == "h" then
         NS.UI.ToggleHistoryFrame()
     elseif cmd == "test" then
-        if NS.Debug and NS.Debug.enableTestUI and NS.Tests and NS.Tests.Open then
+        if NS.Tests and NS.Tests.Open then
             NS.Tests.Open()
-        elseif NS.Print then
-            NS.Print("Test UI is disabled in normal runtime.")
         end
     elseif cmd == "debugobj" then
         NS.Debug.objectiveTrace = not NS.Debug.objectiveTrace

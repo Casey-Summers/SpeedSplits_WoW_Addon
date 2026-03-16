@@ -55,6 +55,32 @@ local function SaveColWidths()
     ui.cols.delta = UI._deltaWidth
 end
 
+local function SaveHistoryColWidths()
+    local ui = GetUISaved()
+    if not ui or not UI.history or not UI.history.colWidths then
+        return
+    end
+    ui.historyCols = ui.historyCols or {}
+    for key, value in pairs(UI.history.colWidths) do
+        ui.historyCols[key] = value
+    end
+end
+
+local function CaptureCurrentLayout()
+    GetUISaved()
+    if UI.timerFrame then
+        SaveFrameGeom("timer", UI.timerFrame)
+    end
+    if UI.bossFrame then
+        SaveFrameGeom("boss", UI.bossFrame)
+    end
+    if UI.history and UI.history.frame then
+        SaveFrameGeom("history", UI.history.frame)
+    end
+    SaveColWidths()
+    SaveHistoryColWidths()
+end
+
 local function GetModelColumnWidth()
     local showModels = NS.DB and NS.DB.Settings and NS.DB.Settings.showNPCViewModels ~= false
     return showModels and 40 or 0
@@ -149,7 +175,7 @@ local function ApplyTableLayout()
     local displayRows = math.max(1, math.floor(height / rowHeight))
     local laneWidth = GetBossScrollBarWidth() + 6
     local needsScroll = GetBossTableDataCount() > displayRows
-    local contentRightInset = (needsScroll and laneWidth or 0) + 2
+    local contentRightInset = needsScroll and laneWidth or 0
     UI._bossScrollLaneVisible = needsScroll
     UI._bossScrollLaneWidth = needsScroll and laneWidth or 0
     UI._rightInset = contentRightInset
@@ -369,6 +395,7 @@ UI.RestoreColWidths = RestoreColWidths
 UI.GetScrollBarInset = GetScrollBarInset
 UI.GetModelColumnWidth = GetModelColumnWidth
 UI.ApplyTableLayout = ApplyTableLayout
+UI.CaptureCurrentLayout = CaptureCurrentLayout
 UI.SetupSizeGrip = SetupSizeGrip
 UI.BeginColDrag = BeginColDrag
 UI.EndColDrag = EndColDrag

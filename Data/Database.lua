@@ -152,26 +152,31 @@ local function GetBestSplitsSubtable(instanceName)
     return NormalizeBestSplitsNode(NS.DB, instanceName)
 end
 
-local function ResetToFactorySettings()
-    if SpeedSplitsDB then
-        SpeedSplitsDB.Settings = Util.CopyTable(NS.FactoryDefaults.Settings)
-        SpeedSplitsDB.DefaultStyle = Util.CopyTable(NS.FactoryDefaults.Settings)
-        SpeedSplitsDB.ui = Util.CopyTable(NS.FactoryDefaults.ui)
-        SpeedSplitsDB.DefaultLayout = { ui = Util.CopyTable(NS.FactoryDefaults.ui) }
-        ReloadUI()
-    end
+local function ApplyFactoryReset()
+    EnsureDB()
+    SpeedSplitsDB.Settings = Util.CopyTable(NS.FactoryDefaults.Settings)
+    SpeedSplitsDB.DefaultStyle = Util.CopyTable(NS.FactoryDefaults.Settings)
+    SpeedSplitsDB.ui = Util.CopyTable(NS.FactoryDefaults.ui)
+    SpeedSplitsDB.DefaultLayout = { ui = Util.CopyTable(NS.FactoryDefaults.ui) }
 end
 
-local function WipeDatabase()
+local function ApplyDatabaseWipe()
     EnsureDB()
     SpeedSplitsDB.InstancePersonalBests = {}
     SpeedSplitsDB.RunHistory = {}
     EnsureDB()
+end
+
+local function WipeDatabase(simulateOnly)
+    ApplyDatabaseWipe()
     if NS.UpdateColorsFromSettings then
         NS.UpdateColorsFromSettings()
     end
     if NS.RefreshAllUI then
         NS.RefreshAllUI()
+    end
+    if simulateOnly then
+        return
     end
     if NS.Print then
         NS.Print("Records wiped. Reloading UI...")
@@ -179,17 +184,43 @@ local function WipeDatabase()
     ReloadUI()
 end
 
-local function ResetLayout()
+local function SaveDefaultLayout()
+    EnsureDB()
+    if NS.UI and NS.UI.CaptureCurrentLayout then
+        NS.UI.CaptureCurrentLayout()
+    end
+    SpeedSplitsDB.DefaultLayout = { ui = Util.CopyTable(SpeedSplitsDB.ui or {}) }
+end
+
+local function ApplyLayoutReset()
+    EnsureDB()
+    local defaultUI
+    if SpeedSplitsDB.DefaultLayout and SpeedSplitsDB.DefaultLayout.ui then
+        defaultUI = Util.CopyTable(SpeedSplitsDB.DefaultLayout.ui)
+    else
+        defaultUI = Util.CopyTable(NS.FactoryDefaults.ui)
+    end
+    SpeedSplitsDB.ui = defaultUI
+end
+
+local function ResetLayout(simulateOnly)
     if SpeedSplitsDB then
-        local defaultUI = nil
-        if SpeedSplitsDB.DefaultLayout and SpeedSplitsDB.DefaultLayout.ui then
-            defaultUI = Util.CopyTable(SpeedSplitsDB.DefaultLayout.ui)
-        else
-            defaultUI = Util.CopyTable(NS.FactoryDefaults.ui)
-        end
-        SpeedSplitsDB.ui = defaultUI
+        ApplyLayoutReset()
         if NS.RefreshAllUI then
             NS.RefreshAllUI()
+        end
+        if simulateOnly then
+            return
+        end
+        ReloadUI()
+    end
+end
+
+local function ResetToFactorySettings(simulateOnly)
+    if SpeedSplitsDB then
+        ApplyFactoryReset()
+        if simulateOnly then
+            return
         end
         ReloadUI()
     end
@@ -216,7 +247,11 @@ NS.Database.GetBestSplitsSubtable = GetBestSplitsSubtable
 NS.Database.DeleteRunRecord = DeleteRunRecord
 NS.Database.IsTestRunRecord = IsTestRunRecord
 NS.Database.PurgeTestRunHistory = PurgeTestRunHistory
+NS.Database.ApplyFactoryReset = ApplyFactoryReset
+NS.Database.ApplyDatabaseWipe = ApplyDatabaseWipe
+NS.Database.ApplyLayoutReset = ApplyLayoutReset
 NS.ResetToFactorySettings = ResetToFactorySettings
 NS.WipeDatabase = WipeDatabase
 NS.ResetLayout = ResetLayout
+NS.SaveDefaultLayout = SaveDefaultLayout
 NS.GetBestSplitsSubtable = GetBestSplitsSubtable

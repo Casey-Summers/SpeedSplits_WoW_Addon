@@ -5,11 +5,10 @@ NS.Settings = NS.Settings or {}
 NS.Settings.Widgets = Widgets
 
 local UIDropDownMenu_SetWidth = _G.UIDropDownMenu_SetWidth
-local UIDropDownMenu_SetSelectedValue = _G.UIDropDownMenu_SetSelectedValue
-local UIDropDownMenu_SetText = _G.UIDropDownMenu_SetText
 local UIDropDownMenu_Initialize = _G.UIDropDownMenu_Initialize
 local UIDropDownMenu_AddButton = _G.UIDropDownMenu_AddButton
 local UIDropDownMenu_CreateInfo = _G.UIDropDownMenu_CreateInfo
+local DropDown = NS.UI.Templates.DropDown
 
 Widgets.Registry = {}
 
@@ -88,8 +87,7 @@ function Widgets.VisualScalingSection(parent, label, typeKey)
     dd:SetScale(0.95)
 
     local function OnClick(self)
-        UIDropDownMenu_SetSelectedValue(dd, self.value)
-        UIDropDownMenu_SetText(dd, self.text)
+        DropDown.SetSelection(dd, self.value, self.text)
         NS.DB.Settings.fonts[typeKey].font = self.value
         NS.RefreshAllUI()
     end
@@ -112,9 +110,8 @@ function Widgets.VisualScalingSection(parent, label, typeKey)
         end
     end)
 
-    UIDropDownMenu_SetSelectedValue(dd, NS.DB.Settings.fonts[typeKey].font)
     local name = (NS.DB.Settings.fonts[typeKey].font:find("FRIZQT") and "Friz" or (NS.DB.Settings.fonts[typeKey].font:find("ARIAL") and "Arial" or (NS.DB.Settings.fonts[typeKey].font:find("skurri") and "Skurri" or "Morph")))
-    UIDropDownMenu_SetText(dd, name)
+    DropDown.SetSelection(dd, NS.DB.Settings.fonts[typeKey].font, name)
 
     local bold = CreateFrame("CheckButton", nil, container, "InterfaceOptionsCheckButtonTemplate")
     bold:SetPoint("LEFT", dd, "RIGHT", -5, 2)
@@ -135,9 +132,8 @@ function Widgets.VisualScalingSection(parent, label, typeKey)
         local font = NS.DB.Settings.fonts[typeKey]
         slider:SetValue(font.size)
         sText:SetText("Size: " .. font.size)
-        UIDropDownMenu_SetSelectedValue(dd, font.font)
         local fontName = (font.font:find("FRIZQT") and "Friz" or (font.font:find("ARIAL") and "Arial" or (font.font:find("skurri") and "Skurri" or "Morph")))
-        UIDropDownMenu_SetText(dd, fontName)
+        DropDown.SetSelection(dd, font.font, fontName)
         bold:SetChecked(font.flags:find("THICKOUTLINE") ~= nil)
     end)
 
@@ -160,8 +156,7 @@ function Widgets.VisibilityRow(parent, label, field)
     dd:SetScale(0.95)
 
     local function OnClick(self)
-        UIDropDownMenu_SetSelectedValue(dd, self.value)
-        UIDropDownMenu_SetText(dd, self.text)
+        DropDown.SetSelection(dd, self.value, self.text)
         NS.DB.Settings.visibility[field] = self.value
         if NS.RefreshVisibility then
             NS.RefreshVisibility()
@@ -186,8 +181,8 @@ function Widgets.VisibilityRow(parent, label, field)
     end)
 
     local val = NS.DB.Settings.visibility[field] or "instance"
-    UIDropDownMenu_SetSelectedValue(dd, val)
-    UIDropDownMenu_SetText(dd, (val == "instance" and "Instance Only" or (val == "outdoor" and "Outdoor Only" or "Both")))
+    DropDown.SetSelection(dd, val,
+        (val == "instance" and "Instance Only" or (val == "outdoor" and "Outdoor Only" or "Both")))
     return container
 end
 
@@ -207,8 +202,7 @@ function Widgets.SettingsDropDown(parent, label, field, opts, width)
     dd:SetScale(0.95)
 
     local function OnClick(self)
-        UIDropDownMenu_SetSelectedValue(dd, self.value)
-        UIDropDownMenu_SetText(dd, self.text)
+        DropDown.SetSelection(dd, self.value, self.text)
         NS.DB.Settings[field] = self.value
         if field == "speedrunMode" then
             NS.Run.speedrunMode = self.value
@@ -233,13 +227,7 @@ function Widgets.SettingsDropDown(parent, label, field, opts, width)
 
     local function Refresh()
         local val = NS.DB.Settings[field]
-        UIDropDownMenu_SetSelectedValue(dd, val)
-        for _, info in ipairs(opts) do
-            if info.value == val then
-                UIDropDownMenu_SetText(dd, info.name)
-                break
-            end
-        end
+        DropDown.SetSelection(dd, val, DropDown.ResolveSelectedText(opts, val))
     end
 
     Refresh()

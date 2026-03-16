@@ -5,7 +5,6 @@ local Util = NS.Util
 local Colors = NS.Colors
 local ScrollBarSkin = UI.Templates.ScrollBarSkin
 
-local MODEL_DISPLAY_IDS = { 52047, 6110, 52515, 52595, 31042 }
 
 local function GetDisplayDataIndex(column)
     if column >= 1 and column <= 4 then
@@ -51,7 +50,7 @@ local function UpdateVisibleRowModel(rowFrame, entry, realrow, fShow)
     model:SetPoint("BOTTOMLEFT", bossCell, "BOTTOMLEFT", 1, 1)
     model:SetWidth(math.max(UI._modelWidth - 2, 0))
 
-    local displayID = MODEL_DISPLAY_IDS[realrow]
+    local displayID = NS.Const.BOSS_MODEL_ID
     if displayID and not NS.IsBossIgnored(entry.cols[1].value) then
         model:SetDisplayInfo(displayID)
         model:SetKeepModelOnHide(true)

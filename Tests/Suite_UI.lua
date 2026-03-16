@@ -324,6 +324,56 @@ System.RegisterTest({
 })
 
 System.RegisterTest({
+    id = "ui_management_buttons_wire_to_handlers",
+    suite = "UI",
+    subcategory = "Settings",
+    name = "Wires management buttons to the expected handlers",
+    func = function()
+        NS.Database.EnsureDB()
+        NS.CreateSettingsPanel()
+
+        local panel = _G.SpeedSplitsOptionsPanel
+        local oldSaveDefaultLayout = NS.SaveDefaultLayout
+        local oldResetLayout = NS.ResetLayout
+        local oldStaticPopupShow = StaticPopup_Show
+        local saved = false
+        local reset = false
+        local popupKey
+
+        System.WithCleanup(function()
+            System.BeginSection("Trigger settings management buttons")
+            NS.SaveDefaultLayout = function()
+                saved = true
+            end
+            NS.ResetLayout = function()
+                reset = true
+            end
+            StaticPopup_Show = function(key)
+                popupKey = key
+            end
+
+            panel._buttons.saveDefaultLayout:GetScript("OnClick")()
+            System.AssertTrue(saved == true, "Save Default Layout button calls the layout save handler", saved)
+
+            panel._buttons.resetLayout:GetScript("OnClick")()
+            System.AssertTrue(reset == true, "Reset Layout button calls the layout reset handler", reset)
+
+            panel._buttons.wipeAllRecords:GetScript("OnClick")()
+            System.AssertEqual(popupKey, "SPEEDSPLITS_WIPE_CONFIRM", "Wipe button opens the wipe confirmation popup")
+
+            panel._buttons.resetFactory:GetScript("OnClick")()
+            System.AssertEqual(popupKey, "SPEEDSPLITS_FACTORY_RESET",
+                "Factory reset button opens the factory reset popup")
+            System.EndSection("Trigger settings management buttons", "PASS")
+        end, function()
+            NS.SaveDefaultLayout = oldSaveDefaultLayout
+            NS.ResetLayout = oldResetLayout
+            StaticPopup_Show = oldStaticPopupShow
+        end)
+    end,
+})
+
+System.RegisterTest({
     id = "ui_history_row_template",
     suite = "UI",
     subcategory = "History Row",
@@ -370,5 +420,40 @@ System.RegisterTest({
         button:GetScript("OnClick")()
         System.AssertTrue(clicked == true, "Icon button click handlers fire", clicked)
         System.EndSection("Create and click an icon button", "PASS")
+    end,
+})
+System.RegisterTest({
+    id = "ui_settings_npc_models_beta_label",
+    suite = "UI",
+    subcategory = "Settings",
+    name = "Includes (BETA) in the Show NPC View Models setting label",
+    func = function()
+        NS.Database.EnsureDB()
+        NS.CreateSettingsPanel()
+        
+        local found = false
+        local panel = _G.SpeedSplitsOptionsPanel
+        for i = 1, panel:GetNumChildren() do
+            local child = select(i, panel:GetChildren())
+            if child and child.Text and child.Text.GetText then
+                local text = child.Text:GetText()
+                if text and text:find("Show NPC View Models %(BETA%)") then
+                    found = true
+                    break
+                end
+            end
+        end
+        
+        System.AssertTrue(found == true, "The (BETA) label is present in the settings panel", found)
+    end,
+})
+
+System.RegisterTest({
+    id = "ui_boss_model_placeholder_id",
+    suite = "UI",
+    subcategory = "Boss Table",
+    name = "Uses the correct placeholder ID (10045) for boss models",
+    func = function()
+        System.AssertEqual(NS.Const.BOSS_MODEL_ID, 10045, "The boss model display ID matches the placeholder 10045")
     end,
 })

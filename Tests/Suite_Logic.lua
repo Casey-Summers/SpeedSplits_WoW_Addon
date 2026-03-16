@@ -196,6 +196,119 @@ System.RegisterTest({
 })
 
 System.RegisterTest({
+    id = "logic_save_default_layout_captures_live_layout",
+    suite = "Logic",
+    subcategory = "Layout Reset",
+    name = "Saves the current live layout into DefaultLayout",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldUI = NS.Util.CopyTable(NS.DB.ui or {})
+        local oldDefaultLayout = NS.DB.DefaultLayout and NS.Util.CopyTable(NS.DB.DefaultLayout) or nil
+        local oldCapture = NS.UI.CaptureCurrentLayout
+
+        System.WithCleanup(function()
+            System.BeginSection("Save a live layout snapshot")
+            NS.DB.ui = {
+                cols = { pb = 80, split = 81, delta = 82 },
+                frames = { boss = { x = 1, y = 2 } },
+            }
+            NS.UI.CaptureCurrentLayout = function()
+                NS.DB.ui.cols.pb = 120
+                NS.DB.ui.cols.split = 121
+                NS.DB.ui.frames.boss.x = 55
+            end
+
+            NS.SaveDefaultLayout()
+
+            System.AssertEqual(NS.DB.DefaultLayout.ui.cols.pb, 120, "SaveDefaultLayout captures the live PB width")
+            System.AssertEqual(NS.DB.DefaultLayout.ui.frames.boss.x, 55, "SaveDefaultLayout captures the live boss position")
+            System.EndSection("Save a live layout snapshot", "PASS")
+        end, function()
+            NS.DB.ui = oldUI
+            NS.DB.DefaultLayout = oldDefaultLayout
+            NS.UI.CaptureCurrentLayout = oldCapture
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_wipe_database_simulation",
+    suite = "Logic",
+    subcategory = "Database",
+    name = "Simulates wiping records without reloading UI",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldHistory = NS.Util.CopyTable(NS.DB.RunHistory or {})
+        local oldPBs = NS.Util.CopyTable(NS.DB.InstancePersonalBests or {})
+        local oldReloadUI = ReloadUI
+        local reloaded = false
+
+        System.WithCleanup(function()
+            System.BeginSection("Simulate wiping records")
+            NS.DB.RunHistory = { { instanceName = "Test" } }
+            NS.DB.InstancePersonalBests = { Test = { Segments = { Boss = 10 } } }
+            ReloadUI = function()
+                reloaded = true
+            end
+
+            NS.WipeDatabase(true)
+
+            System.AssertEqual(#NS.DB.RunHistory, 0, "Simulated wipe clears run history")
+            System.AssertEqual(next(NS.DB.InstancePersonalBests), nil, "Simulated wipe clears personal bests")
+            System.AssertTrue(reloaded == false, "Simulated wipe does not reload the UI", reloaded)
+            System.EndSection("Simulate wiping records", "PASS")
+        end, function()
+            NS.DB.RunHistory = oldHistory
+            NS.DB.InstancePersonalBests = oldPBs
+            ReloadUI = oldReloadUI
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_factory_reset_simulation",
+    suite = "Logic",
+    subcategory = "Database",
+    name = "Simulates a factory reset without reloading UI",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldSettings = NS.Util.CopyTable(NS.DB.Settings or {})
+        local oldUI = NS.Util.CopyTable(NS.DB.ui or {})
+        local oldDefaultLayout = NS.DB.DefaultLayout and NS.Util.CopyTable(NS.DB.DefaultLayout) or nil
+        local oldReloadUI = ReloadUI
+        local reloaded = false
+
+        System.WithCleanup(function()
+            System.BeginSection("Simulate resetting to factory defaults")
+            NS.DB.Settings.speedrunMode = "last"
+            NS.DB.ui.cols.pb = 123
+            ReloadUI = function()
+                reloaded = true
+            end
+
+            NS.ResetToFactorySettings(true)
+
+            System.AssertEqual(NS.DB.Settings.speedrunMode, NS.FactoryDefaults.Settings.speedrunMode,
+                "Simulated factory reset restores factory settings")
+            System.AssertEqual(NS.DB.ui.cols.pb, NS.FactoryDefaults.ui.cols.pb,
+                "Simulated factory reset restores factory layout")
+            System.AssertEqual(NS.DB.DefaultLayout.ui.cols.pb, NS.FactoryDefaults.ui.cols.pb,
+                "Simulated factory reset refreshes the default layout snapshot")
+            System.AssertTrue(reloaded == false, "Simulated factory reset does not reload the UI", reloaded)
+            System.EndSection("Simulate resetting to factory defaults", "PASS")
+        end, function()
+            NS.DB.Settings = oldSettings
+            NS.DB.ui = oldUI
+            NS.DB.DefaultLayout = oldDefaultLayout
+            ReloadUI = oldReloadUI
+        end)
+    end,
+})
+
+System.RegisterTest({
     id = "logic_equal_pace_delta_is_zero",
     suite = "Logic",
     subcategory = "Pace Calculation",

@@ -3,10 +3,16 @@ local _, NS = ...
 NS.Settings = NS.Settings or {}
 
 local Widgets = NS.Settings.Widgets
+local DropDown = NS.UI.Templates.DropDown
 
 function NS.CreateSettingsPanel()
+    if _G.SpeedSplitsOptionsPanel then
+        return _G.SpeedSplitsOptionsPanel
+    end
+
     local panel = CreateFrame("Frame", "SpeedSplitsOptionsPanel", UIParent)
     panel.name = "SpeedSplits"
+    panel._buttons = panel._buttons or {}
 
     local themesHeader = Widgets.Header(panel, "Themes & Colors")
     themesHeader:SetPoint("TOPLEFT", 16, -16)
@@ -79,7 +85,7 @@ function NS.CreateSettingsPanel()
     end
 
     local npcModelsCB = CreateFrame("CheckButton", nil, panel, "InterfaceOptionsCheckButtonTemplate")
-    npcModelsCB.Text:SetText("Show NPC View Models")
+    npcModelsCB.Text:SetText("Show NPC View Models (BETA)")
     npcModelsCB.Text:SetFont("Fonts\\FRIZQT__.TTF", 10)
     if bottomThemeAnchor then
         npcModelsCB:SetPoint("TOPLEFT", bottomThemeAnchor, "BOTTOMLEFT", -4, -10)
@@ -198,8 +204,7 @@ function NS.CreateSettingsPanel()
         local id = NS.DB.Settings.toastSoundID or 0
         local name = GetSoundNameByID(id) or NS.DB.Settings.toastSoundName or "None"
         NS.DB.Settings.toastSoundName = name
-        UIDropDownMenu_SetSelectedValue(soundDD, id)
-        UIDropDownMenu_SetText(soundDD, name)
+        DropDown.SetSelection(soundDD, id, name)
     end
 
     table.insert(Widgets.Registry, UpdateSoundDD)
@@ -385,12 +390,15 @@ function NS.CreateSettingsPanel()
     resetBtn:SetPoint("LEFT", defBtn, "RIGHT", 15, 0)
 
     local layoutBtn = Q("Save Default Layout", function()
-        NS.DB.DefaultLayout = { ui = Widgets.CopyTable(NS.DB.ui or {}) }
+        if NS.SaveDefaultLayout then
+            NS.SaveDefaultLayout()
+        end
         if _G.SS_Print then
             _G.SS_Print("Default layout saved.")
         end
     end)
     layoutBtn:SetPoint("TOPLEFT", defBtn, "BOTTOMLEFT", 0, -6)
+    panel._buttons.saveDefaultLayout = layoutBtn
 
     local resetLayoutBtn = Q("Reset Layout", function()
         if NS.ResetLayout then
@@ -398,18 +406,21 @@ function NS.CreateSettingsPanel()
         end
     end)
     resetLayoutBtn:SetPoint("LEFT", layoutBtn, "RIGHT", 15, 0)
+    panel._buttons.resetLayout = resetLayoutBtn
 
     local wipeBtn = Q("Wipe All Records", function()
         StaticPopup_Show("SPEEDSPLITS_WIPE_CONFIRM")
     end)
     wipeBtn:SetSize(295, 26)
     wipeBtn:SetPoint("TOPLEFT", layoutBtn, "BOTTOMLEFT", 0, -6)
+    panel._buttons.wipeAllRecords = wipeBtn
 
     local factoryBtn = Q("Reset to Factory Settings", function()
         StaticPopup_Show("SPEEDSPLITS_FACTORY_RESET")
     end)
     factoryBtn:SetSize(295, 26)
     factoryBtn:SetPoint("TOPLEFT", wipeBtn, "BOTTOMLEFT", 0, -6)
+    panel._buttons.resetFactory = factoryBtn
 
     if Settings and Settings.RegisterCanvasLayoutCategory then
         local category = Settings.RegisterCanvasLayoutCategory(panel, panel.name)
@@ -418,6 +429,8 @@ function NS.CreateSettingsPanel()
     else
         InterfaceOptions_AddCategory(panel)
     end
+
+    return panel
 end
 
 function NS.OpenSettings()

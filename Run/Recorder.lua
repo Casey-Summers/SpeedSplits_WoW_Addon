@@ -183,7 +183,7 @@ local function SaveRunRecord(success)
     if NS.Database and NS.Database.PurgeTestRunHistory then
         NS.Database.PurgeTestRunHistory(NS.DB)
     end
-    while #NS.DB.RunHistory > Const.RUNS_MAX do
+    while #NS.DB.RunHistory > Const.RUN_HISTORY.RUNS_MAX do
         table.remove(NS.DB.RunHistory)
     end
 

@@ -117,7 +117,7 @@ function UI.EnsureUI()
     local pbShine = timerFrame:CreateTexture(nil, "OVERLAY")
     pbShine:SetAtlas("challenges-bannershine")
     pbShine:SetPoint("BOTTOM", timerFrame, "TOP", 0, -20)
-    pbShine:SetSize(Const.PB_SHINE_WIDTH, Const.PB_SHINE_HEIGHT)
+    pbShine:SetSize(Const.PB_TOAST.SHINE_WIDTH, Const.PB_TOAST.SHINE_HEIGHT)
     pbShine:SetAlpha(0)
     UI.pbShine = pbShine
 
@@ -218,7 +218,7 @@ function UI.EnsureUI()
         self:StopMovingOrSizing()
         UI.SaveFrameGeom("boss", self)
     end)
-    Util.ApplyResizeBounds(bossFrame, 450, Const.SPLITS_TABLE_MIN_HEIGHT, 1400, 1000)
+    Util.ApplyResizeBounds(bossFrame, 450, Const.SPLITS_LAYOUT.MIN_HEIGHT, 1400, 1000)
     bossFrame:SetBackdrop({
         bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
         edgeFile = "Interface\\Buttons\\WHITE8X8",
@@ -286,14 +286,14 @@ function UI.EnsureUI()
                                 notCheckable = true,
                             },
                         }
-                        local contextMenu = CreateFrame("Frame", "SpeedSplitsBossContextMenu", UIParent,
+                        UI.bossContextMenu = UI.bossContextMenu or CreateFrame("Frame", nil, UIParent,
                             "UIDropDownMenuTemplate")
-                        UIDropDownMenu_Initialize(contextMenu, function(self, level)
+                        UIDropDownMenu_Initialize(UI.bossContextMenu, function(self, level)
                             for _, item in ipairs(menu) do
                                 UIDropDownMenu_AddButton(item, level)
                             end
                         end, "MENU")
-                        ToggleDropDownMenu(1, nil, contextMenu, "cursor", 0, 0)
+                        ToggleDropDownMenu(1, nil, UI.bossContextMenu, "cursor", 0, 0)
                     end
                 end
             end,
@@ -337,7 +337,7 @@ function UI.EnsureUI()
         end
     end
 
-    local bgFrame = FrameFactory.CreateHeaderStrip(bossFrame, Const.TOP_BAR_H, 0.4)
+    local bgFrame = FrameFactory.CreateHeaderStrip(bossFrame, Const.SPLITS_LAYOUT.TOP_BAR_H, 0.4)
     bgFrame:SetFrameLevel(math.max(5, bossFrame:GetFrameLevel() + 2))
     bgFrame:SetClipsChildren(true)
     UI.titleTab = bgFrame
@@ -384,8 +384,8 @@ function UI.EnsureUI()
 
     local historyButton = IconButton.Create(
         totalFrame,
-        18 * Const.HISTORY_ICON_SCALE,
-        18 * Const.HISTORY_ICON_SCALE,
+        18 * Const.RUN_HISTORY.HISTORY_ICON_SCALE,
+        18 * Const.RUN_HISTORY.HISTORY_ICON_SCALE,
         "perks-clock-large",
         "Run history",
         function()

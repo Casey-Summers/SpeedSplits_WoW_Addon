@@ -454,6 +454,6 @@ System.RegisterTest({
     subcategory = "Boss Table",
     name = "Uses the correct placeholder ID (10045) for boss models",
     func = function()
-        System.AssertEqual(NS.Const.BOSS_MODEL_ID, 10045, "The boss model display ID matches the placeholder 10045")
+System.AssertEqual(NS.Const.BOSS_MODEL.PLACEHOLDER_ID, 10045, "The boss model display ID matches the placeholder 10045")
     end,
 })

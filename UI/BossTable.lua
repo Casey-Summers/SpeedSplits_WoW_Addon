@@ -50,12 +50,12 @@ local function UpdateVisibleRowModel(rowFrame, entry, realrow, fShow)
     model:SetPoint("BOTTOMLEFT", bossCell, "BOTTOMLEFT", 1, 1)
     model:SetWidth(math.max(UI._modelWidth - 2, 0))
 
-    local displayID = NS.Const.BOSS_MODEL_ID
+    local displayID = NS.Const.BOSS_MODEL.PLACEHOLDER_ID
     if displayID and not NS.IsBossIgnored(entry.cols[1].value) then
         model:SetDisplayInfo(displayID)
         model:SetKeepModelOnHide(true)
         model:Show()
-        model:SetPortraitZoom(NS.Const.BOSS_MODEL_ZOOM)
+    model:SetPortraitZoom(NS.Const.BOSS_MODEL.ZOOM)
     else
         model:Hide()
     end

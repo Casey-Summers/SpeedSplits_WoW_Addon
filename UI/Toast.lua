@@ -44,6 +44,6 @@ function NS.UpdateToastLayout()
     UI.timerToastBg:SetPoint("CENTER", parent, "CENTER", 0, 0)
 
     if UI.pbShine then
-        UI.pbShine:SetSize(NS.Const.PB_SHINE_WIDTH * scale, NS.Const.PB_SHINE_HEIGHT * scale)
+    UI.pbShine:SetSize(NS.Const.PB_TOAST.SHINE_WIDTH * scale, NS.Const.PB_TOAST.SHINE_HEIGHT * scale)
     end
 end

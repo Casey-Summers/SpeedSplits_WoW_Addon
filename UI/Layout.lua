@@ -163,7 +163,7 @@ local function ApplyTableLayout()
         return
     end
 
-    UI._topInset = Const.TOP_BAR_H + 2
+    UI._topInset = Const.SPLITS_LAYOUT.TOP_BAR_H + 2
     UI._bottomInset = 24 + 2
 
     UI.st.frame:ClearAllPoints()
@@ -283,19 +283,19 @@ local function ApplyTableLayout()
         local xBossRight = bossWidth
         local xPBRight = bossWidth + UI._pbWidth
         local xSplitRight = bossWidth + UI._pbWidth + UI._splitWidth
-        local bottom = -Const.HEADER_H
+        local bottom = -Const.SPLITS_LAYOUT.HEADER_H
 
         UI._colGrips[1]:ClearAllPoints()
-        UI._colGrips[1]:SetPoint("TOPLEFT", UI.st.frame, "TOPLEFT", xBossRight - Const.GRIP_HALFWIDTH, 0)
-        UI._colGrips[1]:SetPoint("BOTTOMRIGHT", UI.st.frame, "TOPLEFT", xBossRight + Const.GRIP_HALFWIDTH, bottom)
+        UI._colGrips[1]:SetPoint("TOPLEFT", UI.st.frame, "TOPLEFT", xBossRight - Const.SPLITS_LAYOUT.GRIP_HALFWIDTH, 0)
+        UI._colGrips[1]:SetPoint("BOTTOMRIGHT", UI.st.frame, "TOPLEFT", xBossRight + Const.SPLITS_LAYOUT.GRIP_HALFWIDTH, bottom)
 
         UI._colGrips[2]:ClearAllPoints()
-        UI._colGrips[2]:SetPoint("TOPLEFT", UI.st.frame, "TOPLEFT", xPBRight - Const.GRIP_HALFWIDTH, 0)
-        UI._colGrips[2]:SetPoint("BOTTOMRIGHT", UI.st.frame, "TOPLEFT", xPBRight + Const.GRIP_HALFWIDTH, bottom)
+        UI._colGrips[2]:SetPoint("TOPLEFT", UI.st.frame, "TOPLEFT", xPBRight - Const.SPLITS_LAYOUT.GRIP_HALFWIDTH, 0)
+        UI._colGrips[2]:SetPoint("BOTTOMRIGHT", UI.st.frame, "TOPLEFT", xPBRight + Const.SPLITS_LAYOUT.GRIP_HALFWIDTH, bottom)
 
         UI._colGrips[3]:ClearAllPoints()
-        UI._colGrips[3]:SetPoint("TOPLEFT", UI.st.frame, "TOPLEFT", xSplitRight - Const.GRIP_HALFWIDTH, 0)
-        UI._colGrips[3]:SetPoint("BOTTOMRIGHT", UI.st.frame, "TOPLEFT", xSplitRight + Const.GRIP_HALFWIDTH, bottom)
+        UI._colGrips[3]:SetPoint("TOPLEFT", UI.st.frame, "TOPLEFT", xSplitRight - Const.SPLITS_LAYOUT.GRIP_HALFWIDTH, 0)
+        UI._colGrips[3]:SetPoint("BOTTOMRIGHT", UI.st.frame, "TOPLEFT", xSplitRight + Const.SPLITS_LAYOUT.GRIP_HALFWIDTH, bottom)
     end
 end
 
@@ -336,13 +336,13 @@ local function UpdateColDrag()
     if UI._colDrag.which == 1 then
         local maxPB = math.max(pbMin,
             available - (UI._modelWidth + UI._splitWidth + UI._deltaWidth + bossMin))
-        UI._pbWidth = Util.Clamp(UI._colDrag.pb - dx, pbMin, math.min(Const.COL_MAX_PB_SPLIT, maxPB))
+        UI._pbWidth = Util.Clamp(UI._colDrag.pb - dx, pbMin, math.min(Const.SPLITS_COL_MAX.PB_SPLIT, maxPB))
     elseif UI._colDrag.which == 2 then
-        UI._pbWidth = Util.Clamp(UI._colDrag.pb + dx, pbMin, Const.COL_MAX_PB_SPLIT)
-        UI._splitWidth = Util.Clamp(UI._colDrag.split - dx, splitColMin, Const.COL_MAX_PB_SPLIT)
+        UI._pbWidth = Util.Clamp(UI._colDrag.pb + dx, pbMin, Const.SPLITS_COL_MAX.PB_SPLIT)
+        UI._splitWidth = Util.Clamp(UI._colDrag.split - dx, splitColMin, Const.SPLITS_COL_MAX.PB_SPLIT)
     elseif UI._colDrag.which == 3 then
-        UI._splitWidth = Util.Clamp(UI._colDrag.split + dx, splitColMin, Const.COL_MAX_PB_SPLIT)
-        UI._deltaWidth = Util.Clamp(UI._colDrag.delta - dx, deltaMin, Const.COL_MAX_DELTA)
+        UI._splitWidth = Util.Clamp(UI._colDrag.split + dx, splitColMin, Const.SPLITS_COL_MAX.PB_SPLIT)
+        UI._deltaWidth = Util.Clamp(UI._colDrag.delta - dx, deltaMin, Const.SPLITS_COL_MAX.DELTA)
     end
 
     ApplyTableLayout()

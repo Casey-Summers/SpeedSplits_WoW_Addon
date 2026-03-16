@@ -9,16 +9,20 @@ SlashCmdList.SPEEDSPLITS = function(msg)
     if cmd == "history" or cmd == "h" then
         NS.UI.ToggleHistoryFrame()
     elseif cmd == "test" then
-        if NS.Tests and NS.Tests.Open then
+        if NS.Debug and NS.Debug.enableTestUI and NS.Tests and NS.Tests.Open then
             NS.Tests.Open()
+        elseif NS.Print then
+            NS.Print("Test UI is disabled in normal runtime.")
         end
     elseif cmd == "debugobj" then
-        SpeedSplits_DebugObjectives = not SpeedSplits_DebugObjectives
+        NS.Debug.objectiveTrace = not NS.Debug.objectiveTrace
         if NS.Print then
-            NS.Print("Objective debug: " .. (SpeedSplits_DebugObjectives and "ON" or "OFF"))
+            NS.Print("Objective debug: " .. (NS.Debug.objectiveTrace and "ON" or "OFF"))
         end
     elseif cmd == "reset" then
-        StaticPopup_Show("SPEEDSPLITS_FACTORY_RESET")
+        if NS.UI and NS.UI.Popups and NS.UI.Popups.ShowFactoryReset then
+            NS.UI.Popups.ShowFactoryReset()
+        end
     else
         if NS.OpenOptions then
             NS.OpenOptions()

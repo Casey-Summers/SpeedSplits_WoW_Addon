@@ -52,11 +52,11 @@ local function TryLoadBossList()
     NS.Run._bossLoadTries = (NS.Run._bossLoadTries or 0) + 1
     local entries, source, tier, journalID, ready = NS.Discovery.BuildBossEntries()
     if not ready then
-        if NS.Run._bossLoadTries >= Const.BOSS_LOAD_MAX_TRIES then
+        if NS.Run._bossLoadTries >= Const.BOSS_MODEL.LOAD_MAX_TRIES then
             ForceLoadEJ()
             return
         end
-        C_Timer.After(Const.BOSS_LOAD_RETRY_DELAY, function()
+        C_Timer.After(Const.BOSS_MODEL.LOAD_RETRY_DELAY, function()
             if NS.Run.inInstance and not NS.Run._bossLoaded then
                 TryLoadBossList()
             end

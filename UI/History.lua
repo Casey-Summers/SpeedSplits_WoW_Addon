@@ -230,7 +230,8 @@ local function History_RestoreColWidths()
     UI.history.colWidths = {}
     local ui = UI.GetUISaved()
     local saved = ui and ui.historyCols
-    for key, def in pairs(Const.HISTORY_COL_DEFAULTS) do
+    local defaults = NS.FactoryDefaults.ui and NS.FactoryDefaults.ui.historyCols or {}
+    for key, def in pairs(defaults) do
         UI.history.colWidths[key] = (saved and saved[key]) and tonumber(saved[key]) or def
     end
 end

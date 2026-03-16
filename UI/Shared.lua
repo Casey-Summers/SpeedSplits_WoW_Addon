@@ -33,7 +33,7 @@ function UI.ApplyThinSeparator(grip)
     end
     local line = grip:CreateTexture(nil, "ARTWORK")
     line:SetPoint("CENTER", grip, "CENTER", 0, 0)
-    line:SetSize(1, NS.Const.HEADER_H)
+    line:SetSize(1, NS.Const.SPLITS_LAYOUT.HEADER_H)
     line:SetColorTexture(1, 1, 1, 0.18)
     grip._line = line
 end

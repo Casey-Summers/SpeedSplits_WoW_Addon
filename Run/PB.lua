@@ -3,22 +3,6 @@ local _, NS = ...
 local Util = NS.Util
 local Colors = NS.Colors
 
-local function UpdateColorsFromSettings()
-    if not NS.DB or not NS.DB.Settings or not NS.DB.Settings.colors then
-        return
-    end
-    for key, hex in pairs(NS.DB.Settings.colors) do
-        local newColor = Util.HexToColor(hex)
-        if NS.Colors[key] then
-            local color = NS.Colors[key]
-            color.r, color.g, color.b, color.a = newColor.r, newColor.g, newColor.b, newColor.a
-            color.argb, color.hex = newColor.argb, newColor.hex
-        else
-            NS.Colors[key] = newColor
-        end
-    end
-end
-
 local function GetPaceToastTexture(delta, isPB)
     if isPB then
         return NS.TimerToastTextures[1]
@@ -93,7 +77,6 @@ local function UpdateBestRunIfNeeded(durationSeconds)
     end
 end
 
-NS.UpdateColorsFromSettings = UpdateColorsFromSettings
 NS.GetPaceToastTexture = GetPaceToastTexture
 NS.GetPaceColor = GetPaceColor
 NS.RunLogic.ComputeSumOfBest = ComputeSumOfBest

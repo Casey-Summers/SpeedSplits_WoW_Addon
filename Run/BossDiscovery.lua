@@ -12,7 +12,7 @@ local function ForEachEJInstance(callback)
     for tierIndex = 1, tierCount do
         EJ_SelectTier(tierIndex)
         for isRaid = 0, 1 do
-            for instanceIndex = 1, Const.EJ_INSTANCE_INDEX_MAX do
+            for instanceIndex = 1, Const.ENCOUNTER_JOURNAL.INSTANCE_INDEX_MAX do
                 local instanceID, name = EJ_GetInstanceByIndex(instanceIndex, isRaid == 1)
                 if not instanceID then
                     break
@@ -147,7 +147,7 @@ local function GetBossNamesFromObjectives()
 
     local sawCriteria = false
     local sawStringDescription = false
-    local maxCriteria = criteriaCount or Const.CRITERIA_MAX
+    local maxCriteria = criteriaCount or Const.RUN_HISTORY.CRITERIA_MAX
     for criteriaIndex = 1, maxCriteria do
         local criteria = C_ScenarioInfo.GetCriteriaInfo(criteriaIndex)
         if not criteria then
@@ -159,12 +159,12 @@ local function GetBossNamesFromObjectives()
         if type(desc) == "string" then
             sawStringDescription = true
 
-            if SpeedSplits_DebugObjectives and NS.Print then
+            if NS.Debug and NS.Debug.objectiveTrace and NS.Print then
                 NS.Print(("OBJ[%d] raw: %q"):format(criteriaIndex, desc))
             end
 
             local bossName = ExtractBossNameFromObjectiveText(desc)
-            if SpeedSplits_DebugObjectives and NS.Print then
+            if NS.Debug and NS.Debug.objectiveTrace and NS.Print then
                 NS.Print(("OBJ[%d] parsed: %s"):format(criteriaIndex, bossName and bossName or "<nil>"))
             end
 
@@ -203,7 +203,7 @@ local function GetEJBossesForInstance(journalInstanceID)
         return bosses
     end
 
-    for encounterIndex = 1, Const.EJ_ENCOUNTER_INDEX_MAX do
+    for encounterIndex = 1, Const.ENCOUNTER_JOURNAL.ENCOUNTER_INDEX_MAX do
         local name, _, encounterID = EJ_GetEncounterInfoByIndex(encounterIndex, journalInstanceID)
         if not name then
             break

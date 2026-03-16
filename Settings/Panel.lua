@@ -187,7 +187,7 @@ function NS.CreateSettingsPanel()
     soundLabel:SetText("PB Toast Sound")
     soundLabel:SetTextColor(0.4, 0.8, 1)
 
-    local soundDD = CreateFrame("Frame", "SSPBToastSoundDD", rewardRow, "UIDropDownMenuTemplate")
+    local soundDD = CreateFrame("Frame", nil, rewardRow, "UIDropDownMenuTemplate")
     soundDD:SetPoint("TOPLEFT", soundLabel, "BOTTOMLEFT", -15, -4)
     UIDropDownMenu_SetWidth(soundDD, 130)
     soundDD:SetScale(0.85)
@@ -351,8 +351,8 @@ function NS.CreateSettingsPanel()
             showNPCViewModels = NS.DB.Settings.showNPCViewModels,
             visibility = Widgets.CopyTable(NS.DB.Settings.visibility),
         }
-        if _G.SS_Print then
-            _G.SS_Print("Default styles saved.")
+        if NS.Print then
+            NS.Print("Default styles saved.")
         end
     end)
     defBtn:SetPoint("TOPLEFT", managementHeader, "BOTTOMLEFT", 10, -10)
@@ -382,8 +382,8 @@ function NS.CreateSettingsPanel()
                 refresh()
             end
             NS.RefreshAllUI()
-            if _G.SS_Print then
-                _G.SS_Print("Styles reset to defaults.")
+            if NS.Print then
+                NS.Print("Styles reset to defaults.")
             end
         end
     end)
@@ -393,8 +393,8 @@ function NS.CreateSettingsPanel()
         if NS.SaveDefaultLayout then
             NS.SaveDefaultLayout()
         end
-        if _G.SS_Print then
-            _G.SS_Print("Default layout saved.")
+        if NS.Print then
+            NS.Print("Default layout saved.")
         end
     end)
     layoutBtn:SetPoint("TOPLEFT", defBtn, "BOTTOMLEFT", 0, -6)
@@ -409,14 +409,18 @@ function NS.CreateSettingsPanel()
     panel._buttons.resetLayout = resetLayoutBtn
 
     local wipeBtn = Q("Wipe All Records", function()
-        StaticPopup_Show("SPEEDSPLITS_WIPE_CONFIRM")
+        if NS.UI and NS.UI.Popups and NS.UI.Popups.ShowWipeConfirm then
+            NS.UI.Popups.ShowWipeConfirm()
+        end
     end)
     wipeBtn:SetSize(295, 26)
     wipeBtn:SetPoint("TOPLEFT", layoutBtn, "BOTTOMLEFT", 0, -6)
     panel._buttons.wipeAllRecords = wipeBtn
 
     local factoryBtn = Q("Reset to Factory Settings", function()
-        StaticPopup_Show("SPEEDSPLITS_FACTORY_RESET")
+        if NS.UI and NS.UI.Popups and NS.UI.Popups.ShowFactoryReset then
+            NS.UI.Popups.ShowFactoryReset()
+        end
     end)
     factoryBtn:SetSize(295, 26)
     factoryBtn:SetPoint("TOPLEFT", wipeBtn, "BOTTOMLEFT", 0, -6)

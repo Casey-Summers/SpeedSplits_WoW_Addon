@@ -16,6 +16,7 @@
     <Script file="..\..\UI\Templates\HoverFadeFrame.lua"/>
     <Script file="..\..\Core\Debug.lua"/>
     <Script file="..\..\Core\Utils.lua"/>
+    <Script file="..\..\Core\Colors.lua"/>
 
     <Script file="..\..\Data\Database.lua"/>
 

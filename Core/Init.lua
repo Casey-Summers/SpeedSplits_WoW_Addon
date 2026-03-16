@@ -14,6 +14,7 @@ NS.UI.history = NS.UI.history or {}
 NS.Settings = NS.Settings or {}
 NS.Tests = NS.Tests or {}
 NS.Private = NS.Private or {}
+NS.Debug = NS.Debug or {}
 
 local UI = NS.UI
 UI.timerFrame = UI.timerFrame or nil

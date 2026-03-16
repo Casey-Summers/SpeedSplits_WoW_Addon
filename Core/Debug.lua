@@ -9,6 +9,5 @@ local function Print(msg)
 end
 
 NS.Print = Print
-SS_Print = Print
-
-SpeedSplits_DebugObjectives = SpeedSplits_DebugObjectives or false
+NS.Debug.objectiveTrace = NS.Debug.objectiveTrace or false
+NS.Debug.enableTestUI = NS.Debug.enableTestUI or false

@@ -5,6 +5,60 @@ local Util = NS.Util
 
 local TEST_ID = "logic_live_path_speedrun_simulation"
 local TEST_NAME = "Live-path speedrun simulation"
+local DEFAULT_PBSplitsRoutes = {
+    {
+        routeKey = "1,2,3,4,5,6",
+        duration = 120.010,
+        PBSplitsRoutes = {
+            [1] = 22.100,
+            [2] = 48.010,
+            [3] = 66.500,
+            [4] = 82.100,
+            [5] = 96.000,
+            [6] = 120.010,
+        },
+    },
+    {
+        routeKey = "2,3,1,4,5,6",
+        duration = 116.500,
+        PBSplitsRoutes = {
+            [1] = 58.500,
+            [2] = 18.000,
+            [3] = 36.000,
+            [4] = 74.000,
+            [5] = 93.000,
+            [6] = 116.500,
+        },
+    },
+}
+
+local DEFAULT_PBSplitsIgnored = {
+    duration = 119.250,
+    PBSplitsIgnored = {
+        [1] = 22.200,
+        [2] = 48.010,
+        [3] = 65.100,
+        [4] = 81.900,
+        [5] = 95.000,
+        [6] = 119.250,
+    },
+}
+
+local DEFAULT_PBSplitsLastBoss = {
+    duration = 120.010,
+    PBSplitsLastBoss = {
+        [6] = 120.010,
+    },
+}
+
+local DEFAULT_splitsByKey = {
+    ["E:1001"] = 22.524,
+    ["E:1002"] = 43.666,
+    ["E:1003"] = 70.666,
+    ["E:1004"] = 102.816,
+    ["E:1005"] = 148.815,
+    ["E:1006"] = 179.816,
+}
 
 NS.TestsSimulation = NS.TestsSimulation or {}
 
@@ -31,50 +85,10 @@ Simulation.scenario = Simulation.scenario or {
         leaveInteractive = true,
     },
     database = {
-        routes = {
-            {
-                routeKey = "1,2,3,4,5,6",
-                duration = 120.010,
-                splits = {
-                    [1] = 22.100,
-                    [2] = 48.010,
-                    [3] = 66.500,
-                    [4] = 82.100,
-                    [5] = 96.000,
-                    [6] = 120.010,
-                },
-            },
-            {
-                routeKey = "2,3,1,4,5,6",
-                duration = 116.500,
-                splits = {
-                    [1] = 58.500,
-                    [2] = 18.000,
-                    [3] = 36.000,
-                    [4] = 74.000,
-                    [5] = 93.000,
-                    [6] = 116.500,
-                },
-            },
-        },
+        routes = Util.CopyTable(DEFAULT_PBSplitsRoutes),
         bestRouteKey = nil,
-        ignoredPBs = {
-            duration = 119.250,
-            splits = {
-                [1] = 22.200,
-                [2] = 48.010,
-                [3] = 65.100,
-                [4] = 81.900,
-                [5] = 95.000,
-                [6] = 119.250,
-            },
-        },
-        lastBossPBs = {
-            duration = 120.010,
-            splits = {
-                [6] = 120.010,
-            },
-        },
+        ignoredPBs = Util.CopyTable(DEFAULT_PBSplitsIgnored),
+        lastBossPBs = Util.CopyTable(DEFAULT_PBSplitsLastBoss),
     },
     bosses = {
         { name = "Opening Pull",   key = "E:1001", encounterID = 1001, routeIndex = 1 },
@@ -86,14 +100,7 @@ Simulation.scenario = Simulation.scenario or {
     },
     run = {
         killSequence = { "E:1001", "E:1002", "E:1003", "E:1004", "E:1005", "E:1006" },
-        splitByKey = {
-            ["E:1001"] = 22.524,
-            ["E:1002"] = 43.666,
-            ["E:1003"] = 70.666,
-            ["E:1004"] = 102.816,
-            ["E:1005"] = 148.815,
-            ["E:1006"] = 179.816,
-        },
+        splitsByKey = Util.CopyTable(DEFAULT_splitsByKey),
     },
     flags = {
         enableManualIgnores = false,
@@ -213,6 +220,15 @@ end
 local function BuildSeedRecordFromRoute(pbMode, seed, scenario)
     local includeOnlyLastBoss = pbMode == "last"
     local lastBoss = GetLastBoss(scenario)
+    local PBSplits
+
+    if pbMode == "route" then
+        PBSplits = seed and seed.PBSplitsRoutes or {}
+    elseif pbMode == "ignored" then
+        PBSplits = seed and seed.PBSplitsIgnored or {}
+    else
+        PBSplits = seed and seed.PBSplitsLastBoss or {}
+    end
 
     return {
         success = true,
@@ -234,7 +250,7 @@ local function BuildSeedRecordFromRoute(pbMode, seed, scenario)
         lastBossIndex = lastBoss and tonumber(lastBoss.routeIndex) or nil,
         hasIgnoredEntries = pbMode == "ignored",
         bosses = BuildBossPayload(scenario, includeOnlyLastBoss),
-        kills = BuildKillsFromSplits(scenario, seed and seed.splits or {}, includeOnlyLastBoss),
+        kills = BuildKillsFromSplits(scenario, PBSplits, includeOnlyLastBoss),
         isTest = true,
     }
 end
@@ -426,7 +442,7 @@ local function DriveScenarioRun(scenario)
 
     for _, bossKey in ipairs(scenario.run.killSequence or {}) do
         local boss = GetBossByKey(scenario, bossKey)
-        local splitTime = scenario.run.splitByKey and scenario.run.splitByKey[bossKey] or nil
+        local splitTime = scenario.run.splitsByKey and scenario.run.splitsByKey[bossKey] or nil
         if boss and type(splitTime) == "number" then
             syntheticGameTime = baseGameTime + Util.RoundTime(splitTime)
             syntheticEpoch = syntheticEpoch + math.max(1, math.floor(splitTime))

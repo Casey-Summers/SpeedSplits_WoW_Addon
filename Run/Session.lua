@@ -4,7 +4,15 @@ local Const = NS.Const
 local Util = NS.Util
 
 local function ApplyBossEntries(entries, source, context)
-    NS.Run.entries = entries or {}
+    entries = entries or {}
+    if NS.Database and NS.Database.EnsureBossIndex then
+        NS.Database.EnsureBossIndex(NS.Run.instanceName or (context and context.name) or "", entries)
+    end
+    if NS.RunLogic and NS.RunLogic.SelectInitialEntries then
+        entries = NS.RunLogic.SelectInitialEntries(entries)
+    end
+
+    NS.Run.entries = entries
     NS.Run.bosses = NS.Run.entries
     NS.Run.bossSource = source or "none"
     context = context or {}
@@ -51,14 +59,15 @@ local function ApplyBossEntries(entries, source, context)
     end
 
     NS.RunLogic.SyncAutoIgnoredBosses()
-
-    local node = NS.GetBestSplitsSubtable()
-    local pbSplits = node and node.Segments or {}
-    NS.Run.pbSegmentsSnapshot = Util.CopyTable(pbSplits)
-    NS.Run.presentation = NS.RunLogic.BuildRunPresentation(NS.Run, NS.Run.pbSegmentsSnapshot)
-    NS.UI.RefreshBossTableData(NS.Run.entries, NS.Run.presentation)
-    NS.UI.SetKillCount(0, #NS.Run.entries)
-    NS.UI.RefreshTotals(false)
+    NS.Run.pbSegmentsSnapshot = Util.CopyTable(NS.Run.pbSegmentsSnapshot or {})
+    if NS.RunLogic and NS.RunLogic.RefreshRunDisplay then
+        NS.RunLogic.RefreshRunDisplay()
+    else
+        NS.Run.presentation = NS.RunLogic.BuildRunPresentation(NS.Run, NS.Run.pbSegmentsSnapshot)
+        NS.UI.RefreshBossTableData(NS.Run.entries, NS.Run.presentation)
+        NS.UI.SetKillCount(0, #NS.Run.entries)
+        NS.UI.RefreshTotals(false)
+    end
     NS.Run._bossLoaded = true
 end
 

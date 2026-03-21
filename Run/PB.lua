@@ -48,7 +48,7 @@ local function ComputeSumOfBest(pbTable, entries)
     end
     local sum = 0
     for _, entry in ipairs(entries) do
-        local segment = pbTable[entry.name]
+        local segment = pbTable[entry.key] or pbTable[entry.name]
         if segment == nil then
             return nil
         end
@@ -58,7 +58,14 @@ local function ComputeSumOfBest(pbTable, entries)
 end
 
 local function UpdateBestRunIfNeeded(durationSeconds)
-    local node = NS.GetBestSplitsSubtable and NS.GetBestSplitsSubtable()
+    local node
+    if NS.Run and NS.Run.routeMode == "last" then
+        node = NS.Database.GetBestLastBossNode and NS.Database.GetBestLastBossNode(NS.Run.instanceName, true)
+    elseif NS.Run and NS.Run.routeMode == "ignored" then
+        node = NS.Database.GetBestIgnoredNode and NS.Database.GetBestIgnoredNode(NS.Run.instanceName, true)
+    elseif NS.Run and NS.Run.activeRouteKey then
+        node = NS.Database.GetRouteNode and NS.Database.GetRouteNode(NS.Run.instanceName, NS.Run.activeRouteKey, true)
+    end
     if not node then
         return
     end

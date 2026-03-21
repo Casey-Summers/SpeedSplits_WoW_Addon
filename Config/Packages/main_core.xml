@@ -18,12 +18,14 @@
     <Script file="..\..\Core\Utils.lua"/>
     <Script file="..\..\Core\Colors.lua"/>
 
+    <Script file="..\..\Data\Migration.lua"/>
     <Script file="..\..\Data\Database.lua"/>
 
     <Script file="..\..\Run\State.lua"/>
     <Script file="..\..\Run\BossDiscovery.lua"/>
     <Script file="..\..\Run\PB.lua"/>
     <Script file="..\..\Run\Ignore.lua"/>
+    <Script file="..\..\Run\Routes.lua"/>
     <Script file="..\..\Run\Recorder.lua"/>
     <Script file="..\..\Run\Session.lua"/>
 

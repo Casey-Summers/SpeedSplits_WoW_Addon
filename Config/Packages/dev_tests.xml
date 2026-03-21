@@ -1,0 +1,12 @@
+<Ui>
+    <Script file="..\..\Tests\TestRunner.lua"/>
+    <Script file="..\..\Tests\Simulation.lua"/>
+    <Script file="..\..\Tests\Suite_UI.lua"/>
+    <Script file="..\..\Tests\Suite_Discovery.lua"/>
+    <Script file="..\..\Tests\Suite_Logic.lua"/>
+    <Script file="..\..\Tests\Suite_PB.lua"/>
+    <Script file="..\..\Tests\Suite_History.lua"/>
+    <Script file="..\..\Tests\Suite_UX.lua"/>
+    <Script file="..\..\Tests\TestRunnerUI.lua"/>
+    <Script file="..\..\Tests\TestAdapter.lua"/>
+</Ui>

@@ -47,7 +47,7 @@ local function IsRunPB(record)
     if type(record) ~= "table" or not record.success or not record.duration or not record.instanceName then
         return false
     end
-    local node = NS.GetBestSplitsSubtable(record.instanceName)
+    local node = NS.Database.GetHistoryPBNode(record)
     local pb = node and node.FullRun
     if type(pb) ~= "table" or not pb.duration then
         return false
@@ -165,7 +165,7 @@ function UI.RefreshHistoryTable()
             valA, valB = tonumber(a.duration) or 999999, tonumber(b.duration) or 999999
         elseif sortCol == 7 then
             local function GetDiff(x)
-                local node = NS.GetBestSplitsSubtable(x.instanceName)
+                local node = NS.Database.GetHistoryPBNode(x)
                 local pb = node and node.FullRun and node.FullRun.duration
                 return (pb and x.duration) and (x.duration - pb) or 999999
             end
@@ -581,10 +581,16 @@ local function EnsureHistoryUI()
                         resultText, resultColor = "Completed", NS.Colors.deepGreen
                     end
 
-                    local node = NS.GetBestSplitsSubtable(record.instanceName)
+                    local node = NS.Database.GetHistoryPBNode(record)
                     local pb = node and node.FullRun and node.FullRun.duration
                     local diff = (pb and record.duration) and (record.duration - pb) or nil
                     local textColor = NS.Colors.white
+                    local modeLabel = "All Bosses"
+                    if record.pbMode == "ignored" then
+                        modeLabel = "Ignored"
+                    elseif record.speedrunMode == "last" or record.pbMode == "last" then
+                        modeLabel = "Last Boss"
+                    end
 
                     row.cols[1]:SetText(FormatEpochShort(record.startedAt))
                     row.cols[1]:SetTextColor(textColor.r, textColor.g, textColor.b, textColor.a or 1)
@@ -593,7 +599,7 @@ local function EnsureHistoryUI()
                     row.cols[3]:SetTextColor(textColor.r, textColor.g, textColor.b, textColor.a or 1)
                     row.cols[4]:SetText(resultText)
                     row.cols[4]:SetTextColor(resultColor.r, resultColor.g, resultColor.b)
-                    row.cols[5]:SetText(record.speedrunMode == "last" and "Last Boss" or "All Bosses")
+                    row.cols[5]:SetText(modeLabel)
                     row.cols[5]:SetTextColor(textColor.r, textColor.g, textColor.b, textColor.a or 1)
                     row.cols[6]:SetText(record.duration and Util.FormatTime(record.duration) or "--:--.---")
                     row.cols[6]:SetTextColor(textColor.r, textColor.g, textColor.b, textColor.a or 1)

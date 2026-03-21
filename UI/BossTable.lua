@@ -225,7 +225,7 @@ local function BuildBossPBCumulativeMap(entries, pbSegments)
 
     for _, entry in ipairs(entries or {}) do
         if not NS.IsBossIgnored(entry.name) then
-            cumulativePB = cumulativePB + (pbSegments[entry.name] or 0)
+            cumulativePB = cumulativePB + (pbSegments[entry.key] or pbSegments[entry.name] or 0)
         end
         cumulativeByKey[entry.key] = cumulativePB
     end

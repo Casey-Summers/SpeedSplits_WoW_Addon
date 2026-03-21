@@ -2,53 +2,36 @@ local _, NS = ...
 
 local Util = NS.Util
 
-local function NormalizeBestSplitsNode(db, instanceName)
-    db.InstancePersonalBests = db.InstancePersonalBests or {}
-
-    if db.InstancePersonalBests[instanceName] and not db.InstancePersonalBests[instanceName].Segments then
-        local oldInstance = db.InstancePersonalBests[instanceName]
-        local firstDiff
-        for _, val in pairs(oldInstance) do
-            if type(val) == "table" and val.pbBoss then
-                firstDiff = val
-                break
-            end
-        end
-
-        if firstDiff then
-            db.InstancePersonalBests[instanceName] = {
-                Segments = firstDiff.pbBoss or {},
-                FullRun = firstDiff.pbRun or {},
-            }
-        else
-            db.InstancePersonalBests[instanceName] = {
-                Segments = {},
-                FullRun = {},
-            }
-        end
+local function EnsurePBNodeShape(node)
+    node = node or {}
+    if node.Segments and node.Segments ~= node.Splits then
+        node.Splits = node.Segments
     end
+    node.Splits = node.Splits or {}
+    node.Segments = node.Splits
+    node.FullRun = node.FullRun or {}
+    return node
+end
 
-    if db.InstancePersonalBests[instanceName] and db.InstancePersonalBests[instanceName].Segments then
-        local segments = db.InstancePersonalBests[instanceName].Segments
-        for k, v in pairs(segments) do
-            if type(v) == "number" and v < 0 then
-                segments[k] = nil
-            end
-        end
-    end
+local function EnsureRouteContainerShape(node)
+    node = node or {}
+    local normalizeBossIndex = NS.Migrations and NS.Migrations.NormalizeBossIndexTable
+    node.BossIndex = normalizeBossIndex and normalizeBossIndex(node.BossIndex) or (node.BossIndex or {})
+    return node
+end
 
-    db.InstancePersonalBests[instanceName] = db.InstancePersonalBests[instanceName] or {
-        Segments = {},
-        FullRun = {},
-    }
-    return db.InstancePersonalBests[instanceName]
+local function EnsurePBTables(db)
+    db.InstanceRoutes = db.InstanceRoutes or {}
+    db.InstanceBestRoute = db.InstanceBestRoute or {}
+    db.InstanceBestLastBoss = db.InstanceBestLastBoss or {}
+    db.InstanceBestIgnored = db.InstanceBestIgnored or {}
 end
 
 local function ApplySavedVariablesMigrations(db)
-    db.InstancePersonalBests = db.InstancePersonalBests or {}
-
-    for instanceName in pairs(db.InstancePersonalBests) do
-        NormalizeBestSplitsNode(db, instanceName)
+    if NS.Migrations and NS.Migrations.ApplySavedVariablesMigrations then
+        NS.Migrations.ApplySavedVariablesMigrations(db)
+    else
+        EnsurePBTables(db)
     end
 end
 
@@ -92,16 +75,10 @@ local function EnsureDB()
     end
 
     SpeedSplitsDB.RunHistory = SpeedSplitsDB.RunHistory or SpeedSplitsDB.runs or {}
-    SpeedSplitsDB.InstancePersonalBests = SpeedSplitsDB.InstancePersonalBests or SpeedSplitsDB.PersonalBests or
-    SpeedSplitsDB.bestSplits or {}
     SpeedSplitsDB.Settings = SpeedSplitsDB.Settings or SpeedSplitsDB.settings or {}
 
     SpeedSplitsDB.runs = nil
-    SpeedSplitsDB.bestSplits = nil
-    SpeedSplitsDB.PersonalBests = nil
     SpeedSplitsDB.settings = nil
-    SpeedSplitsDB.pbBoss = nil
-    SpeedSplitsDB.pbRun = nil
 
     ApplySavedVariablesMigrations(SpeedSplitsDB)
     PurgeTestRunHistory(SpeedSplitsDB)
@@ -157,15 +134,6 @@ local function EnsureDB()
     return NS.DB
 end
 
-local function GetBestSplitsSubtable(instanceName)
-    EnsureDB()
-    instanceName = instanceName or (NS.Run and NS.Run.instanceName)
-    if not instanceName or instanceName == "" then
-        return nil
-    end
-    return NormalizeBestSplitsNode(NS.DB, instanceName)
-end
-
 local function ApplyFactoryReset()
     EnsureDB()
     SpeedSplitsDB.Settings = Util.CopyTable(NS.FactoryDefaults.Settings)
@@ -176,9 +144,11 @@ end
 
 local function ApplyDatabaseWipe()
     EnsureDB()
-    SpeedSplitsDB.InstancePersonalBests = {}
     SpeedSplitsDB.RunHistory = {}
-    EnsureDB()
+    SpeedSplitsDB.InstanceRoutes = {}
+    SpeedSplitsDB.InstanceBestRoute = {}
+    SpeedSplitsDB.InstanceBestLastBoss = {}
+    SpeedSplitsDB.InstanceBestIgnored = {}
 end
 
 local function WipeDatabase(simulateOnly)
@@ -217,69 +187,6 @@ local function ApplyLayoutReset()
     SpeedSplitsDB.ui = defaultUI
 end
 
-local function GetRecordBossSplitTime(record, targetKey)
-    if type(record) ~= "table" or type(record.kills) ~= "table" then
-        return nil
-    end
-
-    local targetSplit = record.kills[targetKey]
-    return (type(targetSplit) == "number") and targetSplit or nil
-end
-
-local function RebuildInstancePersonalBests(instanceName)
-    EnsureDB()
-    if not instanceName or instanceName == "" then
-        return
-    end
-
-    local bestSplits = {}
-    local bestRun
-
-    for _, record in ipairs(NS.DB.RunHistory or {}) do
-        if record.instanceName == instanceName then
-            if record.success and type(record.duration) == "number" then
-                if not bestRun or record.duration < bestRun.duration then
-                    bestRun = {
-                        duration = record.duration,
-                        endedAt = record.endedAt,
-                        instanceName = record.instanceName,
-                        tier = record.tier,
-                        difficultyID = record.difficultyID,
-                        difficultyName = record.difficultyName,
-                        mapID = record.mapID,
-                    }
-                end
-            end
-
-            for _, boss in ipairs(record.bosses or {}) do
-                local bossName = boss and boss.name
-                local bossKey = boss and boss.key
-                if bossName and bossKey then
-                    local splitTime = GetRecordBossSplitTime(record, bossKey)
-                    if type(splitTime) == "number" then
-                        splitTime = NS.Util.RoundTime(splitTime)
-                        local existing = bestSplits[bossName]
-                        if existing == nil or splitTime < existing then
-                            bestSplits[bossName] = splitTime
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    local hasSplits = next(bestSplits) ~= nil
-    if not hasSplits and not bestRun then
-        NS.DB.InstancePersonalBests[instanceName] = nil
-        return
-    end
-
-    NS.DB.InstancePersonalBests[instanceName] = {
-        Segments = hasSplits and bestSplits or {},
-        FullRun = bestRun or {},
-    }
-end
-
 local function ResetLayout(simulateOnly)
     if SpeedSplitsDB then
         ApplyLayoutReset()
@@ -303,6 +210,333 @@ local function ResetToFactorySettings(simulateOnly)
     end
 end
 
+local function GetInstanceRoutes(instanceName, create)
+    EnsureDB()
+    if not instanceName or instanceName == "" then
+        return nil
+    end
+
+    local routes = NS.DB.InstanceRoutes[instanceName]
+    if not routes and create ~= false then
+        routes = { BossIndex = {} }
+        NS.DB.InstanceRoutes[instanceName] = routes
+    end
+
+    if routes then
+        EnsureRouteContainerShape(routes)
+    end
+    return routes
+end
+
+local function GetPBNode(container, instanceName, create)
+    EnsureDB()
+    if not instanceName or instanceName == "" then
+        return nil
+    end
+
+    local node = container[instanceName]
+    if not node and create ~= false then
+        node = { Splits = {}, FullRun = {} }
+        container[instanceName] = node
+    end
+
+    if node then
+        EnsurePBNodeShape(node)
+    end
+    return node
+end
+
+local function GetBestRouteNode(instanceName, create)
+    return GetPBNode(NS.DB.InstanceBestRoute, instanceName, create)
+end
+
+local function GetBestLastBossNode(instanceName, create)
+    return GetPBNode(NS.DB.InstanceBestLastBoss, instanceName, create)
+end
+
+local function GetBestIgnoredNode(instanceName, create)
+    return GetPBNode(NS.DB.InstanceBestIgnored, instanceName, create)
+end
+
+local function GetRouteNode(instanceName, routeKey, create)
+    if not routeKey or routeKey == "" then
+        return nil
+    end
+
+    local routes = GetInstanceRoutes(instanceName, create)
+    if not routes then
+        return nil
+    end
+
+    local node = routes[routeKey]
+    if not node and create ~= false then
+        node = { Splits = {}, FullRun = {} }
+        routes[routeKey] = node
+    end
+
+    if node then
+        EnsurePBNodeShape(node)
+    end
+    return node
+end
+
+local function EnsureBossIndex(instanceName, entries)
+    local routes = GetInstanceRoutes(instanceName, true)
+    if not routes then
+        return nil
+    end
+
+    local bossIndex = routes.BossIndex
+    local nextIndex = 0
+    for key in pairs(bossIndex) do
+        local routeIndex = tonumber(key)
+        if routeIndex and routeIndex > nextIndex then
+            nextIndex = routeIndex
+        end
+    end
+
+    for _, entry in ipairs(entries or {}) do
+        local bossName = entry and (entry.name or entry.bossName)
+        if bossName and bossName ~= "" then
+            local routeIndex = nil
+            for existingIndex, existingBossName in pairs(bossIndex) do
+                if existingBossName == bossName then
+                    routeIndex = tonumber(existingIndex)
+                    break
+                end
+            end
+            if not routeIndex then
+                nextIndex = nextIndex + 1
+                routeIndex = nextIndex
+                bossIndex[routeIndex] = bossName
+            end
+            entry.routeIndex = routeIndex
+        end
+    end
+
+    return bossIndex
+end
+
+local function BuildRouteKeyFromEntries(entries)
+    local indices = {}
+    for _, entry in ipairs(entries or {}) do
+        local routeIndex = tonumber(entry and entry.routeIndex)
+        if routeIndex then
+            indices[#indices + 1] = tostring(routeIndex)
+        end
+    end
+    return table.concat(indices, ",")
+end
+
+local function EnsureDefaultRoute(instanceName, entries)
+    EnsureBossIndex(instanceName, entries)
+    local routeKey = BuildRouteKeyFromEntries(entries)
+    if routeKey ~= "" then
+        GetRouteNode(instanceName, routeKey, true)
+    end
+    return routeKey
+end
+
+local function CopyFullRunMeta(meta, duration)
+    return {
+        duration = duration,
+        endedAt = meta.endedAt,
+        instanceName = meta.instanceName,
+        tier = meta.tier,
+        difficultyID = meta.difficultyID,
+        difficultyName = meta.difficultyName,
+        mapID = meta.mapID,
+    }
+end
+
+local function UpdateBestSplit(node, routeIndex, splitTime)
+    if not node or type(routeIndex) ~= "number" or type(splitTime) ~= "number" then
+        return
+    end
+
+    splitTime = Util.RoundTime(splitTime)
+    local existing = tonumber(node.Splits[routeIndex])
+    if not existing or existing <= 0 or splitTime < existing then
+        node.Splits[routeIndex] = splitTime
+    end
+end
+
+local function UpdateBestRun(node, meta, duration)
+    if not node or type(duration) ~= "number" then
+        return
+    end
+
+    duration = Util.RoundTime(duration)
+    local current = node.FullRun
+    if not current or not current.duration or duration < current.duration then
+        node.FullRun = CopyFullRunMeta(meta, duration)
+    end
+end
+
+local function ApplyBossIndexFromRecord(instanceName, record)
+    local routes = GetInstanceRoutes(instanceName, true)
+    if not routes then
+        return
+    end
+
+    for _, boss in ipairs(record.bosses or {}) do
+        local routeIndex = tonumber(boss and boss.routeIndex)
+        local bossName = boss and boss.name
+        if routeIndex and bossName and bossName ~= "" then
+            routes.BossIndex[routeIndex] = bossName
+        end
+    end
+end
+
+local function PromoteBestRoute(instanceName)
+    local routes = GetInstanceRoutes(instanceName, false)
+    if not routes then
+        NS.DB.InstanceBestRoute[instanceName] = nil
+        return
+    end
+
+    local bestKey
+    local bestNode
+    local bestDuration
+
+    for routeKey, node in pairs(routes) do
+        if routeKey ~= "BossIndex" and type(node) == "table" then
+            local duration = tonumber(node.FullRun and node.FullRun.duration)
+            if duration and duration > 0 and (not bestDuration or duration < bestDuration) then
+                bestDuration = duration
+                bestKey = routeKey
+                bestNode = node
+            end
+        end
+    end
+
+    if not bestKey or not bestNode then
+        NS.DB.InstanceBestRoute[instanceName] = nil
+        return
+    end
+
+    local promoted = EnsurePBNodeShape(Util.CopyTable(bestNode))
+    promoted.RouteKey = bestKey
+    NS.DB.InstanceBestRoute[instanceName] = promoted
+end
+
+local function ApplyRouteRecord(record)
+    if type(record) ~= "table" or record.pbMode ~= "route" or record.success ~= true then
+        return
+    end
+
+    local instanceName = record.instanceName
+    local routeKey = tostring(record.routeKey or "")
+    if instanceName == nil or instanceName == "" or routeKey == "" then
+        return
+    end
+
+    ApplyBossIndexFromRecord(instanceName, record)
+
+    local node = GetRouteNode(instanceName, routeKey, true)
+    if not node then
+        return
+    end
+
+    for _, boss in ipairs(record.bosses or {}) do
+        local routeIndex = tonumber(boss and boss.routeIndex)
+        local splitTime = routeIndex and record.kills and record.kills[boss.key] or nil
+        if routeIndex and type(splitTime) == "number" then
+            UpdateBestSplit(node, routeIndex, splitTime)
+        end
+    end
+
+    if type(record.duration) == "number" then
+        UpdateBestRun(node, record, record.duration)
+    end
+
+    PromoteBestRoute(instanceName)
+end
+
+local function ApplyIgnoredRecord(record)
+    if type(record) ~= "table" or record.pbMode ~= "ignored" or record.hasIgnoredEntries ~= true then
+        return
+    end
+
+    local instanceName = record.instanceName
+    if not instanceName or instanceName == "" then
+        return
+    end
+
+    local node = GetBestIgnoredNode(instanceName, true)
+    if not node then
+        return
+    end
+
+    for _, boss in ipairs(record.bosses or {}) do
+        local routeIndex = tonumber(boss and boss.routeIndex)
+        local splitTime = routeIndex and record.kills and record.kills[boss.key] or nil
+        if routeIndex and type(splitTime) == "number" then
+            UpdateBestSplit(node, routeIndex, splitTime)
+        end
+    end
+
+    if record.success and type(record.duration) == "number" then
+        UpdateBestRun(node, record, record.duration)
+    end
+end
+
+local function ResolveLastBossRouteIndex(record)
+    if type(record.lastBossIndex) == "number" then
+        return record.lastBossIndex
+    end
+
+    local bestSplit = nil
+    local bestIndex = nil
+    for _, boss in ipairs(record.bosses or {}) do
+        local routeIndex = tonumber(boss and boss.routeIndex)
+        local splitTime = routeIndex and record.kills and record.kills[boss.key] or nil
+        if routeIndex and type(splitTime) == "number" and (bestSplit == nil or splitTime > bestSplit) then
+            bestSplit = splitTime
+            bestIndex = routeIndex
+        end
+    end
+    return bestIndex
+end
+
+local function ApplyLastBossRecord(record)
+    if type(record) ~= "table" or record.pbMode ~= "last" or record.success ~= true then
+        return
+    end
+
+    local instanceName = record.instanceName
+    if not instanceName or instanceName == "" then
+        return
+    end
+
+    local routeIndex = ResolveLastBossRouteIndex(record)
+    local node = GetBestLastBossNode(instanceName, true)
+    if not node or not routeIndex or type(record.duration) ~= "number" then
+        return
+    end
+
+    UpdateBestSplit(node, routeIndex, record.duration)
+    UpdateBestRun(node, record, record.duration)
+end
+
+local function RebuildPBDataFromHistory()
+    EnsureDB()
+    NS.DB.InstanceRoutes = {}
+    NS.DB.InstanceBestRoute = {}
+    NS.DB.InstanceBestLastBoss = {}
+    NS.DB.InstanceBestIgnored = {}
+
+    for _, record in ipairs(NS.DB.RunHistory or {}) do
+        if record.pbMode == "route" then
+            ApplyRouteRecord(record)
+        elseif record.pbMode == "ignored" then
+            ApplyIgnoredRecord(record)
+        elseif record.pbMode == "last" then
+            ApplyLastBossRecord(record)
+        end
+    end
+end
+
 local function DeleteRunRecord(record)
     EnsureDB()
     if not NS.DB or not NS.DB.RunHistory then
@@ -310,9 +544,8 @@ local function DeleteRunRecord(record)
     end
     for i, runRecord in ipairs(NS.DB.RunHistory) do
         if runRecord == record then
-            local instanceName = runRecord.instanceName
             table.remove(NS.DB.RunHistory, i)
-            RebuildInstancePersonalBests(instanceName)
+            RebuildPBDataFromHistory()
             if NS.UI and NS.UI.RefreshHistoryTable then
                 NS.UI.RefreshHistoryTable()
             end
@@ -321,17 +554,49 @@ local function DeleteRunRecord(record)
     end
 end
 
+local function GetHistoryPBNode(record)
+    EnsureDB()
+    if type(record) ~= "table" or not record.instanceName then
+        return nil
+    end
+
+    local mode = tostring(record.pbMode or record.speedrunMode or "route")
+    if mode == "last" then
+        return GetBestLastBossNode(record.instanceName, false)
+    elseif mode == "ignored" then
+        return GetBestIgnoredNode(record.instanceName, false)
+    end
+    return GetBestRouteNode(record.instanceName, false)
+end
+
 NS.Database.EnsureDB = EnsureDB
-NS.Database.GetBestSplitsSubtable = GetBestSplitsSubtable
 NS.Database.DeleteRunRecord = DeleteRunRecord
 NS.Database.IsTestRunRecord = IsTestRunRecord
 NS.Database.PurgeTestRunHistory = PurgeTestRunHistory
 NS.Database.ApplyFactoryReset = ApplyFactoryReset
 NS.Database.ApplyDatabaseWipe = ApplyDatabaseWipe
 NS.Database.ApplyLayoutReset = ApplyLayoutReset
-NS.Database.RebuildInstancePersonalBests = RebuildInstancePersonalBests
+NS.Database.ResetLayout = ResetLayout
+NS.Database.ResetToFactorySettings = ResetToFactorySettings
+NS.Database.GetInstanceRoutes = GetInstanceRoutes
+NS.Database.GetRouteNode = GetRouteNode
+NS.Database.GetBestRouteNode = GetBestRouteNode
+NS.Database.GetBestLastBossNode = GetBestLastBossNode
+NS.Database.GetBestIgnoredNode = GetBestIgnoredNode
+NS.Database.EnsureBossIndex = EnsureBossIndex
+NS.Database.BuildRouteKeyFromEntries = BuildRouteKeyFromEntries
+NS.Database.EnsureDefaultRoute = EnsureDefaultRoute
+NS.Database.UpdateBestSplit = UpdateBestSplit
+NS.Database.UpdateBestRun = UpdateBestRun
+NS.Database.PromoteBestRoute = PromoteBestRoute
+NS.Database.ApplyRouteRecord = ApplyRouteRecord
+NS.Database.ApplyIgnoredRecord = ApplyIgnoredRecord
+NS.Database.ApplyLastBossRecord = ApplyLastBossRecord
+NS.Database.RebuildPBDataFromHistory = RebuildPBDataFromHistory
+NS.Database.GetHistoryPBNode = GetHistoryPBNode
+NS.Database.GetBestSplitsSubtable = GetBestRouteNode
 NS.ResetToFactorySettings = ResetToFactorySettings
 NS.WipeDatabase = WipeDatabase
 NS.ResetLayout = ResetLayout
 NS.SaveDefaultLayout = SaveDefaultLayout
-NS.GetBestSplitsSubtable = GetBestSplitsSubtable
+NS.GetBestSplitsSubtable = GetBestRouteNode

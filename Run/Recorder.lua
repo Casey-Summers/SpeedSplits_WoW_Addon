@@ -26,7 +26,7 @@ local function BuildPBProgress(entries, pbTable)
 
     local maxPB = 0
     for _, entry in ipairs(entries or {}) do
-        local pbSplit = pbTable[entry.name] or 0
+        local pbSplit = pbTable[entry.key] or pbTable[entry.name] or 0
         if pbSplit > 0 then
             progress.cumulativeDisplayByKey[entry.key] = pbSplit
             progress.cumulativeComparisonByKey[entry.key] = pbSplit
@@ -263,9 +263,21 @@ local function SaveRunRecord(success)
             name = entry.name,
             encounterID = entry.dungeonEncounterID or entry.encounterID,
             journalEncounterID = entry.journalEncounterID,
+            routeIndex = entry.routeIndex,
         }
     end
 
+    local hasIgnoredEntries = NS.RunLogic.HasManualIgnoredEntries and
+        NS.RunLogic.HasManualIgnoredEntries(NS.Run.instanceName, NS.Run.entries or {}) or false
+    local pbMode = NS.Run.routeMode or ((NS.Run.speedrunMode == "last") and "last" or "route")
+    local routeSaveBlocked = NS.Run.routeSaveBlocked
+    if pbMode == "ignored" and not hasIgnoredEntries then
+        if (NS.Run.isTest == true or (NS.Debug and NS.Debug.objectiveTrace)) and NS.Print then
+            NS.Print(("Ignored-mode save corrected to route for %s"):format(tostring(NS.Run.instanceName or "")))
+        end
+        pbMode = "route"
+        routeSaveBlocked = false
+    end
     local record = {
         success = success and true or false,
         instanceName = NS.Run.instanceName,
@@ -280,8 +292,14 @@ local function SaveRunRecord(success)
         endedAt = NS.Run.endedAt,
         duration = duration,
         speedrunMode = NS.Run.speedrunMode,
+        pbMode = pbMode,
+        routeKey = (pbMode == "route" and success and not routeSaveBlocked)
+            and NS.RunLogic.BuildRouteKeyFromIndices(NS.Run.killRouteIndices or {}) or nil,
+        lastBossIndex = NS.Run.lastBossIndex,
+        hasIgnoredEntries = hasIgnoredEntries,
+        routeModeReason = NS.Run.routeModeReason,
         bosses = bosses,
-        kills = NS.Run.kills,
+        kills = Util.CopyTable(NS.Run.kills or {}),
         gameBuild = select(4, GetBuildInfo()),
     }
 
@@ -293,8 +311,12 @@ local function SaveRunRecord(success)
         table.remove(NS.DB.RunHistory)
     end
 
-    if success and duration then
-        NS.RunLogic.UpdateBestRunIfNeeded(duration)
+    if pbMode == "route" then
+        NS.Database.ApplyRouteRecord(record)
+    elseif pbMode == "ignored" then
+        NS.Database.ApplyIgnoredRecord(record)
+    elseif pbMode == "last" then
+        NS.Database.ApplyLastBossRecord(record)
     end
 end
 
@@ -319,25 +341,32 @@ local function RecordBossKill(encounterID, encounterName)
         NS.Run.killedCount = math.min(#NS.Run.entries, (NS.Run.killedCount or 0) + 1)
     end
 
-    local node = NS.GetBestSplitsSubtable()
-    local livePBTable = node and node.Segments
-    if not livePBTable then
-        return
+    if bossEntry.routeIndex then
+        NS.Run.killOrder[#NS.Run.killOrder + 1] = bossEntry.key
+        NS.Run.killRouteIndices[#NS.Run.killRouteIndices + 1] = bossEntry.routeIndex
+    end
+
+    if NS.Run.routeMode == "ignored" then
+        local ignoredNode = NS.Database.GetBestIgnoredNode(NS.Run.instanceName, true)
+        if ignoredNode and bossEntry.routeIndex then
+            NS.Database.UpdateBestSplit(ignoredNode, bossEntry.routeIndex, splitCumulative)
+        end
+    elseif NS.Run.routeMode == "route" and NS.RunLogic.HandleRouteProgression then
+        NS.RunLogic.HandleRouteProgression()
+    end
+
+    if NS.Run.routeMode ~= "route" and NS.RunLogic.RefreshRunDisplay then
+        NS.RunLogic.RefreshRunDisplay()
     end
 
     local pbSnapshot = GetActivePBSegments()
-    local presentation = BuildRunPresentation(NS.Run, pbSnapshot)
+    local presentation = NS.Run.presentation or BuildRunPresentation(NS.Run, pbSnapshot)
     local rowState = presentation.rowsByKey[bossEntry.key]
     if not rowState then
         return
     end
 
-    -- Split-based PB logic: If the new split is better than the existing PB Split for this boss, save it.
     local isNewPB = rowState.isPB
-    local existingPB = livePBTable[bossEntry.name]
-    if existingPB == nil or existingPB == 0 or splitCumulative <= (existingPB + 0.001) then
-        livePBTable[bossEntry.name] = splitCumulative
-    end
 
     NS.Run.presentation = presentation
 
@@ -349,9 +378,18 @@ local function RecordBossKill(encounterID, encounterName)
         isRunComplete = (NS.Run.remainingCount or 0) == 0 and #NS.Run.entries > 0
     end
 
+    local comparisonNode
+    if NS.Run.routeMode == "last" then
+        comparisonNode = NS.Database.GetBestLastBossNode(NS.Run.instanceName, false)
+    elseif NS.Run.routeMode == "ignored" then
+        comparisonNode = NS.Database.GetBestIgnoredNode(NS.Run.instanceName, false)
+    elseif NS.Run.activeRouteKey then
+        comparisonNode = NS.Database.GetRouteNode(NS.Run.instanceName, NS.Run.activeRouteKey, false)
+    end
+
     local isFullRunPB = false
     if isRunComplete then
-        local existingRunPB = node and node.FullRun and node.FullRun.duration
+        local existingRunPB = comparisonNode and comparisonNode.FullRun and comparisonNode.FullRun.duration
         local target = (existingRunPB and existingRunPB > 0) and existingRunPB or presentation.summary.pbTotal
         isFullRunPB = (not target or target == 0 or splitCumulative <= (target + 0.001))
     end
@@ -378,13 +416,9 @@ local function RecordBossKill(encounterID, encounterName)
         displayColor and displayColor.hex or nil
     NS.Run.lastIsPB = toastIsPB
 
-    NS.UI.SetRowKilled(bossEntry.key, rowState)
-    NS.UI.SetKillCount(NS.Run.killedCount, #NS.Run.entries)
-    NS.UI.RefreshTotals(false)
-
-    local completeNow = NS.RunLogic.GetRunCompletionState(NS.Run)
+    local completeNow, completionTime = NS.RunLogic.GetRunCompletionState(NS.Run)
     if completeNow and #NS.Run.entries > 0 then
-        NS.RunLogic.StopRun(true)
+        NS.RunLogic.StopRun(true, completionTime)
     end
 end
 

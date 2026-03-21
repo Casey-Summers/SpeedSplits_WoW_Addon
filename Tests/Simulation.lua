@@ -541,7 +541,7 @@ function Simulation.RunScenario(overrides)
 end
 
 function NS.SimulateSpeedrun()
-    return Simulation.RunScenario()
+    return System.RunTestById(TEST_ID)
 end
 
 NS.StopSimulatedSpeedrun = Simulation.Stop
@@ -552,7 +552,7 @@ System.RegisterTest({
     subcategory = "Simulation",
     name = TEST_NAME,
     func = function()
-        System.BeginSection("Run the default route-aware simulation scenario")
+        System.BeginSection("Launch the default route-aware simulation scenario")
         Simulation.RunScenario()
 
         System.AssertTrue(NS.DB.InstanceRoutes[Simulation.ActiveScenario.instance.name] ~= nil,
@@ -566,18 +566,53 @@ System.RegisterTest({
         System.AssertEqual(NS.Run.bossSource, "simulation", "Simulation uses the live ApplyBossEntries source")
         System.AssertTrue(NS.Run.startGameTime > 0, "Simulation starts the run through the live timer path",
             NS.Run.startGameTime)
-        System.EndSection("Run the default route-aware simulation scenario", "PASS")
+        System.EndSection("Launch the default route-aware simulation scenario", "PASS")
+
+        System.BeginSection("Populate the live Splits table with run results")
+        local rows = NS.UI and NS.UI.data or {}
+        System.AssertTrue(type(rows) == "table" and #rows > 0, "Simulation populates visible split rows", #rows)
+
+        local firstRow = rows[1]
+        local lastRow = rows[#rows]
+        System.AssertTrue(firstRow ~= nil, "The first visible split row exists", firstRow ~= nil)
+        System.AssertTrue(lastRow ~= nil, "The final visible split row exists", lastRow ~= nil)
+        if firstRow then
+            System.AssertTrue(firstRow.cols ~= nil and firstRow.cols[2] ~= nil,
+                "Rows contain PB data for display", firstRow.cols ~= nil and firstRow.cols[2] ~= nil)
+            System.AssertTrue(firstRow.cols[3] ~= nil, "Rows contain live split data for display", firstRow.cols and firstRow.cols[3] ~= nil)
+            System.AssertTrue(firstRow.cols[4] ~= nil, "Rows contain diff data for display", firstRow.cols and firstRow.cols[4] ~= nil)
+        end
+        if lastRow then
+            System.AssertTrue(lastRow.cols ~= nil and tostring(lastRow.cols[4] and lastRow.cols[4].value or "") ~= "",
+                "Completed simulation rows expose a diff value", lastRow.cols and lastRow.cols[4] and lastRow.cols[4].value)
+        end
+        System.EndSection("Populate the live Splits table with run results", "PASS")
+
+        System.BeginSection("Expose live presentation data for diff and color validation")
+        local presentation = NS.Run.presentation
+        System.AssertTrue(presentation ~= nil, "Simulation builds a live run presentation", presentation ~= nil)
+        System.AssertTrue(presentation and presentation.summary ~= nil, "Simulation builds a live presentation summary",
+            presentation and presentation.summary ~= nil)
+        System.AssertTrue(presentation and presentation.summary and presentation.summary.splitTotal ~= nil,
+            "Simulation computes a live split total", presentation and presentation.summary and presentation.summary.splitTotal)
+        System.AssertTrue(presentation and presentation.summary and presentation.summary.pbTotal ~= nil,
+            "Simulation computes a live PB total", presentation and presentation.summary and presentation.summary.pbTotal)
+        System.AssertTrue(presentation and presentation.summary and presentation.summary.diffTotal ~= nil,
+            "Simulation computes a live diff total", presentation and presentation.summary and presentation.summary.diffTotal)
+        System.AssertTrue(presentation and presentation.summary and presentation.summary.diffColor ~= nil,
+            "Simulation computes a live diff color state", presentation and presentation.summary and presentation.summary.diffColor ~= nil)
+        System.EndSection("Expose live presentation data for diff and color validation", "PASS")
 
         System.BeginSection("Verify row preview hook stays live")
-        local firstRow = NS.UI and NS.UI.data and NS.UI.data[1] or nil
-        local handled = Simulation.HandleRowClick(firstRow, "LeftButton")
+        local previewRow = NS.UI and NS.UI.data and NS.UI.data[1] or nil
+        local handled = Simulation.HandleRowClick(previewRow, "LeftButton")
         System.AssertTrue(handled == true, "Left-click preview delegates to PreviewRewardForBossKey", handled)
         System.EndSection("Verify row preview hook stays live", "PASS")
 
-        System.BeginSection("Restore sandbox state cleanly")
-        local restored = Simulation.Stop("Stopping active simulation.")
-        System.AssertTrue(restored == true, "Simulation stop restores sandbox state", restored)
-        System.AssertTrue(Simulation.active == false, "Simulation is no longer active after stop", Simulation.active)
-        System.EndSection("Restore sandbox state cleanly", "PASS")
+        System.BeginSection("Leave the simulation active for manual inspection")
+        System.AssertTrue(Simulation.active == true, "Simulation remains active after the test entry completes", Simulation.active)
+        System.AssertTrue(Simulation.interactive == true, "Simulation remains interactive for row-click previews",
+            Simulation.interactive)
+        System.EndSection("Leave the simulation active for manual inspection", "PASS")
     end,
 })

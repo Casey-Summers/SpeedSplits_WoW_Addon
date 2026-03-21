@@ -117,15 +117,20 @@ local function Num_DoCellUpdate(rowFrame, cellFrame, data, cols, row, realrow, c
 
     cellFrame.text:SetText(cell.value or "")
     NS.ApplyFontToFS(cellFrame.text, "num")
-    cellFrame.text:SetJustifyH("RIGHT")
+    if dataIndex == 4 then
+        cellFrame.text:SetJustifyH("CENTER")
+    else
+        cellFrame.text:SetJustifyH("RIGHT")
+    end
     cellFrame.text:SetJustifyV("MIDDLE")
     cellFrame.text:ClearAllPoints()
     if dataIndex == 4 then
-        cellFrame.text:SetPoint("RIGHT", cellFrame, "RIGHT", -10, 0)
+        cellFrame.text:SetPoint("TOPLEFT", cellFrame, "TOPLEFT", 4, -1)
+        cellFrame.text:SetPoint("BOTTOMRIGHT", cellFrame, "BOTTOMRIGHT", -4, 1)
     else
-        cellFrame.text:SetPoint("RIGHT", cellFrame, "CENTER", 34, 0)
+        cellFrame.text:SetPoint("TOPLEFT", cellFrame, "TOPLEFT", 4, -1)
+        cellFrame.text:SetPoint("BOTTOMRIGHT", cellFrame, "BOTTOMRIGHT", -8, 1)
     end
-    cellFrame.text:SetWidth(0)
 
     local color = (cols[column].color and cols[column].color(data, cols, realrow, column, stable)) or cell.color
     if NS.IsBossIgnored(entry.cols[1].value) then
@@ -228,9 +233,48 @@ local function BuildBossPBCumulativeMap(entries, pbSegments)
     return cumulativeByKey
 end
 
-local function RefreshBossTableData(entries, pbSegments)
+local function GetIgnoredRowColor()
+    return { r = 0.4, g = 0.4, b = 0.4, a = 1 }
+end
+
+local function ApplyRowState(row, rowState)
+    if not row or not row.cols then
+        return
+    end
+
+    local bossName = row.cols[1].value
+    local isIgnored = NS.IsBossIgnored(bossName)
+    local ignoredColor = GetIgnoredRowColor()
+    local pbTime = rowState and rowState.pbTime or nil
+    local splitTime = rowState and rowState.splitTime or nil
+    local diffTime = rowState and rowState.diffTime or nil
+    local color = rowState and rowState.color or nil
+
+    row.cols[2].value = (pbTime and pbTime > 0) and Util.FormatTime(pbTime) or "--:--.---"
+    row.cols[2].color = isIgnored and ignoredColor or Colors.gold
+
+    if splitTime == nil then
+        row.cols[3].value = ""
+        row.cols[3].color = nil
+    else
+        row.cols[3].value = Util.FormatTime(splitTime)
+        row.cols[3].color = isIgnored and ignoredColor or
+            (color and { r = color.r, g = color.g, b = color.b, a = 1 } or Colors.white)
+    end
+
+    if diffTime == nil then
+        row.cols[4].value = ""
+        row.cols[4].color = nil
+    else
+        row.cols[4].value = Util.FormatDelta(diffTime)
+        row.cols[4].color = isIgnored and ignoredColor or
+            (color and { r = color.r, g = color.g, b = color.b, a = 1 } or Colors.white)
+    end
+end
+
+local function RefreshBossTableData(entries, presentation)
     entries = entries or {}
-    pbSegments = pbSegments or {}
+    presentation = presentation or {}
 
     ClearBossRows()
 
@@ -240,18 +284,23 @@ local function RefreshBossTableData(entries, pbSegments)
     end
 
     local orderedEntries = BuildBossTableOrder(entries)
-    local cumulativePBByKey = BuildBossPBCumulativeMap(entries, pbSegments)
+    local rowsByKey = presentation.rowsByKey
+    local cumulativePBByKey
+    if not rowsByKey then
+        cumulativePBByKey = BuildBossPBCumulativeMap(entries, presentation or {})
+    end
     local data = UI.data
     local map = UI.rowByBossKey
     local function AddToData(entry, isIgnored)
-        local cumulativePB = cumulativePBByKey[entry.key] or 0
+        local rowState = rowsByKey and rowsByKey[entry.key] or nil
+        local cumulativePB = cumulativePBByKey and (cumulativePBByKey[entry.key] or 0) or nil
 
         data[#data + 1] = {
             key = entry.key,
             cols = {
                 { value = entry.name or "Unknown" },
                 {
-                    value = (cumulativePB > 0) and Util.FormatTime(cumulativePB) or "--:--.---",
+                    value = (cumulativePB and cumulativePB > 0) and Util.FormatTime(cumulativePB) or "--:--.---",
                     color = isIgnored and { r = 0.4, g = 0.4, b = 0.4, a = 1 } or Colors.gold,
                 },
                 { value = "" },
@@ -259,6 +308,9 @@ local function RefreshBossTableData(entries, pbSegments)
             },
         }
         map[entry.key] = #data
+        if rowState then
+            ApplyRowState(data[#data], rowState)
+        end
     end
 
     for _, entry in ipairs(orderedEntries) do
@@ -286,30 +338,14 @@ local function GetPreviousKilledCumulativeInTableOrder(run, bossKey)
     return previous
 end
 
-local function SetRowKilled(bossKey, splitCumulative, cumulativePB, deltaSeconds, r, g, b, hex, isGold)
+local function SetRowKilled(bossKey, rowState)
     local realrow = UI.rowByBossKey and UI.rowByBossKey[bossKey]
     local row = realrow and UI.data and UI.data[realrow]
     if not row then
         return
     end
 
-    local bossName = row.cols[1].value
-    local isIgnored = NS.IsBossIgnored(bossName)
-
-    row.cols[2].value = (cumulativePB and cumulativePB > 0) and Util.FormatTime(cumulativePB) or "--:--.---"
-    row.cols[2].color = isIgnored and { r = 0.4, g = 0.4, b = 0.4, a = 1 } or Colors.gold
-    row.cols[3].value = Util.FormatTime(splitCumulative)
-    row.cols[3].color = isIgnored and { r = 0.4, g = 0.4, b = 0.4, a = 1 } or
-        (isGold and Colors.gold or { r = r, g = g, b = b, a = 1 })
-
-    if deltaSeconds == nil then
-        row.cols[4].value = ""
-        row.cols[4].color = nil
-    else
-        row.cols[4].value = Util.FormatDelta(deltaSeconds)
-        row.cols[4].color = isIgnored and { r = 0.4, g = 0.4, b = 0.4, a = 1 } or
-            (isGold and Colors.gold or { r = r, g = g, b = b, a = 1 })
-    end
+    ApplyRowState(row, rowState)
 
     if UI.st and UI.st.Refresh then
         UI.st:Refresh()

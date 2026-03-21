@@ -28,6 +28,15 @@ local function NormalizeBestSplitsNode(db, instanceName)
         end
     end
 
+    if db.InstancePersonalBests[instanceName] and db.InstancePersonalBests[instanceName].Segments then
+        local segments = db.InstancePersonalBests[instanceName].Segments
+        for k, v in pairs(segments) do
+            if type(v) == "number" and v < 0 then
+                segments[k] = nil
+            end
+        end
+    end
+
     db.InstancePersonalBests[instanceName] = db.InstancePersonalBests[instanceName] or {
         Segments = {},
         FullRun = {},

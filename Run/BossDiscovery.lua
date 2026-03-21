@@ -95,6 +95,25 @@ local function GetJournalTierAndInstanceIDForCurrentInstance()
     return foundTier, foundID, mapID, tonumber(difficultyID) or 0, instanceName or ""
 end
 
+local function BuildInstanceContext()
+    local instanceName, instanceType, difficultyID = GetInstanceInfo()
+    local tier, journalInstanceID, mapID = GetJournalTierAndInstanceIDForCurrentInstance()
+    local uiMapID = nil
+    if C_Map and C_Map.GetBestMapForUnit then
+        uiMapID = C_Map.GetBestMapForUnit("player")
+    end
+
+    return {
+        uiMapID = tonumber(uiMapID) or nil,
+        mapID = tonumber(mapID) or 0,
+        journalInstanceID = tonumber(journalInstanceID) or nil,
+        name = instanceName or "",
+        difficultyID = tonumber(difficultyID) or 0,
+        instanceType = instanceType or "",
+        tier = tonumber(tier) or 0,
+    }
+end
+
 local function ExtractBossNameFromObjectiveText(desc)
     if type(desc) ~= "string" or desc == "" then
         return nil
@@ -204,13 +223,22 @@ local function GetEJBossesForInstance(journalInstanceID)
     end
 
     for encounterIndex = 1, Const.ENCOUNTER_JOURNAL.ENCOUNTER_INDEX_MAX do
-        local name, _, encounterID = EJ_GetEncounterInfoByIndex(encounterIndex, journalInstanceID)
+        local name, _, journalEncounterID = EJ_GetEncounterInfoByIndex(encounterIndex, journalInstanceID)
         if not name then
             break
         end
+
+        journalEncounterID = tonumber(journalEncounterID)
+        local dungeonEncounterID
+        if journalEncounterID and EJ_GetEncounterInfo then
+            local _, _, _, _, _, _, liveDungeonEncounterID = EJ_GetEncounterInfo(journalEncounterID)
+            dungeonEncounterID = tonumber(liveDungeonEncounterID)
+        end
+
         bosses[#bosses + 1] = {
             name = name,
-            encounterID = tonumber(encounterID),
+            journalEncounterID = journalEncounterID,
+            dungeonEncounterID = dungeonEncounterID,
         }
     end
 
@@ -219,45 +247,72 @@ end
 
 local function EJBossesToEntries(ejBosses)
     local entries = {}
-    for _, boss in ipairs(ejBosses or {}) do
-        local encounterID = tonumber(boss.encounterID)
-        local key = encounterID and ("E:" .. encounterID) or ("N:" .. Util.NormalizeName(boss.name))
-        entries[#entries + 1] = { key = key, name = boss.name, encounterID = encounterID }
+    for index, boss in ipairs(ejBosses or {}) do
+        local dungeonEncounterID = tonumber(boss.dungeonEncounterID)
+        local journalEncounterID = tonumber(boss.journalEncounterID)
+        local key = dungeonEncounterID and ("E:" .. dungeonEncounterID)
+            or (journalEncounterID and ("J:" .. journalEncounterID))
+            or ("N:" .. Util.NormalizeName(boss.name))
+        entries[#entries + 1] = {
+            key = key,
+            name = boss.name,
+            bossName = boss.name,
+            encounterID = dungeonEncounterID,
+            dungeonEncounterID = dungeonEncounterID,
+            journalEncounterID = journalEncounterID,
+            rowIndex = index,
+            completed = false,
+            killTimeMS = nil,
+            source = "encounter_journal",
+        }
     end
     return entries
 end
 
 local function BuildBossEntries()
-    local tier, journalID = GetJournalTierAndInstanceIDForCurrentInstance()
+    local context = BuildInstanceContext()
+    if context.journalInstanceID then
+        local ejBosses = GetEJBossesForInstance(context.journalInstanceID)
+        if #ejBosses > 0 then
+            return EJBossesToEntries(ejBosses), "encounter_journal", context, true
+        end
+    end
+
     local objectiveNames, ready = GetBossNamesFromObjectives()
     if not ready then
-        return {}, "none", tier, journalID, false
+        return {}, "none", context, false
     end
 
     if #objectiveNames > 0 then
         local entries = {}
-        for _, bossName in ipairs(objectiveNames) do
+        for index, bossName in ipairs(objectiveNames) do
             local normalized = Util.NormalizeName(bossName)
             if normalized ~= "" then
-                entries[#entries + 1] = { key = "N:" .. normalized, name = bossName }
+                entries[#entries + 1] = {
+                    key = "N:" .. normalized,
+                    name = bossName,
+                    bossName = bossName,
+                    encounterID = nil,
+                    dungeonEncounterID = nil,
+                    journalEncounterID = nil,
+                    rowIndex = index,
+                    completed = false,
+                    killTimeMS = nil,
+                    source = "objectives",
+                }
             end
         end
-        return entries, "objectives", tier, journalID, true
+        return entries, "objectives", context, true
     end
 
-    if journalID then
-        local ejBosses = GetEJBossesForInstance(journalID)
-        if #ejBosses > 0 then
-            return EJBossesToEntries(ejBosses), "encounter_journal", tier, journalID, true
-        end
-    end
-    return {}, "none", tier, journalID, true
+    return {}, "none", context, true
 end
 
 Discovery.ForEachEJInstance = ForEachEJInstance
 Discovery.FindJournalTierForInstanceID = FindJournalTierForInstanceID
 Discovery.FindJournalTierAndInstanceIDByName = FindJournalTierAndInstanceIDByName
 Discovery.GetJournalTierAndInstanceIDForCurrentInstance = GetJournalTierAndInstanceIDForCurrentInstance
+Discovery.BuildInstanceContext = BuildInstanceContext
 Discovery.ExtractBossNameFromObjectiveText = ExtractBossNameFromObjectiveText
 Discovery.GetBossNamesFromObjectives = GetBossNamesFromObjectives
 Discovery.GetEJBossesForInstance = GetEJBossesForInstance

@@ -556,27 +556,14 @@ function NS.RefreshAllUI()
         NS.UpdateHistoryLayout()
     end
 
-    local node = NS.GetBestSplitsSubtable()
-    local pbTable = node and node.Segments or {}
-    UI.RefreshBossTableData(NS.Run.entries or {}, pbTable)
+    local presentation = NS.Run.presentation
+    if NS.RunLogic and NS.RunLogic.BuildRunPresentation then
+        presentation = NS.RunLogic.BuildRunPresentation(NS.Run, NS.Run.pbSegmentsSnapshot or {})
+        NS.Run.presentation = presentation
+    end
+    UI.RefreshBossTableData(NS.Run.entries or {}, presentation)
 
     if NS.Run.entries and #NS.Run.entries > 0 then
-        for _, entry in ipairs(NS.Run.entries) do
-            local visualState = NS.RunLogic.BuildRowVisualState(NS.Run, pbTable, entry.key)
-            if visualState then
-                UI.SetRowKilled(
-                    entry.key,
-                    visualState.splitCumulative,
-                    visualState.cumulativePB,
-                    visualState.delta,
-                    visualState.r,
-                    visualState.g,
-                    visualState.b,
-                    visualState.hex,
-                    visualState.isGold
-                )
-            end
-        end
         UI.RefreshTotals(not NS.Run.active and NS.Run.endGameTime > 0)
     end
 

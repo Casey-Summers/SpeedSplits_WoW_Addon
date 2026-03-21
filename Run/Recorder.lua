@@ -3,49 +3,69 @@ local _, NS = ...
 local Const = NS.Const
 local Util = NS.Util
 
-local function ResolveBossKey(encounterID, encounterName)
-    if encounterID then
-        local keyByID = "E:" .. tostring(tonumber(encounterID) or 0)
-        if NS.Run.remaining[keyByID] then
-            return keyByID
-        end
+local function ResolveBossEntry(encounterID)
+    local liveEncounterID = tonumber(encounterID)
+    if not liveEncounterID then
+        return nil
     end
 
-    local normalized = Util.NormalizeName(encounterName)
-    if normalized ~= "" then
-        local keyByName = "N:" .. normalized
-        if NS.Run.remaining[keyByName] then
-            return keyByName
-        end
-
-        for _, entry in ipairs(NS.Run.entries or {}) do
-            if Util.NormalizeName(entry.name) == normalized and NS.Run.remaining[entry.key] then
-                return entry.key
-            end
-        end
+    local entry = NS.Run.bossByDungeonEncounterID and NS.Run.bossByDungeonEncounterID[liveEncounterID]
+    if not entry or not NS.Run.remaining[entry.key] then
+        return nil
     end
 
-    return nil
+    return entry
 end
 
 local function BuildPBProgress(entries, pbTable)
     local progress = {
         cumulativeDisplayByKey = {},
         cumulativeComparisonByKey = {},
+        segmentsByKey = {},
         totalPB = 0,
     }
 
     local cumulative = 0
     for _, entry in ipairs(entries or {}) do
+        local segment = pbTable[entry.name] or 0
         if not NS.IsBossIgnored(entry.name) then
-            cumulative = cumulative + (pbTable[entry.name] or 0)
+            cumulative = cumulative + segment
         end
         progress.cumulativeDisplayByKey[entry.key] = cumulative
         progress.cumulativeComparisonByKey[entry.key] = cumulative
+        progress.segmentsByKey[entry.key] = (segment > 0) and segment or nil
     end
 
     progress.totalPB = cumulative
     return progress
+end
+
+local function GetActivePBSegments()
+    return NS.Run.pbSegmentsSnapshot or {}
+end
+
+local function BuildColorState(r, g, b, hex)
+    return {
+        r = r or 1,
+        g = g or 1,
+        b = b or 1,
+        hex = hex or "|cffffffff",
+    }
+end
+
+local function GetIgnoredColorState()
+    return BuildColorState(0.4, 0.4, 0.4, "|cff666666")
+end
+
+local function GetRowColorState(diffTime, isPB, isIgnored)
+    if isIgnored then
+        return GetIgnoredColorState()
+    end
+    if isPB then
+        return BuildColorState(NS.Colors.gold.r, NS.Colors.gold.g, NS.Colors.gold.b, NS.Colors.gold.hex)
+    end
+    local r, g, b, hex = NS.GetPaceColor(diffTime, false)
+    return BuildColorState(r, g, b, hex)
 end
 
 local function GetRunCompletionState(run)
@@ -75,48 +95,122 @@ local function GetRunCompletionState(run)
     return true, run.startGameTime + maxKill
 end
 
-local function BuildRowVisualState(run, pbTable, bossKey)
-    local splitCumulative = run.kills and run.kills[bossKey]
-    if splitCumulative == nil then
-        return nil
-    end
-
-    local entry
-    for _, candidate in ipairs(run.entries or {}) do
-        if candidate.key == bossKey then
-            entry = candidate
-            break
-        end
-    end
-    if not entry then
-        return nil
-    end
-
-    local previous = NS.UI.GetPreviousKilledCumulativeInTableOrder(run, bossKey)
-    local splitSegment = previous and (splitCumulative - previous) or splitCumulative
-    if splitSegment < 0 then
-        splitSegment = 0
-    end
+local function BuildRunPresentation(run, pbTable)
+    run = run or NS.Run
+    pbTable = pbTable or GetActivePBSegments()
 
     local progress = BuildPBProgress(run.entries, pbTable)
-    local cumulativePB = progress.cumulativeDisplayByKey[bossKey] or 0
-    local delta = splitCumulative - (progress.cumulativeComparisonByKey[bossKey] or 0)
-    local oldSegPB = pbTable[entry.name]
-    local isGold = (not oldSegPB) or (splitSegment <= oldSegPB + 0.001)
-    local r, g, b, hex = NS.GetPaceColor(delta, false)
+    local presentation = {
+        rowsByKey = {},
+        orderedRows = {},
+        summary = {
+            routePBTotal = (progress.totalPB and progress.totalPB > 0) and progress.totalPB or nil,
+        },
+    }
 
+    local chronologicalLatestRow
+    local maxSplit = -1
+    local hasDiff = false
+
+    local function GetChronologicalPreviousSplit(run, currentTime)
+        local best = 0
+        for _, split in pairs(run.kills or {}) do
+            if split < (currentTime - 0.001) and split > best then
+                best = split
+            end
+        end
+        return best
+    end
+
+    for _, entry in ipairs(run.entries or {}) do
+        local splitTime = run.kills and run.kills[entry.key] or nil
+        local previous = splitTime and GetChronologicalPreviousSplit(run, splitTime) or nil
+        local segmentTime = splitTime and ((previous and (splitTime - previous)) or splitTime) or nil
+        if segmentTime and segmentTime < 0 then
+            segmentTime = 0
+        end
+
+        local pbTime = progress.cumulativeDisplayByKey[entry.key]
+        if pbTime ~= nil and pbTime <= 0 then
+            pbTime = nil
+        end
+
+        local diffTime = nil
+        local isPB = false
+        if splitTime ~= nil then
+            if pbTime ~= nil then
+                diffTime = splitTime - pbTime
+                isPB = splitTime <= (pbTime + 0.001)
+            else
+                isPB = true
+            end
+        end
+
+        local isIgnored = NS.IsBossIgnored(entry.name)
+        local color = splitTime ~= nil and GetRowColorState(diffTime or 0, isPB, isIgnored) or nil
+
+        local row = {
+            key = entry.key,
+            entry = entry,
+            pbTime = progress.segmentsByKey[entry.key],
+            pbComparisonTime = pbTime,
+            splitTime = splitTime,
+            segmentTime = segmentTime,
+            diffTime = diffTime,
+            isPB = isPB,
+            isIgnored = isIgnored,
+            color = color,
+        }
+
+        presentation.rowsByKey[entry.key] = row
+        presentation.orderedRows[#presentation.orderedRows + 1] = row
+
+        if splitTime ~= nil and not isIgnored then
+            if splitTime > maxSplit then
+                maxSplit = splitTime
+                chronologicalLatestRow = row
+            end
+            if diffTime ~= nil then
+                hasDiff = true
+            end
+        end
+    end
+
+    if chronologicalLatestRow then
+        presentation.summary.pbTotal = chronologicalLatestRow.pbComparisonTime
+        presentation.summary.splitTotal = chronologicalLatestRow.splitTime
+        presentation.summary.splitColor = chronologicalLatestRow.color
+        presentation.summary.latestRow = chronologicalLatestRow
+
+        if hasDiff then
+            presentation.summary.diffTotal = chronologicalLatestRow.diffTime
+            presentation.summary.diffColor = chronologicalLatestRow.color
+        end
+    end
+
+    return presentation
+end
+
+local function BuildRowVisualState(run, pbTable, bossKey)
+    local presentation = BuildRunPresentation(run, pbTable)
+    local row = presentation.rowsByKey[bossKey]
+    if not row or row.splitTime == nil then
+        return nil
+    end
+
+    local color = row.color or BuildColorState()
     return {
-        entry = entry,
-        splitCumulative = splitCumulative,
-        splitSegment = splitSegment,
-        cumulativePB = cumulativePB,
-        delta = delta,
-        isGold = isGold,
-        r = r,
-        g = g,
-        b = b,
-        hex = hex,
-        totalPB = progress.totalPB or 0,
+        entry = row.entry,
+        splitCumulative = row.splitTime,
+        splitSegment = row.segmentTime,
+        cumulativePB = row.pbComparisonTime,
+        delta = row.diffTime,
+        isGold = row.isPB,
+        r = color.r,
+        g = color.g,
+        b = color.b,
+        hex = color.hex,
+        totalPB = presentation.summary.pbTotal,
     }
 end
 
@@ -156,7 +250,8 @@ local function SaveRunRecord(success)
         bosses[#bosses + 1] = {
             key = entry.key,
             name = entry.name,
-            encounterID = entry.encounterID,
+            encounterID = entry.dungeonEncounterID or entry.encounterID,
+            journalEncounterID = entry.journalEncounterID,
         }
     end
 
@@ -197,53 +292,48 @@ local function RecordBossKill(encounterID, encounterName)
         return
     end
 
-    local bossKey = ResolveBossKey(encounterID, encounterName)
-    if not bossKey or NS.Run.kills[bossKey] ~= nil then
-        return
-    end
-
-    local bossEntry
-    for _, entry in ipairs(NS.Run.entries or {}) do
-        if entry.key == bossKey then
-            bossEntry = entry
-            break
-        end
-    end
-    if not bossEntry then
+    local bossEntry = ResolveBossEntry(encounterID)
+    if not bossEntry or NS.Run.kills[bossEntry.key] ~= nil then
         return
     end
 
     local splitCumulative = NS.NowGameTime() - NS.Run.startGameTime
-    NS.Run.kills[bossKey] = splitCumulative
+    NS.Run.kills[bossEntry.key] = splitCumulative
+    bossEntry.completed = true
+    bossEntry.killTimeMS = math.floor(splitCumulative * 1000 + 0.5)
 
-    if NS.Run.remaining[bossKey] then
-        NS.Run.remaining[bossKey] = nil
+    if NS.Run.remaining[bossEntry.key] then
+        NS.Run.remaining[bossEntry.key] = nil
         NS.Run.remainingCount = math.max(0, (NS.Run.remainingCount or 0) - 1)
         NS.Run.killedCount = math.min(#NS.Run.entries, (NS.Run.killedCount or 0) + 1)
     end
 
     local node = NS.GetBestSplitsSubtable()
-    local pbTable = node and node.Segments
-    if not pbTable then
+    local livePBTable = node and node.Segments
+    if not livePBTable then
         return
     end
 
-    local visualState = BuildRowVisualState(NS.Run, pbTable, bossKey)
-    if not visualState then
+    local pbSnapshot = GetActivePBSegments()
+    local presentation = BuildRunPresentation(NS.Run, pbSnapshot)
+    local rowState = presentation.rowsByKey[bossEntry.key]
+    if not rowState then
         return
     end
 
-    local isNewSegmentPB = (pbTable[bossEntry.name] == nil or pbTable[bossEntry.name] == 0) or
-        (visualState.splitSegment <= (pbTable[bossEntry.name] + 0.001))
-    if isNewSegmentPB then
-        pbTable[bossEntry.name] = visualState.splitSegment
-        visualState = BuildRowVisualState(NS.Run, pbTable, bossKey)
+    local isNewSegmentPB = rowState.isPB
+    local existingSegmentPB = livePBTable[bossEntry.name]
+    if rowState.segmentTime ~= nil then
+        if existingSegmentPB == nil or existingSegmentPB == 0 or rowState.segmentTime <= (existingSegmentPB + 0.001) then
+            livePBTable[bossEntry.name] = rowState.segmentTime
+        end
     end
+    NS.Run.presentation = presentation
 
     local isRunComplete = false
     if NS.Run.speedrunMode == "last" then
         local lastEntry = NS.Run.entries[#NS.Run.entries]
-        isRunComplete = lastEntry and lastEntry.key == bossKey
+        isRunComplete = lastEntry and lastEntry.key == bossEntry.key
     else
         isRunComplete = (NS.Run.remainingCount or 0) == 0 and #NS.Run.entries > 0
     end
@@ -251,38 +341,33 @@ local function RecordBossKill(encounterID, encounterName)
     local isFullRunPB = false
     if isRunComplete then
         local existingPB = node and node.FullRun and node.FullRun.duration
-        local target = (existingPB and existingPB > 0) and existingPB or visualState.cumulativePB
-        isFullRunPB = (not target or target == 0 or visualState.splitCumulative <= (target + 0.001))
+        local target = (existingPB and existingPB > 0) and existingPB or presentation.summary.pbTotal
+        isFullRunPB = (not target or target == 0 or rowState.splitTime <= (target + 0.001))
     end
     local toastIsPB = isRunComplete and isFullRunPB or isNewSegmentPB
 
     if NS.DB.Settings.showTimerToast then
         local shouldToast = NS.DB.Settings.toastAllBosses or isRunComplete
         if shouldToast then
-            local tex = NS.GetPaceToastTexture(visualState.delta, toastIsPB)
+            local tex = NS.GetPaceToastTexture(rowState.diffTime, toastIsPB)
             NS.ShowToast(tex, toastIsPB)
             PlayToastSoundOnce()
         end
     end
 
-    NS.Run.lastDelta = visualState.delta
-    NS.Run.lastPBTotal = visualState.totalPB
-    NS.Run.lastSplitCumulative = visualState.splitCumulative
+    local summary = presentation.summary or {}
+    local displayColor = summary.diffColor or summary.splitColor
+    NS.Run.lastDelta = summary.diffTotal
+    NS.Run.lastPBTotal = summary.pbTotal
+    NS.Run.lastSplitCumulative = summary.splitTotal
     NS.Run.lastColorR, NS.Run.lastColorG, NS.Run.lastColorB, NS.Run.lastColorHex =
-        visualState.r, visualState.g, visualState.b, visualState.hex
+        displayColor and displayColor.r or nil,
+        displayColor and displayColor.g or nil,
+        displayColor and displayColor.b or nil,
+        displayColor and displayColor.hex or nil
     NS.Run.lastIsPB = toastIsPB
 
-    NS.UI.SetRowKilled(
-        bossKey,
-        visualState.splitCumulative,
-        visualState.cumulativePB,
-        visualState.delta,
-        visualState.r,
-        visualState.g,
-        visualState.b,
-        visualState.hex,
-        isNewSegmentPB
-    )
+    NS.UI.SetRowKilled(bossEntry.key, rowState)
     NS.UI.SetKillCount(NS.Run.killedCount, #NS.Run.entries)
     NS.UI.RefreshTotals(false)
 
@@ -292,8 +377,9 @@ local function RecordBossKill(encounterID, encounterName)
     end
 end
 
-NS.RunLogic.ResolveBossKey = ResolveBossKey
+NS.RunLogic.ResolveBossEntry = ResolveBossEntry
 NS.RunLogic.BuildPBProgress = BuildPBProgress
+NS.RunLogic.BuildRunPresentation = BuildRunPresentation
 NS.RunLogic.BuildRowVisualState = BuildRowVisualState
 NS.RunLogic.GetRunCompletionState = GetRunCompletionState
 NS.RunLogic.SaveRunRecord = SaveRunRecord

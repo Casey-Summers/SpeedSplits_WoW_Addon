@@ -2,8 +2,6 @@ local _, NS = ...
 
 local Util = NS.Util
 
-local CURRENT_SCHEMA_VERSION = 2
-
 local function EnsurePBNodeShape(node)
     node = node or {}
     if node.Segments and node.Segments ~= node.Splits then
@@ -17,7 +15,8 @@ end
 
 local function EnsureRouteContainerShape(node)
     node = node or {}
-    node.BossIndex = node.BossIndex or {}
+    local normalizeBossIndex = NS.Migrations and NS.Migrations.NormalizeBossIndexTable
+    node.BossIndex = normalizeBossIndex and normalizeBossIndex(node.BossIndex) or (node.BossIndex or {})
     return node
 end
 
@@ -28,29 +27,12 @@ local function EnsurePBTables(db)
     db.InstanceBestIgnored = db.InstanceBestIgnored or {}
 end
 
-local function WipeLegacyData(db)
-    db.RunHistory = {}
-    db.InstanceRoutes = {}
-    db.InstanceBestRoute = {}
-    db.InstanceBestLastBoss = {}
-    db.InstanceBestIgnored = {}
-
-    db.InstancePersonalBests = nil
-    db.PersonalBests = nil
-    db.bestSplits = nil
-    db.pbBoss = nil
-    db.pbRun = nil
-    db.runs = nil
-end
-
 local function ApplySavedVariablesMigrations(db)
-    local version = tonumber(db.SchemaVersion or 0) or 0
-    if version < CURRENT_SCHEMA_VERSION then
-        WipeLegacyData(db)
-        db.SchemaVersion = CURRENT_SCHEMA_VERSION
+    if NS.Migrations and NS.Migrations.ApplySavedVariablesMigrations then
+        NS.Migrations.ApplySavedVariablesMigrations(db)
+    else
+        EnsurePBTables(db)
     end
-
-    EnsurePBTables(db)
 end
 
 local function IsTestRunRecord(record)
@@ -306,20 +288,27 @@ local function EnsureBossIndex(instanceName, entries)
 
     local bossIndex = routes.BossIndex
     local nextIndex = 0
-    for _, value in pairs(bossIndex) do
-        if type(value) == "number" and value > nextIndex then
-            nextIndex = value
+    for key in pairs(bossIndex) do
+        local routeIndex = tonumber(key)
+        if routeIndex and routeIndex > nextIndex then
+            nextIndex = routeIndex
         end
     end
 
     for _, entry in ipairs(entries or {}) do
         local bossName = entry and (entry.name or entry.bossName)
         if bossName and bossName ~= "" then
-            local routeIndex = tonumber(bossIndex[bossName])
+            local routeIndex = nil
+            for existingIndex, existingBossName in pairs(bossIndex) do
+                if existingBossName == bossName then
+                    routeIndex = tonumber(existingIndex)
+                    break
+                end
+            end
             if not routeIndex then
                 nextIndex = nextIndex + 1
                 routeIndex = nextIndex
-                bossIndex[bossName] = routeIndex
+                bossIndex[routeIndex] = bossName
             end
             entry.routeIndex = routeIndex
         end
@@ -394,7 +383,7 @@ local function ApplyBossIndexFromRecord(instanceName, record)
         local routeIndex = tonumber(boss and boss.routeIndex)
         local bossName = boss and boss.name
         if routeIndex and bossName and bossName ~= "" then
-            routes.BossIndex[bossName] = routeIndex
+            routes.BossIndex[routeIndex] = bossName
         end
     end
 end

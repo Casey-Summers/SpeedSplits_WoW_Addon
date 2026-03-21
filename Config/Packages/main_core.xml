@@ -18,6 +18,7 @@
     <Script file="..\..\Core\Utils.lua"/>
     <Script file="..\..\Core\Colors.lua"/>
 
+    <Script file="..\..\Data\Migration.lua"/>
     <Script file="..\..\Data\Database.lua"/>
 
     <Script file="..\..\Run\State.lua"/>

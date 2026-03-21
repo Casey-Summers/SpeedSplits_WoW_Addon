@@ -257,6 +257,15 @@ function UI.EnsureUI()
         st:SetDefaultHighlight(0.5, 0.5, 0.5, 0.25)
         st:RegisterEvents({
             ["OnClick"] = function(rowFrame, cellFrame, data, cols, row, realrow, column, scrollingTable, button)
+                local rowData = realrow and data and data[realrow] or nil
+
+                if button == "LeftButton" and rowData and NS.TestsSimulation and NS.TestsSimulation.HandleRowClick then
+                    local handled = NS.TestsSimulation.HandleRowClick(rowData, button)
+                    if handled then
+                        return
+                    end
+                end
+
                 if button == "RightButton" and realrow then
                     local bossName = data[realrow].cols[1].value
                     local instanceName = NS.Run.instanceName or ""

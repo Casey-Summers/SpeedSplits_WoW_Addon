@@ -237,6 +237,18 @@ local function PlayToastSoundOnce()
     end
 end
 
+local function PreviewRewardForBossKey(run, pbTable, bossKey)
+    local rowState = BuildRowVisualState(run or NS.Run, pbTable or GetActivePBSegments(), bossKey)
+    if not rowState then
+        return nil, nil
+    end
+
+    local tex = NS.GetPaceToastTexture(rowState.delta, rowState.isGold)
+    NS.ShowToast(tex, rowState.isGold)
+    PlayToastSoundOnce()
+    return rowState, tex
+end
+
 local function SaveRunRecord(success)
     if NS.Run.isTest == true then
         return
@@ -381,5 +393,6 @@ NS.RunLogic.BuildPBProgress = BuildPBProgress
 NS.RunLogic.BuildRunPresentation = BuildRunPresentation
 NS.RunLogic.BuildRowVisualState = BuildRowVisualState
 NS.RunLogic.GetRunCompletionState = GetRunCompletionState
+NS.RunLogic.PreviewRewardForBossKey = PreviewRewardForBossKey
 NS.RunLogic.SaveRunRecord = SaveRunRecord
 NS.RunLogic.RecordBossKill = RecordBossKill

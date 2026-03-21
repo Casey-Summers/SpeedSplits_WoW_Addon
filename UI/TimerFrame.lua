@@ -71,7 +71,7 @@ local function SetTimerText(seconds, finished)
     UI.timerTextMs:SetTextColor(color.r, color.g, color.b, color.a or 1)
 end
 
-local function SetTimerDelta(delta, isPB)
+local function SetTimerDelta(delta, colorState)
     if not UI.timerDeltaText then
         return
     end
@@ -83,12 +83,12 @@ local function SetTimerDelta(delta, isPB)
         return
     end
 
-    local hex = NS.Run.lastColorHex or Colors.white.hex
+    local hex = (colorState and colorState.hex) or NS.Run.lastColorHex or Colors.white.hex
     UI.timerDeltaText:SetText(hex .. Util.FormatDelta(delta) .. "|r")
     UI.timerDeltaText:SetTextColor(1, 1, 1, 1)
 
     if UI.timerToastBg then
-        local tex = NS.GetPaceToastTexture(delta, isPB)
+        local tex = NS.GetPaceToastTexture(delta, false)
         Util.ApplyBackgroundTexture(UI.timerToastBg, tex)
     end
 end

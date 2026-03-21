@@ -28,6 +28,15 @@ local function NormalizeBestSplitsNode(db, instanceName)
         end
     end
 
+    if db.InstancePersonalBests[instanceName] and db.InstancePersonalBests[instanceName].Segments then
+        local segments = db.InstancePersonalBests[instanceName].Segments
+        for k, v in pairs(segments) do
+            if type(v) == "number" and v < 0 then
+                segments[k] = nil
+            end
+        end
+    end
+
     db.InstancePersonalBests[instanceName] = db.InstancePersonalBests[instanceName] or {
         Segments = {},
         FullRun = {},
@@ -208,6 +217,69 @@ local function ApplyLayoutReset()
     SpeedSplitsDB.ui = defaultUI
 end
 
+local function GetRecordBossSplitTime(record, targetKey)
+    if type(record) ~= "table" or type(record.kills) ~= "table" then
+        return nil
+    end
+
+    local targetSplit = record.kills[targetKey]
+    return (type(targetSplit) == "number") and targetSplit or nil
+end
+
+local function RebuildInstancePersonalBests(instanceName)
+    EnsureDB()
+    if not instanceName or instanceName == "" then
+        return
+    end
+
+    local bestSplits = {}
+    local bestRun
+
+    for _, record in ipairs(NS.DB.RunHistory or {}) do
+        if record.instanceName == instanceName then
+            if record.success and type(record.duration) == "number" then
+                if not bestRun or record.duration < bestRun.duration then
+                    bestRun = {
+                        duration = record.duration,
+                        endedAt = record.endedAt,
+                        instanceName = record.instanceName,
+                        tier = record.tier,
+                        difficultyID = record.difficultyID,
+                        difficultyName = record.difficultyName,
+                        mapID = record.mapID,
+                    }
+                end
+            end
+
+            for _, boss in ipairs(record.bosses or {}) do
+                local bossName = boss and boss.name
+                local bossKey = boss and boss.key
+                if bossName and bossKey then
+                    local splitTime = GetRecordBossSplitTime(record, bossKey)
+                    if type(splitTime) == "number" then
+                        splitTime = NS.Util.RoundTime(splitTime)
+                        local existing = bestSplits[bossName]
+                        if existing == nil or splitTime < existing then
+                            bestSplits[bossName] = splitTime
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    local hasSplits = next(bestSplits) ~= nil
+    if not hasSplits and not bestRun then
+        NS.DB.InstancePersonalBests[instanceName] = nil
+        return
+    end
+
+    NS.DB.InstancePersonalBests[instanceName] = {
+        Segments = hasSplits and bestSplits or {},
+        FullRun = bestRun or {},
+    }
+end
+
 local function ResetLayout(simulateOnly)
     if SpeedSplitsDB then
         ApplyLayoutReset()
@@ -238,7 +310,9 @@ local function DeleteRunRecord(record)
     end
     for i, runRecord in ipairs(NS.DB.RunHistory) do
         if runRecord == record then
+            local instanceName = runRecord.instanceName
             table.remove(NS.DB.RunHistory, i)
+            RebuildInstancePersonalBests(instanceName)
             if NS.UI and NS.UI.RefreshHistoryTable then
                 NS.UI.RefreshHistoryTable()
             end
@@ -255,6 +329,7 @@ NS.Database.PurgeTestRunHistory = PurgeTestRunHistory
 NS.Database.ApplyFactoryReset = ApplyFactoryReset
 NS.Database.ApplyDatabaseWipe = ApplyDatabaseWipe
 NS.Database.ApplyLayoutReset = ApplyLayoutReset
+NS.Database.RebuildInstancePersonalBests = RebuildInstancePersonalBests
 NS.ResetToFactorySettings = ResetToFactorySettings
 NS.WipeDatabase = WipeDatabase
 NS.ResetLayout = ResetLayout

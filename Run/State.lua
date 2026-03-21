@@ -13,6 +13,11 @@ Run.journalID = Run.journalID or nil
 Run.tier = Run.tier or 0
 Run.dungeonKey = Run.dungeonKey or ""
 Run.bossSource = Run.bossSource or "none"
+Run.instance = Run.instance or {}
+Run.bosses = Run.bosses or {}
+Run.bossByJournalEncounterID = Run.bossByJournalEncounterID or {}
+Run.bossByDungeonEncounterID = Run.bossByDungeonEncounterID or {}
+Run.pbSegmentsSnapshot = Run.pbSegmentsSnapshot or {}
 Run.entries = Run.entries or {}
 Run.remaining = Run.remaining or {}
 Run.remainingCount = Run.remainingCount or 0
@@ -51,6 +56,12 @@ local function ResetRun()
         NS.RunLogic.CancelTimerTicker()
     end
     Run.entries = {}
+    Run.bosses = {}
+    Run.instance = {}
+    Run.bossByJournalEncounterID = {}
+    Run.bossByDungeonEncounterID = {}
+    Run.pbSegmentsSnapshot = {}
+    Run.presentation = nil
     Run.remaining = {}
     Run.remainingCount = 0
     Run.killedCount = 0

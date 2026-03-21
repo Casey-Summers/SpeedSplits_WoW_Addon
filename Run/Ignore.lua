@@ -26,21 +26,6 @@ local function SyncAutoIgnoredBosses()
     end
 
     wipe(autoIgnored)
-
-    if NS.Run.speedrunMode ~= "last" then
-        return
-    end
-
-    local lastEntry = NS.Run.entries[#NS.Run.entries]
-    if not lastEntry then
-        return
-    end
-
-    for _, entry in ipairs(NS.Run.entries) do
-        if entry.key ~= lastEntry.key and not manualIgnored[entry.name] then
-            autoIgnored[entry.name] = true
-        end
-    end
 end
 
 NS.RunLogic.GetIgnoreTables = GetIgnoreTables

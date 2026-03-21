@@ -209,6 +209,9 @@ function Widgets.SettingsDropDown(parent, label, field, opts, width)
             if NS.RunLogic and NS.RunLogic.SyncAutoIgnoredBosses then
                 NS.RunLogic.SyncAutoIgnoredBosses()
             end
+            if NS.RunLogic and NS.RunLogic.HandleIgnoreStateChange then
+                NS.RunLogic.HandleIgnoreStateChange()
+            end
         end
         NS.RefreshAllUI()
     end

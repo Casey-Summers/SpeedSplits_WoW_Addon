@@ -24,6 +24,7 @@
     <Script file="..\..\Run\BossDiscovery.lua"/>
     <Script file="..\..\Run\PB.lua"/>
     <Script file="..\..\Run\Ignore.lua"/>
+    <Script file="..\..\Run\Routes.lua"/>
     <Script file="..\..\Run\Recorder.lua"/>
     <Script file="..\..\Run\Session.lua"/>
 

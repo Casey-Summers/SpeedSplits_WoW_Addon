@@ -4,15 +4,181 @@ local UI = NS.UI
 local Util = NS.Util
 local Const = NS.Const
 local ResizeGrip = UI.Templates.ResizeGrip
+local GetUISaved
+local LAYOUT_SCHEMA_VERSION = 1
+local VALID_POINTS = {
+    TOP = true,
+    TOPLEFT = true,
+    TOPRIGHT = true,
+    LEFT = true,
+    CENTER = true,
+    RIGHT = true,
+    BOTTOM = true,
+    BOTTOMLEFT = true,
+    BOTTOMRIGHT = true,
+}
 
-local function GetUISaved()
+local function NormalizeLayoutNumber(value)
+    value = tonumber(value)
+    if not value then
+        return nil
+    end
+    return Util.RoundNumber(value, 3)
+end
+
+local function GetParentSize()
+    local width = UIParent and UIParent.GetWidth and UIParent:GetWidth() or 1920
+    local height = UIParent and UIParent.GetHeight and UIParent:GetHeight() or 1080
+    return tonumber(width) or 1920, tonumber(height) or 1080
+end
+
+local function GetFrameLayoutRules(frameKey)
+    if frameKey == "boss" then
+        return {
+            defaultW = 520,
+            defaultH = 320,
+            minW = 450,
+            minH = Const.SPLITS_LAYOUT.MIN_HEIGHT,
+            maxW = 1400,
+            maxH = 1000,
+        }
+    elseif frameKey == "history" then
+        return {
+            defaultW = 850,
+            defaultH = 500,
+            minW = 850,
+            minH = 200,
+            maxW = 2500,
+            maxH = 1600,
+        }
+    elseif frameKey == "timer" then
+        return {
+            defaultW = 140,
+            defaultH = 50,
+            minW = 120,
+            minH = 40,
+            maxW = 900,
+            maxH = 300,
+        }
+    end
+
+    return {
+        defaultW = 200,
+        defaultH = 100,
+        minW = 100,
+        minH = 40,
+        maxW = 2500,
+        maxH = 1600,
+    }
+end
+
+local function BuildFrameSnapshot(frameKey, frame)
+    local rules = GetFrameLayoutRules(frameKey)
+    local point, _, relPoint, xOfs, yOfs = frame:GetPoint(1)
+    return {
+        schemaVersion = LAYOUT_SCHEMA_VERSION,
+        point = VALID_POINTS[point] and point or "CENTER",
+        relPoint = VALID_POINTS[relPoint] and relPoint or "CENTER",
+        x = NormalizeLayoutNumber(xOfs) or 0,
+        y = NormalizeLayoutNumber(yOfs) or 0,
+        w = NormalizeLayoutNumber(frame:GetWidth()) or rules.defaultW,
+        h = NormalizeLayoutNumber(frame:GetHeight()) or rules.defaultH,
+        clampedToScreen = frame.IsClampedToScreen and frame:IsClampedToScreen() or false,
+        minW = NormalizeLayoutNumber(rules.minW),
+        minH = NormalizeLayoutNumber(rules.minH),
+        maxW = NormalizeLayoutNumber(rules.maxW),
+        maxH = NormalizeLayoutNumber(rules.maxH),
+    }
+end
+
+local function NormalizeFrameSnapshot(frameKey, snapshot, fallback)
+    local rules = GetFrameLayoutRules(frameKey)
+    snapshot = type(snapshot) == "table" and Util.CopyTable(snapshot) or {}
+    fallback = type(fallback) == "table" and fallback or {}
+
+    local function pick(key, default)
+        local value = snapshot[key]
+        if value == nil then
+            value = fallback[key]
+        end
+        if value == nil then
+            value = default
+        end
+        return value
+    end
+
+    local normalized = {
+        schemaVersion = LAYOUT_SCHEMA_VERSION,
+        point = VALID_POINTS[pick("point", "CENTER")] and pick("point", "CENTER") or "CENTER",
+        relPoint = VALID_POINTS[pick("relPoint", "CENTER")] and pick("relPoint", "CENTER") or "CENTER",
+        clampedToScreen = pick("clampedToScreen", true) and true or false,
+        minW = NormalizeLayoutNumber(pick("minW", rules.minW)) or rules.minW,
+        minH = NormalizeLayoutNumber(pick("minH", rules.minH)) or rules.minH,
+        maxW = NormalizeLayoutNumber(pick("maxW", rules.maxW)) or rules.maxW,
+        maxH = NormalizeLayoutNumber(pick("maxH", rules.maxH)) or rules.maxH,
+    }
+
+    local width = NormalizeLayoutNumber(pick("w", rules.defaultW)) or rules.defaultW
+    local height = NormalizeLayoutNumber(pick("h", rules.defaultH)) or rules.defaultH
+    normalized.w = Util.Clamp(width, normalized.minW, normalized.maxW)
+    normalized.h = Util.Clamp(height, normalized.minH, normalized.maxH)
+
+    local parentW, parentH = GetParentSize()
+    local x = NormalizeLayoutNumber(pick("x", 0)) or 0
+    local y = NormalizeLayoutNumber(pick("y", 0)) or 0
+    local maxX = math.max(0, (parentW - normalized.w) / 2)
+    local maxY = math.max(0, (parentH - normalized.h) / 2)
+    normalized.x = Util.Clamp(x, -maxX, maxX)
+    normalized.y = Util.Clamp(y, -maxY, maxY)
+
+    return normalized
+end
+
+local function NormalizeUILayoutSnapshot(ui)
+    ui = type(ui) == "table" and ui or {}
+    ui.frames = ui.frames or {}
+    ui.cols = ui.cols or {}
+    ui.historyCols = ui.historyCols or {}
+    ui.preview = ui.preview or false
+    ui.layoutSchemaVersion = LAYOUT_SCHEMA_VERSION
+
+    local defaults = NS.FactoryDefaults and NS.FactoryDefaults.ui and NS.FactoryDefaults.ui.frames or {}
+    ui.frames.boss = NormalizeFrameSnapshot("boss", ui.frames.boss, defaults.boss)
+    ui.frames.history = NormalizeFrameSnapshot("history", ui.frames.history, defaults.history)
+    if ui.frames.timer or defaults.timer then
+        ui.frames.timer = NormalizeFrameSnapshot("timer", ui.frames.timer, defaults.timer)
+    end
+
+    return ui
+end
+
+local function GetNormalizedUILayoutSnapshot(source)
+    return NormalizeUILayoutSnapshot(Util.CopyTable(source or GetUISaved() or {}))
+end
+
+local function GetEffectiveFrameGeometry(frameKey)
+    local frame
+    if frameKey == "boss" then
+        frame = UI.bossFrame
+    elseif frameKey == "history" then
+        frame = UI.history and UI.history.frame
+    elseif frameKey == "timer" then
+        frame = UI.timerFrame
+    end
+
+    if not frame then
+        return nil
+    end
+
+    return BuildFrameSnapshot(frameKey, frame)
+end
+
+GetUISaved = function()
     if not NS.DB then
         return nil
     end
     NS.DB.ui = NS.DB.ui or {}
-    NS.DB.ui.frames = NS.DB.ui.frames or {}
-    NS.DB.ui.cols = NS.DB.ui.cols or {}
-    NS.DB.ui.preview = NS.DB.ui.preview or false
+    NormalizeUILayoutSnapshot(NS.DB.ui)
     return NS.DB.ui
 end
 
@@ -22,27 +188,27 @@ local function SaveFrameGeom(frameKey, frame)
         return
     end
 
-    local point, _, relPoint, xOfs, yOfs = frame:GetPoint(1)
-    ui.frames[frameKey] = ui.frames[frameKey] or {}
-    ui.frames[frameKey].w = frame:GetWidth()
-    ui.frames[frameKey].h = frame:GetHeight()
-    ui.frames[frameKey].point = point
-    ui.frames[frameKey].relPoint = relPoint
-    ui.frames[frameKey].x = xOfs
-    ui.frames[frameKey].y = yOfs
+    ui.frames[frameKey] = BuildFrameSnapshot(frameKey, frame)
 end
 
 local function RestoreFrameGeom(frameKey, frame, defaultW, defaultH)
     local ui = GetUISaved()
-    local saved = ui and ui.frames and ui.frames[frameKey]
-    if saved and saved.point and saved.relPoint then
-        frame:ClearAllPoints()
-        frame:SetPoint(saved.point, UIParent, saved.relPoint, saved.x or 0, saved.y or 0)
-        frame:SetSize(saved.w or defaultW, saved.h or defaultH)
-        return true
+    local fallback = (NS.FactoryDefaults and NS.FactoryDefaults.ui and NS.FactoryDefaults.ui.frames and
+        NS.FactoryDefaults.ui.frames[frameKey]) or { w = defaultW, h = defaultH, point = "CENTER", relPoint = "CENTER", x = 0, y = 0 }
+    local saved = ui and ui.frames and ui.frames[frameKey] or nil
+    local hasSaved = type(saved) == "table" and next(saved) ~= nil
+    local normalized = NormalizeFrameSnapshot(frameKey, saved, fallback)
+    frame:ClearAllPoints()
+    frame:SetSize(normalized.w or defaultW, normalized.h or defaultH)
+    frame:SetPoint(normalized.point, UIParent, normalized.relPoint, normalized.x or 0, normalized.y or 0)
+    if frame.SetClampedToScreen then
+        frame:SetClampedToScreen(normalized.clampedToScreen)
     end
-    frame:SetSize(defaultW, defaultH)
-    return false
+    Util.ApplyResizeBounds(frame, normalized.minW, normalized.minH, normalized.maxW, normalized.maxH)
+    if ui and ui.frames then
+        ui.frames[frameKey] = normalized
+    end
+    return hasSaved
 end
 
 local function SaveColWidths()
@@ -50,9 +216,9 @@ local function SaveColWidths()
     if not ui then
         return
     end
-    ui.cols.pb = UI._pbWidth
-    ui.cols.split = UI._splitWidth
-    ui.cols.delta = UI._deltaWidth
+    ui.cols.pb = NormalizeLayoutNumber(UI._pbWidth)
+    ui.cols.split = NormalizeLayoutNumber(UI._splitWidth)
+    ui.cols.delta = NormalizeLayoutNumber(UI._deltaWidth)
 end
 
 local function SaveHistoryColWidths()
@@ -62,7 +228,7 @@ local function SaveHistoryColWidths()
     end
     ui.historyCols = ui.historyCols or {}
     for key, value in pairs(UI.history.colWidths) do
-        ui.historyCols[key] = value
+        ui.historyCols[key] = NormalizeLayoutNumber(value)
     end
 end
 
@@ -175,10 +341,9 @@ local function ApplyTableLayout()
     local displayRows = math.max(1, math.floor(height / rowHeight))
     local laneWidth = GetBossScrollBarWidth() + 6
     local needsScroll = GetBossTableDataCount() > displayRows
-    local contentRightInset = needsScroll and laneWidth or 0
     UI._bossScrollLaneVisible = needsScroll
     UI._bossScrollLaneWidth = needsScroll and laneWidth or 0
-    UI._rightInset = contentRightInset
+    UI._rightInset = 0
 
     if UI.st.scrollframe then
         UI.st.scrollframe:ClearAllPoints()
@@ -200,7 +365,7 @@ local function ApplyTableLayout()
 
     UI._modelWidth = GetModelColumnWidth()
     local width = UI.st.frame:GetWidth() or 1
-    local available = math.max(width - contentRightInset, 1)
+    local available = math.max(width, 1)
     local splitMin = Const.SPLITS_COL_MIN
     local globalMin = splitMin.GLOBAL or 1
     local bossMin = math.max(globalMin, splitMin.BOSS or globalMin)
@@ -325,7 +490,7 @@ local function UpdateColDrag()
 
     local curX = GetCursorPosition() / UI.st.frame:GetEffectiveScale()
     local dx = curX - UI._colDrag.startX
-    local available = (UI.st.frame:GetWidth() or 0) - UI._rightInset
+    local available = UI.st.frame:GetWidth() or 0
     local splitMin = Const.SPLITS_COL_MIN
     local globalMin = splitMin.GLOBAL or 1
     local bossMin = math.max(globalMin, splitMin.BOSS or globalMin)
@@ -392,6 +557,10 @@ UI.SaveFrameGeom = SaveFrameGeom
 UI.RestoreFrameGeom = RestoreFrameGeom
 UI.SaveColWidths = SaveColWidths
 UI.RestoreColWidths = RestoreColWidths
+UI.NormalizeFrameSnapshot = NormalizeFrameSnapshot
+UI.NormalizeUILayoutSnapshot = NormalizeUILayoutSnapshot
+UI.GetNormalizedUILayoutSnapshot = GetNormalizedUILayoutSnapshot
+UI.GetEffectiveFrameGeometry = GetEffectiveFrameGeometry
 UI.GetScrollBarInset = GetScrollBarInset
 UI.GetModelColumnWidth = GetModelColumnWidth
 UI.ApplyTableLayout = ApplyTableLayout

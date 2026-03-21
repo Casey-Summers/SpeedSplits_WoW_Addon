@@ -11,7 +11,9 @@ StaticPopupDialogs[WIPE_CONFIRM_ID] = {
     button1 = "Wipe Records",
     button2 = "Cancel",
     OnAccept = function()
-        if NS.WipeDatabase then
+        if NS.WipeAllRecordsAndRebuild then
+            NS.WipeAllRecordsAndRebuild()
+        elseif NS.WipeDatabase then
             NS.WipeDatabase()
         end
     end,

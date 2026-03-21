@@ -16,6 +16,15 @@ function Util.RoundTime(seconds)
     return math.floor(seconds * 1000 + 0.5) / 1000
 end
 
+function Util.RoundNumber(value, precision)
+    if value == nil then
+        return nil
+    end
+    precision = precision or 3
+    local factor = 10 ^ precision
+    return math.floor(tonumber(value) * factor + 0.5) / factor
+end
+
 function Util.CopyTable(src)
     local dest = {}
     for k, v in pairs(src or {}) do

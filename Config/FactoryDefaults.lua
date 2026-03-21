@@ -37,22 +37,22 @@ NS.FactoryDefaults = {
             splits = "instance",
         },
         speedrunMode = "all",
-        showNPCViewModels = true,
+        showNPCViewModels = false,
     },
     ui = {
         cols = {
             pb = 85,
-            split = 85,
-            delta = 85,
+            split = 100,
+            delta = 70,
         },
         frames = {
             boss = {
-                w = 450,
-                h = 200,
+                w = 451,
+                h = 156,
                 point = "CENTER",
                 relPoint = "CENTER",
-                x = -7,
-                y = -12,
+                x = -18.5,
+                y = 113,
             },
             history = {
                 w = 850,
@@ -67,8 +67,8 @@ NS.FactoryDefaults = {
                 h = 78,
                 point = "CENTER",
                 relPoint = "CENTER",
-                x = -6.5,
-                y = 131,
+                x = -25,
+                y = 236,
             },
         },
         historyCols = {

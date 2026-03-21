@@ -430,7 +430,9 @@ local function EnsureHistoryUI()
     end)
     historyFrame:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
-        UI.SaveFrameGeom("history", self)
+        if UI.CaptureCurrentLayout then
+            UI.CaptureCurrentLayout()
+        end
     end)
 
     if not UI.RestoreFrameGeom("history", historyFrame, 850, 500) then
@@ -634,7 +636,9 @@ local function EnsureHistoryUI()
     end)
 
     local grip = UI.SetupSizeGrip(historyFrame, function()
-        UI.SaveFrameGeom("history", historyFrame)
+        if UI.CaptureCurrentLayout then
+            UI.CaptureCurrentLayout()
+        end
         History_ApplyTableLayout()
     end)
     UI.history.resizeGrip = grip

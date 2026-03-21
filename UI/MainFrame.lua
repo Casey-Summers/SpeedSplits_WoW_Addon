@@ -148,7 +148,9 @@ function UI.EnsureUI()
     end)
     timerFrame:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
-        UI.SaveFrameGeom("timer", self)
+        if UI.CaptureCurrentLayout then
+            UI.CaptureCurrentLayout()
+        end
     end)
 
     HoverFadeFrame.Attach(timerFrame, 0.60, function(alpha)
@@ -216,7 +218,9 @@ function UI.EnsureUI()
     end)
     bossFrame:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
-        UI.SaveFrameGeom("boss", self)
+        if UI.CaptureCurrentLayout then
+            UI.CaptureCurrentLayout()
+        end
     end)
     Util.ApplyResizeBounds(bossFrame, 450, Const.SPLITS_LAYOUT.MIN_HEIGHT, 1400, 1000)
     bossFrame:SetBackdrop({
@@ -423,14 +427,17 @@ function UI.EnsureUI()
     UI.totalDelta = totalDelta
 
     local timerGrip = UI.SetupSizeGrip(timerFrame, function()
-        UI.SaveFrameGeom("timer", timerFrame)
+        if UI.CaptureCurrentLayout then
+            UI.CaptureCurrentLayout()
+        end
     end)
     timerGrip:SetAlpha(0)
 
     local bossGrip = UI.SetupSizeGrip(bossFrame, function()
-        UI.SaveFrameGeom("boss", bossFrame)
+        if UI.CaptureCurrentLayout then
+            UI.CaptureCurrentLayout()
+        end
         UI.ApplyTableLayout()
-        UI.SaveColWidths()
     end)
 
     bossFrame:SetScript("OnSizeChanged", function()

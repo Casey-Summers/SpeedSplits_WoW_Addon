@@ -42,6 +42,7 @@
     <Script file="..\..\Run\RunLogic.lua"/>
     <Script file="..\..\Settings\Widgets.lua"/>
     <Script file="..\..\Settings\Panel.lua"/>
+    <Script file="..\..\Core\DevTools.lua"/>
     <Script file="..\..\Core\Commands.lua"/>
     <Script file="..\..\Core\Events.lua"/>
     

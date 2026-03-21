@@ -2,7 +2,7 @@
 ## Title: Speed Splits
 ## Notes: Tracks speedrun routes, boss splits, and personal bests.
 ## Author: Aceman
-## Version: 1.1.0
+## Version: 2.0.0
 ## SavedVariables: SpeedSplitsDB
 ## IconTexture: Interface/AddOns/SpeedSplits/Config/Icons/SpeedSplitsStopwatchx64.blp
 

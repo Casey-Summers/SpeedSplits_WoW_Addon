@@ -248,6 +248,128 @@ System.RegisterTest({
 })
 
 System.RegisterTest({
+    id = "logic_capture_current_layout_writes_normalized_frame_metadata",
+    suite = "Logic",
+    subcategory = "Layout Reset",
+    name = "CaptureCurrentLayout stores normalized frame geometry and metadata",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldTimerFrame = NS.UI.timerFrame
+        local oldBossFrame = NS.UI.bossFrame
+        local oldHistoryFrame = NS.UI.history.frame
+        local oldUI = NS.Util.CopyTable(NS.DB.ui or {})
+
+        System.WithCleanup(function()
+            System.BeginSection("Capture live frame geometry into the saved layout snapshot")
+            local function MakeFrame(point, relPoint, x, y, w, h)
+                return {
+                    GetPoint = function()
+                        return point, UIParent, relPoint, x, y
+                    end,
+                    GetWidth = function()
+                        return w
+                    end,
+                    GetHeight = function()
+                        return h
+                    end,
+                    IsClampedToScreen = function()
+                        return true
+                    end,
+                }
+            end
+
+            NS.UI.timerFrame = MakeFrame("TOP", "TOP", -10.1234, -55.9876, 200.3456, 70.6543)
+            NS.UI.bossFrame = MakeFrame("CENTER", "CENTER", 12.3456, 34.5678, 499.9999, 250.1111)
+            NS.UI.history.frame = MakeFrame("BOTTOMRIGHT", "BOTTOMRIGHT", -20.5555, 15.4444, 850.4444, 501.5555)
+            NS.DB.ui = {}
+
+            NS.UI.CaptureCurrentLayout()
+
+            System.AssertEqual(NS.DB.ui.layoutSchemaVersion, 1, "Layout capture writes the layout schema version")
+            System.AssertEqual(NS.DB.ui.frames.boss.point, "CENTER", "Boss frame point is captured")
+            System.AssertEqual(NS.DB.ui.frames.history.relPoint, "BOTTOMRIGHT", "History frame relPoint is captured")
+            System.AssertEqual(NS.DB.ui.frames.boss.clampedToScreen, true, "Frame clamp metadata is captured")
+            System.AssertEqual(NS.DB.ui.frames.boss.minW, 450, "Boss frame minimum width metadata is captured")
+            System.AssertNear(NS.DB.ui.frames.boss.w, 500, 0.001, "Boss frame width is normalized")
+            System.AssertNear(NS.DB.ui.frames.history.x, -20.556, 0.001, "History frame x-offset is normalized")
+            System.EndSection("Capture live frame geometry into the saved layout snapshot", "PASS")
+        end, function()
+            NS.UI.timerFrame = oldTimerFrame
+            NS.UI.bossFrame = oldBossFrame
+            NS.UI.history.frame = oldHistoryFrame
+            NS.DB.ui = oldUI
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_restore_frame_geom_falls_back_and_clamps",
+    suite = "Logic",
+    subcategory = "Layout Reset",
+    name = "RestoreFrameGeom clamps invalid saved geometry and falls back per frame",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldUI = NS.Util.CopyTable(NS.DB.ui or {})
+
+        System.WithCleanup(function()
+            System.BeginSection("Restore an invalid boss frame snapshot using validation rules")
+            local applied = {}
+            local frame = {
+                ClearAllPoints = function() end,
+                SetPoint = function(_, point, _, relPoint, x, y)
+                    applied.point = point
+                    applied.relPoint = relPoint
+                    applied.x = x
+                    applied.y = y
+                end,
+                SetSize = function(_, w, h)
+                    applied.w = w
+                    applied.h = h
+                end,
+                SetClampedToScreen = function(_, value)
+                    applied.clamped = value
+                end,
+                SetResizable = function() end,
+                SetResizeBounds = function(_, minW, minH, maxW, maxH)
+                    applied.minW = minW
+                    applied.minH = minH
+                    applied.maxW = maxW
+                    applied.maxH = maxH
+                end,
+            }
+
+            NS.DB.ui = {
+                frames = {
+                    boss = {
+                        point = "NOT_A_POINT",
+                        relPoint = "ALSO_BAD",
+                        x = 999999,
+                        y = -999999,
+                        w = 10,
+                        h = 10,
+                    },
+                },
+            }
+
+            local restored = NS.UI.RestoreFrameGeom("boss", frame, 520, 320)
+
+            System.AssertTrue(restored == true, "RestoreFrameGeom treats the saved snapshot as present")
+            System.AssertEqual(applied.point, "CENTER", "Invalid point falls back to a valid anchor")
+            System.AssertEqual(applied.relPoint, "CENTER", "Invalid relPoint falls back to a valid anchor")
+            System.AssertEqual(applied.w, 450, "Boss width is clamped to the minimum width")
+            System.AssertEqual(applied.h, NS.Const.SPLITS_LAYOUT.MIN_HEIGHT,
+                "Boss height is clamped to the minimum height")
+            System.AssertEqual(applied.clamped, true, "Restore reapplies clamped-to-screen behavior")
+            System.EndSection("Restore an invalid boss frame snapshot using validation rules", "PASS")
+        end, function()
+            NS.DB.ui = oldUI
+        end)
+    end,
+})
+
+System.RegisterTest({
     id = "logic_save_default_layout_captures_live_layout",
     suite = "Logic",
     subcategory = "Layout Reset",
@@ -263,18 +385,24 @@ System.RegisterTest({
             System.BeginSection("Save a live layout snapshot")
             NS.DB.ui = {
                 cols = { pb = 80, split = 81, delta = 82 },
-                frames = { boss = { x = 1, y = 2 } },
+                frames = { boss = { x = 1, y = 2 }, history = { x = 3, y = 4 } },
             }
             NS.UI.CaptureCurrentLayout = function()
                 NS.DB.ui.cols.pb = 120
                 NS.DB.ui.cols.split = 121
                 NS.DB.ui.frames.boss.x = 55
+                NS.DB.ui.frames.history.w = 900
+                NS.DB.ui.layoutSchemaVersion = 1
             end
 
             NS.SaveDefaultLayout()
 
             System.AssertEqual(NS.DB.DefaultLayout.ui.cols.pb, 120, "SaveDefaultLayout captures the live PB width")
             System.AssertEqual(NS.DB.DefaultLayout.ui.frames.boss.x, 55, "SaveDefaultLayout captures the live boss position")
+            System.AssertEqual(NS.DB.DefaultLayout.ui.frames.history.w, 900,
+                "SaveDefaultLayout captures the live history dimensions")
+            System.AssertEqual(NS.DB.DefaultLayout.ui.layoutSchemaVersion, 1,
+                "SaveDefaultLayout preserves the normalized layout schema")
             System.EndSection("Save a live layout snapshot", "PASS")
         end, function()
             NS.DB.ui = oldUI
@@ -361,6 +489,10 @@ System.RegisterTest({
                 "Simulated factory reset restores factory layout")
             System.AssertEqual(NS.DB.DefaultLayout.ui.cols.pb, NS.FactoryDefaults.ui.cols.pb,
                 "Simulated factory reset refreshes the default layout snapshot")
+            System.AssertEqual(NS.DB.ui.frames.boss.point, NS.FactoryDefaults.ui.frames.boss.point,
+                "Simulated factory reset restores normalized boss frame geometry")
+            System.AssertEqual(NS.DB.DefaultLayout.ui.layoutSchemaVersion, 1,
+                "Simulated factory reset refreshes the normalized layout schema")
             System.AssertTrue(reloaded == false, "Simulated factory reset does not reload the UI", reloaded)
             System.EndSection("Simulate resetting to factory defaults", "PASS")
         end, function()

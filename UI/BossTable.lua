@@ -123,10 +123,14 @@ local function Num_DoCellUpdate(rowFrame, cellFrame, data, cols, row, realrow, c
         cellFrame.text:SetJustifyH("RIGHT")
     end
     cellFrame.text:SetJustifyV("MIDDLE")
+    cellFrame.text:SetWordWrap(false)
+    if cellFrame.text.SetMaxLines then
+        cellFrame.text:SetMaxLines(1)
+    end
     cellFrame.text:ClearAllPoints()
     if dataIndex == 4 then
-        cellFrame.text:SetPoint("TOPLEFT", cellFrame, "TOPLEFT", 4, -1)
-        cellFrame.text:SetPoint("BOTTOMRIGHT", cellFrame, "BOTTOMRIGHT", -4, 1)
+        cellFrame.text:SetPoint("TOPLEFT", cellFrame, "TOPLEFT", 0, -1)
+        cellFrame.text:SetPoint("BOTTOMRIGHT", cellFrame, "BOTTOMRIGHT", 0, 1)
     else
         cellFrame.text:SetPoint("TOPLEFT", cellFrame, "TOPLEFT", 4, -1)
         cellFrame.text:SetPoint("BOTTOMRIGHT", cellFrame, "BOTTOMRIGHT", -8, 1)

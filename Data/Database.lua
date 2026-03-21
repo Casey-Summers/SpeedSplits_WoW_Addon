@@ -1,6 +1,7 @@
 local _, NS = ...
 
 local Util = NS.Util
+local FORCED_DB_RESET_TOKEN = "2.0.0-major-default-reset"
 
 local function EnsurePBNodeShape(node)
     node = node or {}
@@ -69,10 +70,23 @@ local function PurgeTestRunHistory(db)
     end
 end
 
+local function ApplyForcedVersionResetIfNeeded()
+    if SpeedSplitsDB.__forcedResetToken == FORCED_DB_RESET_TOKEN then
+        return
+    end
+
+    -- One-time full wipe for the major defaults/layout reset in this release.
+    SpeedSplitsDB = {
+        __forcedResetToken = FORCED_DB_RESET_TOKEN,
+    }
+end
+
 local function EnsureDB()
     if SpeedSplitsDB == nil then
         SpeedSplitsDB = {}
     end
+
+    ApplyForcedVersionResetIfNeeded()
 
     SpeedSplitsDB.RunHistory = SpeedSplitsDB.RunHistory or SpeedSplitsDB.runs or {}
     SpeedSplitsDB.Settings = SpeedSplitsDB.Settings or SpeedSplitsDB.settings or {}
@@ -124,6 +138,14 @@ local function EnsureDB()
     if not SpeedSplitsDB.ui then
         SpeedSplitsDB.ui = Util.CopyTable(NS.FactoryDefaults.ui)
     end
+    if NS.UI and NS.UI.NormalizeUILayoutSnapshot then
+        SpeedSplitsDB.ui = NS.UI.NormalizeUILayoutSnapshot(SpeedSplitsDB.ui)
+        if SpeedSplitsDB.DefaultLayout and SpeedSplitsDB.DefaultLayout.ui then
+            SpeedSplitsDB.DefaultLayout.ui = NS.UI.NormalizeUILayoutSnapshot(SpeedSplitsDB.DefaultLayout.ui)
+        end
+    end
+
+    SpeedSplitsDB.__forcedResetToken = FORCED_DB_RESET_TOKEN
 
     NS.DB = SpeedSplitsDB
 
@@ -139,7 +161,13 @@ local function ApplyFactoryReset()
     SpeedSplitsDB.Settings = Util.CopyTable(NS.FactoryDefaults.Settings)
     SpeedSplitsDB.DefaultStyle = Util.CopyTable(NS.FactoryDefaults.Settings)
     SpeedSplitsDB.ui = Util.CopyTable(NS.FactoryDefaults.ui)
+    if NS.UI and NS.UI.NormalizeUILayoutSnapshot then
+        SpeedSplitsDB.ui = NS.UI.NormalizeUILayoutSnapshot(SpeedSplitsDB.ui)
+    end
     SpeedSplitsDB.DefaultLayout = { ui = Util.CopyTable(NS.FactoryDefaults.ui) }
+    if NS.UI and NS.UI.NormalizeUILayoutSnapshot then
+        SpeedSplitsDB.DefaultLayout.ui = NS.UI.NormalizeUILayoutSnapshot(SpeedSplitsDB.DefaultLayout.ui)
+    end
 end
 
 local function ApplyDatabaseWipe()
@@ -149,10 +177,13 @@ local function ApplyDatabaseWipe()
     SpeedSplitsDB.InstanceBestRoute = {}
     SpeedSplitsDB.InstanceBestLastBoss = {}
     SpeedSplitsDB.InstanceBestIgnored = {}
+    SpeedSplitsDB.runs = nil
+    SpeedSplitsDB.settings = nil
 end
 
-local function WipeDatabase(simulateOnly)
+local function WipeAllRecordsAndRebuild(simulateOnly)
     ApplyDatabaseWipe()
+    EnsurePBTables(SpeedSplitsDB)
     if NS.UpdateColorsFromSettings then
         NS.UpdateColorsFromSettings()
     end
@@ -163,9 +194,13 @@ local function WipeDatabase(simulateOnly)
         return
     end
     if NS.Print then
-        NS.Print("Records wiped. Reloading UI...")
+        NS.Print("All records wiped. Rebuilding tables and reloading UI...")
     end
     ReloadUI()
+end
+
+local function WipeDatabase(simulateOnly)
+    WipeAllRecordsAndRebuild(simulateOnly)
 end
 
 local function SaveDefaultLayout()
@@ -174,6 +209,9 @@ local function SaveDefaultLayout()
         NS.UI.CaptureCurrentLayout()
     end
     SpeedSplitsDB.DefaultLayout = { ui = Util.CopyTable(SpeedSplitsDB.ui or {}) }
+    if NS.UI and NS.UI.NormalizeUILayoutSnapshot then
+        SpeedSplitsDB.DefaultLayout.ui = NS.UI.NormalizeUILayoutSnapshot(SpeedSplitsDB.DefaultLayout.ui)
+    end
 end
 
 local function ApplyLayoutReset()
@@ -183,6 +221,9 @@ local function ApplyLayoutReset()
         defaultUI = Util.CopyTable(SpeedSplitsDB.DefaultLayout.ui)
     else
         defaultUI = Util.CopyTable(NS.FactoryDefaults.ui)
+    end
+    if NS.UI and NS.UI.NormalizeUILayoutSnapshot then
+        defaultUI = NS.UI.NormalizeUILayoutSnapshot(defaultUI)
     end
     SpeedSplitsDB.ui = defaultUI
 end
@@ -575,6 +616,7 @@ NS.Database.IsTestRunRecord = IsTestRunRecord
 NS.Database.PurgeTestRunHistory = PurgeTestRunHistory
 NS.Database.ApplyFactoryReset = ApplyFactoryReset
 NS.Database.ApplyDatabaseWipe = ApplyDatabaseWipe
+NS.Database.WipeAllRecordsAndRebuild = WipeAllRecordsAndRebuild
 NS.Database.ApplyLayoutReset = ApplyLayoutReset
 NS.Database.ResetLayout = ResetLayout
 NS.Database.ResetToFactorySettings = ResetToFactorySettings
@@ -597,6 +639,7 @@ NS.Database.GetHistoryPBNode = GetHistoryPBNode
 NS.Database.GetBestSplitsSubtable = GetBestRouteNode
 NS.ResetToFactorySettings = ResetToFactorySettings
 NS.WipeDatabase = WipeDatabase
+NS.WipeAllRecordsAndRebuild = WipeAllRecordsAndRebuild
 NS.ResetLayout = ResetLayout
 NS.SaveDefaultLayout = SaveDefaultLayout
 NS.GetBestSplitsSubtable = GetBestRouteNode

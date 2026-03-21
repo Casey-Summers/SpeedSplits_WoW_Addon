@@ -132,6 +132,14 @@ local function BuildSnapshotForRoute(instanceName, routeKey, entries)
     return BuildSnapshotFromNode(node, entries)
 end
 
+local function GetFastestRouteKey(instanceName)
+    local bestRoute = NS.Database.GetBestRouteNode(instanceName, false)
+    if bestRoute and bestRoute.RouteKey and bestRoute.RouteKey ~= "" then
+        return bestRoute.RouteKey
+    end
+    return nil
+end
+
 local function RefreshRunDisplay()
     RebuildEntryMappings()
     NS.Run.presentation = NS.RunLogic.BuildRunPresentation(NS.Run, NS.Run.pbSegmentsSnapshot or {})
@@ -293,6 +301,12 @@ local function HandleRouteProgression()
 
     NS.Run.routeExploring = true
     NS.Run.entries = BuildExploringEntries()
+    NS.Run.activeRouteKey = GetFastestRouteKey(NS.Run.instanceName)
+    if NS.Run.activeRouteKey then
+        NS.Run.pbSegmentsSnapshot = BuildSnapshotForRoute(NS.Run.instanceName, NS.Run.activeRouteKey, NS.Run.entries)
+    else
+        NS.Run.pbSegmentsSnapshot = {}
+    end
     RefreshRunDisplay()
 end
 

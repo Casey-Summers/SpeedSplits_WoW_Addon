@@ -9,6 +9,13 @@ function Util.Clamp(value, minV, maxV)
     return math.max(minV, math.min(maxV, value))
 end
 
+function Util.RoundTime(seconds)
+    if seconds == nil then
+        return nil
+    end
+    return math.floor(seconds * 1000 + 0.5) / 1000
+end
+
 function Util.CopyTable(src)
     local dest = {}
     for k, v in pairs(src or {}) do

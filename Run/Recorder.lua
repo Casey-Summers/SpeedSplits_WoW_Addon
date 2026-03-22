@@ -279,7 +279,7 @@ local function SaveRunRecord(success)
     local pbMode = NS.Run.routeMode or ((NS.Run.speedrunMode == "last") and "last" or "route")
     local routeSaveBlocked = NS.Run.routeSaveBlocked
     if pbMode == "ignored" and not hasIgnoredEntries then
-        if (NS.Run.isTest == true or (NS.Debug and NS.Debug.objectiveTrace)) and NS.Print then
+        if NS.Run.isTest == true and NS.Print then
             NS.Print(("Ignored-mode save corrected to route for %s"):format(tostring(NS.Run.instanceName or "")))
         end
         pbMode = "route"

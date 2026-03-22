@@ -12,11 +12,6 @@ SlashCmdList.SPEEDSPLITS = function(msg)
         if NS.Tests and NS.Tests.Open then
             NS.Tests.Open()
         end
-    elseif cmd == "debugobj" then
-        NS.Debug.objectiveTrace = not NS.Debug.objectiveTrace
-        if NS.Print then
-            NS.Print("Objective debug: " .. (NS.Debug.objectiveTrace and "ON" or "OFF"))
-        end
     elseif cmd == "dev" then
         if NS.DevTools and NS.DevTools.IsAvailable and NS.DevTools.IsAvailable() and NS.DevTools.HandleSlashCommand then
             NS.DevTools.HandleSlashCommand()

@@ -209,14 +209,7 @@ local function GetBossNamesFromObjectives()
         if type(desc) == "string" then
             sawStringDescription = true
 
-            if NS.Debug and NS.Debug.objectiveTrace and NS.Print then
-                NS.Print(("OBJ[%d] raw: %q"):format(criteriaIndex, desc))
-            end
-
             local bossName = ExtractBossNameFromObjectiveText(desc)
-            if NS.Debug and NS.Debug.objectiveTrace and NS.Print then
-                NS.Print(("OBJ[%d] parsed: %s"):format(criteriaIndex, bossName and bossName or "<nil>"))
-            end
 
             if bossName then
                 names[#names + 1] = bossName

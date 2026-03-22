@@ -1,7 +1,6 @@
 local _, NS = ...
 
 local Util = NS.Util
-local FORCED_DB_RESET_TOKEN = "2.0.0-major-default-reset"
 
 local function LayoutDeepCopy(source)
     if NS.UI and NS.UI.DeepCopy then
@@ -30,7 +29,7 @@ local function EnsurePBNodeShape(node)
         node.Splits = node.Segments
     end
     node.Splits = node.Splits or {}
-    node.Segments = node.Splits
+    node.Segments = nil
     node.FullRun = node.FullRun or {}
     return node
 end
@@ -91,28 +90,12 @@ local function PurgeTestRunHistory(db)
     end
 end
 
-local function ApplyForcedVersionResetIfNeeded()
-    if SpeedSplitsDB.__forcedResetToken == FORCED_DB_RESET_TOKEN then
-        return
-    end
-
-    -- One-time full wipe for the major defaults/layout reset in this release.
-    SpeedSplitsDB = {
-        __forcedResetToken = FORCED_DB_RESET_TOKEN,
-    }
-end
-
 local function EnsureDB()
     if SpeedSplitsDB == nil then
         SpeedSplitsDB = {}
     end
 
-    if NS.Migrations and NS.Migrations.ShouldWipeDataOnFirstLogin and
-        NS.Migrations.ShouldWipeDataOnFirstLogin(SpeedSplitsDB) then
-        SpeedSplitsDB = (NS.Migrations.BuildFreshDatabase and NS.Migrations.BuildFreshDatabase()) or {}
-    end
 
-    ApplyForcedVersionResetIfNeeded()
 
     SpeedSplitsDB.RunHistory = SpeedSplitsDB.RunHistory or SpeedSplitsDB.runs or {}
     SpeedSplitsDB.Settings = SpeedSplitsDB.Settings or SpeedSplitsDB.settings or {}
@@ -167,8 +150,6 @@ local function EnsureDB()
     if not SpeedSplitsDB.ui then
         SpeedSplitsDB.ui = LayoutDeepCopy(NS.FactoryDefaults.ui)
     end
-
-    SpeedSplitsDB.__forcedResetToken = FORCED_DB_RESET_TOKEN
 
     NS.DB = SpeedSplitsDB
     InitializeLayoutState()

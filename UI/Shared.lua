@@ -86,9 +86,6 @@ local function ApplyAlignedTimeAnchors(host, entry)
     local decimalWidth = tonumber(spec.decimalWidth) or 0
     local millisLeft = tonumber(spec.millisLeft) or 0
     local millisWidth = tonumber(spec.millisWidth) or 0
-    local groupType = spec.groupType or "time"
-    local firstVisibleSection = entry.firstVisibleSection or "second"
-    local signPad = tonumber(spec.signPad) or 0
     local minuteLeft = minuteRight - minuteWidth
 
     entry.sign:ClearAllPoints()
@@ -101,15 +98,9 @@ local function ApplyAlignedTimeAnchors(host, entry)
     if signWidth > 0 then
         entry.sign:SetJustifyH("RIGHT")
         entry.sign:SetWidth(signWidth)
-        if groupType == "delta" then
-            local signTarget = firstVisibleSection == "minute" and entry.minute or entry.second
-            entry.sign:SetPoint("TOPRIGHT", signTarget, "TOPLEFT", -signPad, 0)
-            entry.sign:SetPoint("BOTTOMRIGHT", signTarget, "BOTTOMLEFT", -signPad, 0)
-        else
-            local signLeft = tonumber(spec.signMinuteLeft) or 0
-            entry.sign:SetPoint("TOPLEFT", host, "TOPLEFT", signLeft, -1)
-            entry.sign:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", signLeft, 1)
-        end
+        local signLeft = tonumber(spec.signMinuteLeft) or 0
+        entry.sign:SetPoint("TOPLEFT", host, "TOPLEFT", signLeft, -1)
+        entry.sign:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", signLeft, 1)
     else
         entry.sign:SetWidth(0.1)
     end
@@ -138,6 +129,49 @@ local function ApplyAlignedTimeAnchors(host, entry)
     entry.millis:SetPoint("TOPLEFT", host, "TOPLEFT", millisLeft, -1)
     entry.millis:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", millisLeft, 1)
     entry.millis:SetWidth(millisWidth)
+end
+
+local function PositionDeltaSign(host, entry)
+    if not host or not entry then
+        return
+    end
+
+    local spec = entry.layoutSpec or {}
+    if (spec.groupType or "time") ~= "delta" then
+        return
+    end
+
+    local signWidth = tonumber(spec.signWidth) or 0
+    local signPad = tonumber(spec.signPad) or 0
+    if signWidth <= 0 then
+        return
+    end
+
+    local firstVisibleSection = entry.firstVisibleSection or "second"
+    local target = firstVisibleSection == "minute" and entry.minute or entry.second
+    local slotLeft
+    local slotWidth
+    if firstVisibleSection == "minute" then
+        local minuteBaseWidth = tonumber(spec.minuteBaseWidth) or 0
+        local overflowWidth = tonumber(entry.minuteOverflowWidth) or 0
+        local minuteWidth = minuteBaseWidth + overflowWidth
+        local minuteRight = tonumber(spec.minuteRight) or 0
+        slotLeft = minuteRight - minuteWidth
+        slotWidth = minuteWidth
+    else
+        slotLeft = tonumber(spec.secondLeft) or 0
+        slotWidth = tonumber(spec.secondWidth) or 0
+    end
+
+    local renderedWidth = math.ceil((target and target.GetStringWidth and target:GetStringWidth()) or 0)
+    local digitLeft = slotLeft + math.max(slotWidth - renderedWidth, 0)
+    local signLeft = digitLeft - signPad - signWidth
+
+    entry.sign:ClearAllPoints()
+    entry.sign:SetJustifyH("RIGHT")
+    entry.sign:SetWidth(signWidth)
+    entry.sign:SetPoint("TOPLEFT", host, "TOPLEFT", signLeft, -1)
+    entry.sign:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", signLeft, 1)
 end
 
 function UI.EnsureAlignedTimeGroup(host, key)
@@ -251,6 +285,7 @@ function UI.SetAlignedTimeGroupValue(host, key, parts, fontType, color)
     entry.second:SetText(parts.secondText or "")
     entry.decimal:SetText(parts.decimalText or ".")
     entry.millis:SetText(parts.millisText or "")
+    PositionDeltaSign(host, entry)
 
     if entry.sign:GetText() == "" then
         entry.sign:Hide()

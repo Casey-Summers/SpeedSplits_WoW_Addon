@@ -802,6 +802,121 @@ System.RegisterTest({
 })
 
 System.RegisterTest({
+    id = "logic_record_boss_kill_rebuilds_summary_from_latest_kill",
+    suite = "Logic",
+    subcategory = "Boss Recording",
+    name = "Refreshes the cached presentation summary after each kill",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldNow = NS.NowGameTime
+        local oldRefreshRunDisplay = NS.RunLogic.RefreshRunDisplay
+        local oldStopRun = NS.RunLogic.StopRun
+        local oldShowToast = NS.ShowToast
+        local oldState = {
+            instanceName = NS.Run.instanceName,
+            speedrunMode = NS.Run.speedrunMode,
+            active = NS.Run.active,
+            startGameTime = NS.Run.startGameTime,
+            entries = NS.Run.entries,
+            remaining = NS.Run.remaining,
+            remainingCount = NS.Run.remainingCount,
+            killedCount = NS.Run.killedCount,
+            kills = NS.Run.kills,
+            killOrder = NS.Run.killOrder,
+            killRouteIndices = NS.Run.killRouteIndices,
+            bossByDungeonEncounterID = NS.Run.bossByDungeonEncounterID,
+            pbSegmentsSnapshot = NS.Run.pbSegmentsSnapshot,
+            presentation = NS.Run.presentation,
+            routeMode = NS.Run.routeMode,
+            showTimerToast = NS.DB.Settings.showTimerToast,
+        }
+
+        System.WithCleanup(function()
+            System.BeginSection("Seed a two-boss run and suppress side effects")
+            NS.DB.Settings.showTimerToast = false
+            NS.RunLogic.RefreshRunDisplay = function() end
+            NS.RunLogic.StopRun = function() end
+            NS.ShowToast = function() end
+
+            NS.Run.instanceName = "Presentation Summary Refresh Test"
+            NS.Run.speedrunMode = "all"
+            NS.Run.active = true
+            NS.Run.startGameTime = 100
+            NS.Run.entries = {
+                { key = "E:101", name = "Opening Pull", dungeonEncounterID = 101, routeIndex = 1 },
+                { key = "E:102", name = "Final Tyrant", dungeonEncounterID = 102, routeIndex = 2 },
+            }
+            NS.Run.remaining = { ["E:101"] = true, ["E:102"] = true }
+            NS.Run.remainingCount = 2
+            NS.Run.killedCount = 0
+            NS.Run.kills = {}
+            NS.Run.killOrder = {}
+            NS.Run.killRouteIndices = {}
+            NS.Run.bossByDungeonEncounterID = {
+                [101] = NS.Run.entries[1],
+                [102] = NS.Run.entries[2],
+            }
+            NS.Run.pbSegmentsSnapshot = {
+                ["Opening Pull"] = 22.1,
+                ["Final Tyrant"] = 97.91,
+            }
+            NS.Run.presentation = nil
+            NS.Run.routeMode = "ignored"
+            System.EndSection("Seed a two-boss run and suppress side effects", "PASS")
+
+            System.BeginSection("Record kills and confirm the summary advances")
+            NS.NowGameTime = function()
+                return 122.1
+            end
+            NS.RunLogic.RecordBossKill(101, "Opening Pull")
+            System.AssertEqual(NS.Run.presentation.summary.latestRow.key, "E:101",
+                "After the first kill, the summary points at Opening Pull")
+            System.AssertNear(NS.Run.presentation.summary.pbTotal, 22.1, 0.001,
+                "After the first kill, PB total matches Opening Pull")
+            System.AssertNear(NS.Run.presentation.summary.splitTotal, 22.1, 0.001,
+                "After the first kill, split total matches Opening Pull")
+
+            NS.NowGameTime = function()
+                return 179.816
+            end
+            NS.RunLogic.RecordBossKill(102, "Final Tyrant")
+            System.AssertEqual(NS.Run.presentation.summary.latestRow.key, "E:102",
+                "After the second kill, the summary advances to Final Tyrant")
+            System.AssertNear(NS.Run.presentation.summary.pbTotal, 120.01, 0.001,
+                "After the second kill, PB total matches Final Tyrant")
+            System.AssertNear(NS.Run.presentation.summary.splitTotal, 79.816, 0.001,
+                "After the second kill, split total matches Final Tyrant")
+            System.AssertNear(NS.Run.presentation.summary.diffTotal, -40.194, 0.001,
+                "After the second kill, diff total matches Final Tyrant")
+            System.EndSection("Record kills and confirm the summary advances", "PASS")
+        end, function()
+            NS.NowGameTime = oldNow
+            NS.RunLogic.RefreshRunDisplay = oldRefreshRunDisplay
+            NS.RunLogic.StopRun = oldStopRun
+            NS.ShowToast = oldShowToast
+
+            NS.Run.instanceName = oldState.instanceName
+            NS.Run.speedrunMode = oldState.speedrunMode
+            NS.Run.active = oldState.active
+            NS.Run.startGameTime = oldState.startGameTime
+            NS.Run.entries = oldState.entries
+            NS.Run.remaining = oldState.remaining
+            NS.Run.remainingCount = oldState.remainingCount
+            NS.Run.killedCount = oldState.killedCount
+            NS.Run.kills = oldState.kills
+            NS.Run.killOrder = oldState.killOrder
+            NS.Run.killRouteIndices = oldState.killRouteIndices
+            NS.Run.bossByDungeonEncounterID = oldState.bossByDungeonEncounterID
+            NS.Run.pbSegmentsSnapshot = oldState.pbSegmentsSnapshot
+            NS.Run.presentation = oldState.presentation
+            NS.Run.routeMode = oldState.routeMode
+            NS.DB.Settings.showTimerToast = oldState.showTimerToast
+        end)
+    end,
+})
+
+System.RegisterTest({
     id = "logic_record_boss_kill_ignores_unmapped_objective_rows",
     suite = "Logic",
     subcategory = "Boss Resolution",

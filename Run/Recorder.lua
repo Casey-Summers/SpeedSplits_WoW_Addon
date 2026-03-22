@@ -360,7 +360,7 @@ local function RecordBossKill(encounterID, encounterName)
     end
 
     local pbSnapshot = GetActivePBSegments()
-    local presentation = NS.Run.presentation or BuildRunPresentation(NS.Run, pbSnapshot)
+    local presentation = BuildRunPresentation(NS.Run, pbSnapshot)
     local rowState = presentation.rowsByKey[bossEntry.key]
     if not rowState then
         return

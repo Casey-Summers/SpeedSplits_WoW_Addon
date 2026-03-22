@@ -22,6 +22,7 @@ Const.SPLITS_LAYOUT = {
     TOP_BAR_H = 28,
     TOP_BAR_GAP = 4,
     MIN_HEIGHT = 85,
+    TOTALS_X_OFFSET = 5,
 }
 
 Const.SPLITS_DEFAULTS = {

@@ -717,14 +717,17 @@ local function ApplyTableLayout()
     SetBossScrollLaneVisible(needsScroll, laneWidth)
 
     if UI.totalFrame then
+        local totalsXOffset = (Const.SPLITS_LAYOUT and Const.SPLITS_LAYOUT.TOTALS_X_OFFSET) or 0
         local xBossRight = bossWidth
-        local xPBLeft = xBossRight
+        local xPBLeft = xBossRight + totalsXOffset
+        local xPBRight = xPBLeft + UI._pbWidth
         local xSplitLeft = xPBLeft + UI._pbWidth
+        local xSplitRight = xSplitLeft + UI._splitWidth
         local xDiffLeft = xSplitLeft + UI._splitWidth
+        local xDiffRight = xDiffLeft + UI._deltaWidth
         UI.totalDelta:ClearAllPoints()
         UI.totalDelta:SetPoint("TOPLEFT", UI.totalFrame, "TOPLEFT", xDiffLeft, 0)
-        UI.totalDelta:SetPoint("BOTTOMLEFT", UI.totalFrame, "BOTTOMLEFT", xDiffLeft, 0)
-        UI.totalDelta:SetWidth(UI._deltaWidth)
+        UI.totalDelta:SetPoint("BOTTOMRIGHT", UI.totalFrame, "BOTTOMLEFT", xDiffRight, 0)
         if UI.ApplyAlignedTimeGroupLayout then
             UI.ApplyAlignedTimeGroupLayout(UI.totalDelta, "summary", UI._alignedTimeSpecs.footerDiff)
         end
@@ -734,8 +737,7 @@ local function ApplyTableLayout()
 
         UI.totalSplit:ClearAllPoints()
         UI.totalSplit:SetPoint("TOPLEFT", UI.totalFrame, "TOPLEFT", xSplitLeft, 0)
-        UI.totalSplit:SetPoint("BOTTOMLEFT", UI.totalFrame, "BOTTOMLEFT", xSplitLeft, 0)
-        UI.totalSplit:SetWidth(UI._splitWidth)
+        UI.totalSplit:SetPoint("BOTTOMRIGHT", UI.totalFrame, "BOTTOMLEFT", xSplitRight, 0)
         if UI.ApplyAlignedTimeGroupLayout then
             UI.ApplyAlignedTimeGroupLayout(UI.totalSplit, "summary", UI._alignedTimeSpecs.footerSplit)
         end
@@ -745,8 +747,7 @@ local function ApplyTableLayout()
 
         UI.totalPB:ClearAllPoints()
         UI.totalPB:SetPoint("TOPLEFT", UI.totalFrame, "TOPLEFT", xPBLeft, 0)
-        UI.totalPB:SetPoint("BOTTOMLEFT", UI.totalFrame, "BOTTOMLEFT", xPBLeft, 0)
-        UI.totalPB:SetWidth(UI._pbWidth)
+        UI.totalPB:SetPoint("BOTTOMRIGHT", UI.totalFrame, "BOTTOMLEFT", xPBRight, 0)
         if UI.ApplyAlignedTimeGroupLayout then
             UI.ApplyAlignedTimeGroupLayout(UI.totalPB, "summary", UI._alignedTimeSpecs.footerPB)
         end

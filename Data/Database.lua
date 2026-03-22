@@ -11,6 +11,9 @@ local function LayoutDeepCopy(source)
 end
 
 local function InitializeLayoutState()
+    if NS.UI and NS.UI.InvalidateLayoutCache then
+        NS.UI.InvalidateLayoutCache()
+    end
     if NS.UI and NS.UI.InitializeDefaults then
         return NS.UI.InitializeDefaults()
     end

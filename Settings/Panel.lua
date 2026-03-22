@@ -5,6 +5,55 @@ NS.Settings = NS.Settings or {}
 local Widgets = NS.Settings.Widgets
 local DropDown = NS.UI.Templates.DropDown
 
+local function BuildCurrentStyleSnapshot()
+    return {
+        colors = Widgets.CopyTable(NS.DB.Settings.colors),
+        fonts = Widgets.CopyTable(NS.DB.Settings.fonts),
+        titleTexture = NS.DB.Settings.titleTexture,
+        timerToastScale = NS.DB.Settings.timerToastScale,
+        showTimerToast = NS.DB.Settings.showTimerToast,
+        toastAllBosses = NS.DB.Settings.toastAllBosses,
+        toastSoundID = NS.DB.Settings.toastSoundID,
+        toastSoundName = NS.DB.Settings.toastSoundName,
+        toastVolume = NS.DB.Settings.toastVolume,
+        paceThreshold1 = NS.DB.Settings.paceThreshold1,
+        paceThreshold2 = NS.DB.Settings.paceThreshold2,
+        showNPCViewModels = NS.DB.Settings.showNPCViewModels,
+    }
+end
+
+local function ApplyDefaultStyleSnapshot()
+    if not NS.DB or not NS.DB.DefaultStyle then
+        return false
+    end
+
+    local d = NS.DB.DefaultStyle
+    NS.DB.Settings.colors = Widgets.CopyTable(d.colors)
+    NS.DB.Settings.fonts = Widgets.CopyTable(d.fonts)
+    NS.DB.Settings.titleTexture = d.titleTexture
+    NS.DB.Settings.timerToastScale = d.timerToastScale
+    NS.DB.Settings.showTimerToast = d.showTimerToast
+    NS.DB.Settings.toastAllBosses = d.toastAllBosses
+    NS.DB.Settings.toastSoundID = d.toastSoundID
+    NS.DB.Settings.toastSoundName = d.toastSoundName
+    NS.DB.Settings.toastVolume = d.toastVolume or 0.8
+    NS.DB.Settings.paceThreshold1 = d.paceThreshold1
+    NS.DB.Settings.paceThreshold2 = d.paceThreshold2
+    if d.showNPCViewModels == nil then
+        NS.DB.Settings.showNPCViewModels = true
+    else
+        NS.DB.Settings.showNPCViewModels = d.showNPCViewModels
+    end
+
+    NS.UpdateColorsFromSettings()
+    for _, refresh in ipairs(Widgets.Registry) do
+        refresh()
+    end
+    NS.RefreshAllUI()
+
+    return true
+end
+
 function NS.CreateSettingsPanel()
     if _G.SpeedSplitsOptionsPanel then
         return _G.SpeedSplitsOptionsPanel
@@ -339,21 +388,7 @@ function NS.CreateSettingsPanel()
     end
 
     local defBtn = Q("Save Current Styles", function()
-        NS.DB.DefaultStyle = {
-            colors = Widgets.CopyTable(NS.DB.Settings.colors),
-            fonts = Widgets.CopyTable(NS.DB.Settings.fonts),
-            titleTexture = NS.DB.Settings.titleTexture,
-            timerToastScale = NS.DB.Settings.timerToastScale,
-            showTimerToast = NS.DB.Settings.showTimerToast,
-            toastAllBosses = NS.DB.Settings.toastAllBosses,
-            toastSoundID = NS.DB.Settings.toastSoundID,
-            toastSoundName = NS.DB.Settings.toastSoundName,
-            toastVolume = NS.DB.Settings.toastVolume,
-            paceThreshold1 = NS.DB.Settings.paceThreshold1,
-            paceThreshold2 = NS.DB.Settings.paceThreshold2,
-            showNPCViewModels = NS.DB.Settings.showNPCViewModels,
-            visibility = Widgets.CopyTable(NS.DB.Settings.visibility),
-        }
+        NS.DB.DefaultStyle = BuildCurrentStyleSnapshot()
         if NS.Print then
             NS.Print("Current styles saved.")
         end
@@ -361,30 +396,7 @@ function NS.CreateSettingsPanel()
     defBtn:SetPoint("TOPLEFT", managementHeader, "BOTTOMLEFT", 10, -10)
 
     local resetBtn = Q("Restore Styles", function()
-        if NS.DB.DefaultStyle then
-            local d = NS.DB.DefaultStyle
-            NS.DB.Settings.colors = Widgets.CopyTable(d.colors)
-            NS.DB.Settings.fonts = Widgets.CopyTable(d.fonts)
-            NS.DB.Settings.titleTexture = d.titleTexture
-            NS.DB.Settings.timerToastScale = d.timerToastScale
-            NS.DB.Settings.showTimerToast = d.showTimerToast
-            NS.DB.Settings.toastAllBosses = d.toastAllBosses
-            NS.DB.Settings.toastSoundID = d.toastSoundID
-            NS.DB.Settings.toastSoundName = d.toastSoundName
-            NS.DB.Settings.toastVolume = d.toastVolume or 0.8
-            NS.DB.Settings.paceThreshold1 = d.paceThreshold1
-            NS.DB.Settings.paceThreshold2 = d.paceThreshold2
-            if d.showNPCViewModels == nil then
-                NS.DB.Settings.showNPCViewModels = true
-            else
-                NS.DB.Settings.showNPCViewModels = d.showNPCViewModels
-            end
-            NS.DB.Settings.visibility = Widgets.CopyTable(d.visibility or {})
-            NS.UpdateColorsFromSettings()
-            for _, refresh in ipairs(Widgets.Registry) do
-                refresh()
-            end
-            NS.RefreshAllUI()
+        if ApplyDefaultStyleSnapshot() then
             if NS.Print then
                 NS.Print("Styles reset to defaults.")
             end
@@ -439,6 +451,9 @@ function NS.CreateSettingsPanel()
 
     return panel
 end
+
+NS.Settings.BuildCurrentStyleSnapshot = BuildCurrentStyleSnapshot
+NS.Settings.ApplyDefaultStyleSnapshot = ApplyDefaultStyleSnapshot
 
 function NS.OpenSettings()
     if Settings and Settings.OpenToCategory then

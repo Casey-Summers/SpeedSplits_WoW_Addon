@@ -88,6 +88,11 @@ local function GetFactoryLayout()
     return DeepCopy((NS.FactoryDefaults and NS.FactoryDefaults.ui) or { frames = {} })
 end
 
+local function InvalidateLayoutCache()
+    UI._normalizedUILayout = nil
+    UI._normalizedUILayoutSource = nil
+end
+
 local function SanitizePoint(value, fallback)
     value = tostring(value or "")
     if VALID_POINTS[value] then
@@ -243,10 +248,18 @@ local function InitializeDefaults()
     else
         NS.DB.DefaultLayout.ui = DeepCopy(GetFactoryLayout())
     end
+    UI._normalizedUILayout = NS.DB.ui
+    UI._normalizedUILayoutSource = NS.DB.ui
     return NS.DB.ui
 end
 
 local function GetUISaved()
+    if not NS.DB then
+        return nil
+    end
+    if UI._normalizedUILayout and UI._normalizedUILayoutSource == NS.DB.ui then
+        return UI._normalizedUILayout
+    end
     return InitializeDefaults()
 end
 
@@ -409,6 +422,8 @@ local function ResetFrameToDefaults(frameKey)
     end
 
     ui.frames[frameKey] = DeepCopy(GetFrameDefaults(frameKey))
+    InvalidateLayoutCache()
+    InitializeDefaults()
     ApplyAllLayouts()
 end
 
@@ -420,6 +435,8 @@ local function ResetAllFramesToDefaults()
 
     local factory = GetFactoryLayout()
     ui.frames = DeepCopy(factory.frames or {})
+    InvalidateLayoutCache()
+    InitializeDefaults()
     ApplyAllLayouts()
 end
 
@@ -879,6 +896,7 @@ end
 UI.LayoutManager = Layout
 UI.DeepCopy = DeepCopy
 UI.MergeDefaults = MergeDefaults
+UI.InvalidateLayoutCache = InvalidateLayoutCache
 UI.InitializeDefaults = InitializeDefaults
 UI.GetUISaved = GetUISaved
 UI.GetFrameLayout = GetSavedFrameLayout
@@ -907,6 +925,8 @@ UI.ResetAllFramesToDefaults = ResetAllFramesToDefaults
 UI.NormalizeFrameSnapshot = function(frameKey, source)
     return NormalizeFrameNode(frameKey, source)
 end
+UI.NormalizeBossColumns = NormalizeBossColumns
+UI.NormalizeHistoryColumns = NormalizeHistoryColumns
 UI.GetScrollBarInset = GetScrollBarInset
 UI.GetAlignedTimeSpec = GetAlignedTimeSpec
 UI.GetModelColumnWidth = GetModelColumnWidth

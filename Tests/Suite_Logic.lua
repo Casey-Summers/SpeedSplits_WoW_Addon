@@ -626,6 +626,65 @@ System.RegisterTest({
 })
 
 System.RegisterTest({
+    id = "logic_reset_layout_preserves_visibility_settings",
+    suite = "Logic",
+    subcategory = "Layout Reset",
+    name = "ResetLayout leaves timer and splits visibility settings unchanged",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldUI = NS.Util.CopyTable(NS.DB.ui or {})
+        local oldDefaultLayout = NS.Util.CopyTable(NS.DB.DefaultLayout or {})
+        local oldVisibility = NS.Util.CopyTable(NS.DB.Settings.visibility or {})
+        local oldReloadUI = ReloadUI
+        local oldRefreshAllUI = NS.RefreshAllUI
+
+        System.WithCleanup(function()
+            System.BeginSection("Reset layout without changing the visibility settings")
+            NS.DB.Settings.visibility.timer = "outdoor"
+            NS.DB.Settings.visibility.splits = "both"
+            NS.DB.ui = {
+                frames = {
+                    boss = {
+                        x = 99,
+                        y = 98,
+                        columns = { pb = 111, split = 112, diff = 113 },
+                    },
+                },
+            }
+            NS.DB.DefaultLayout = {
+                ui = {
+                    frames = {
+                        boss = {
+                            x = 12,
+                            y = 34,
+                            columns = { pb = 85, split = 90, diff = 95 },
+                        },
+                    },
+                },
+            }
+
+            ReloadUI = function() end
+            NS.RefreshAllUI = function() end
+
+            NS.ResetLayout()
+
+            System.AssertEqual(NS.DB.Settings.visibility.timer, "outdoor",
+                "ResetLayout preserves timer visibility")
+            System.AssertEqual(NS.DB.Settings.visibility.splits, "both",
+                "ResetLayout preserves splits visibility")
+            System.EndSection("Reset layout without changing the visibility settings", "PASS")
+        end, function()
+            NS.DB.ui = oldUI
+            NS.DB.DefaultLayout = oldDefaultLayout
+            NS.DB.Settings.visibility = oldVisibility
+            ReloadUI = oldReloadUI
+            NS.RefreshAllUI = oldRefreshAllUI
+        end)
+    end,
+})
+
+System.RegisterTest({
     id = "logic_dev_tools_toggle_reload_awareness_recovers_invalid_startup",
     suite = "Logic",
     subcategory = "Reload Awareness",
@@ -694,6 +753,118 @@ System.RegisterTest({
         end, function()
             NS.Debug.reloadAwarenessEnabled = oldReloadAwarenessEnabled
             NS.DB.Settings.reloadAwarenessEnabled = oldSavedValue
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_reset_run_state_and_presentation_resets_both_owners",
+    suite = "Logic",
+    subcategory = "Runtime Ownership",
+    name = "Run reset helper clears runtime state and the UI presentation together",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldRunState = NS.Util.CopyTable(NS.Run)
+        local oldTimerText = NS.UI.SetTimerText
+        local oldKillCount = NS.UI.SetKillCount
+        local oldClearBossRows = NS.UI.ClearBossRows
+        local oldSetTotals = NS.SetTotals
+        local oldSetTimerDelta = NS.UI.SetTimerDelta
+        local timerCalls = 0
+        local killCalls = 0
+        local clearCalls = 0
+
+        System.WithCleanup(function()
+            System.BeginSection("Reset runtime state and presentation with one helper")
+            NS.Run.active = true
+            NS.Run.waitingForMove = true
+            NS.Run.entries = { { key = "boss_a" } }
+            NS.UI.SetTimerText = function()
+                timerCalls = timerCalls + 1
+            end
+            NS.UI.SetKillCount = function()
+                killCalls = killCalls + 1
+            end
+            NS.UI.ClearBossRows = function()
+                clearCalls = clearCalls + 1
+            end
+            NS.SetTotals = function() end
+            NS.UI.SetTimerDelta = function() end
+
+            NS.RunLogic.ResetRunStateAndPresentation()
+
+            System.AssertTrue(NS.Run.active == false, "Run active state is cleared", NS.Run.active)
+            System.AssertTrue(NS.Run.waitingForMove == false, "Move-waiting state is cleared", NS.Run.waitingForMove)
+            System.AssertEqual(#NS.Run.entries, 0, "Runtime entries are cleared")
+            System.AssertTrue(timerCalls > 0, "Presentation reset rewrites the timer text", timerCalls)
+            System.AssertTrue(killCalls > 0, "Presentation reset rewrites the kill counter", killCalls)
+            System.AssertTrue(clearCalls > 0, "Presentation reset clears boss rows", clearCalls)
+            System.EndSection("Reset runtime state and presentation with one helper", "PASS")
+        end, function()
+            NS.UI.SetTimerText = oldTimerText
+            NS.UI.SetKillCount = oldKillCount
+            NS.UI.ClearBossRows = oldClearBossRows
+            NS.SetTotals = oldSetTotals
+            NS.UI.SetTimerDelta = oldSetTimerDelta
+            for key in pairs(NS.Run) do
+                NS.Run[key] = nil
+            end
+            for key, value in pairs(oldRunState) do
+                NS.Run[key] = value
+            end
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_restore_styles_preserves_visibility_settings",
+    suite = "Logic",
+    subcategory = "Settings",
+    name = "Restore Styles leaves the UI visibility settings unchanged",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldSettings = NS.Util.CopyTable(NS.DB.Settings or {})
+        local oldDefaultStyle = NS.Util.CopyTable(NS.DB.DefaultStyle or {})
+        local oldUpdateColors = NS.UpdateColorsFromSettings
+        local oldRefreshAllUI = NS.RefreshAllUI
+
+        System.WithCleanup(function()
+            System.BeginSection("Restore styles without changing the visibility settings")
+            NS.DB.Settings.visibility.timer = "outdoor"
+            NS.DB.Settings.visibility.splits = "both"
+            NS.DB.DefaultStyle = {
+                colors = NS.Util.CopyTable(NS.DB.Settings.colors),
+                fonts = NS.Util.CopyTable(NS.DB.Settings.fonts),
+                titleTexture = NS.DB.Settings.titleTexture,
+                timerToastScale = NS.DB.Settings.timerToastScale,
+                showTimerToast = NS.DB.Settings.showTimerToast,
+                toastAllBosses = NS.DB.Settings.toastAllBosses,
+                toastSoundID = NS.DB.Settings.toastSoundID,
+                toastSoundName = NS.DB.Settings.toastSoundName,
+                toastVolume = NS.DB.Settings.toastVolume,
+                paceThreshold1 = NS.DB.Settings.paceThreshold1,
+                paceThreshold2 = NS.DB.Settings.paceThreshold2,
+                showNPCViewModels = NS.DB.Settings.showNPCViewModels,
+                visibility = { timer = "instance", splits = "instance" },
+            }
+            NS.UpdateColorsFromSettings = function() end
+            NS.RefreshAllUI = function() end
+
+            local applied = NS.Settings.ApplyDefaultStyleSnapshot()
+
+            System.AssertTrue(applied == true, "Restore-styles helper applies the saved style snapshot", applied)
+            System.AssertEqual(NS.DB.Settings.visibility.timer, "outdoor",
+                "Restore Styles preserves timer visibility")
+            System.AssertEqual(NS.DB.Settings.visibility.splits, "both",
+                "Restore Styles preserves splits visibility")
+            System.EndSection("Restore styles without changing the visibility settings", "PASS")
+        end, function()
+            NS.DB.Settings = oldSettings
+            NS.DB.DefaultStyle = oldDefaultStyle
+            NS.UpdateColorsFromSettings = oldUpdateColors
+            NS.RefreshAllUI = oldRefreshAllUI
         end)
     end,
 })

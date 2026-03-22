@@ -126,8 +126,22 @@ local function ResetRunPresentation()
     end
 end
 
+local function ResetRunStateAndPresentation()
+    ResetRun()
+    ResetRunPresentation()
+end
+
+local function StopRunAndResetPresentation(success)
+    if Run.active or Run.waitingForMove then
+        NS.RunLogic.StopRun(success)
+    end
+    ResetRunStateAndPresentation()
+end
+
 NS.RunLogic.IsBossIgnored = IsBossIgnored
 NS.RunLogic.ResetRun = ResetRun
 NS.RunLogic.ResetReloadAwareness = ResetReloadAwareness
+NS.RunLogic.ResetRunStateAndPresentation = ResetRunStateAndPresentation
+NS.RunLogic.StopRunAndResetPresentation = StopRunAndResetPresentation
 NS.UI.ResetRunPresentation = ResetRunPresentation
 NS.IsBossIgnored = IsBossIgnored

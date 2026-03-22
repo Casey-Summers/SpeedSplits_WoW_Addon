@@ -494,8 +494,8 @@ function Simulation.Stop(reason)
 
     if NS.RefreshAllUI then
         NS.RefreshAllUI()
-    elseif NS.UI and NS.UI.ResetRunPresentation then
-        NS.UI.ResetRunPresentation()
+    elseif NS.RunLogic and NS.RunLogic.ResetRunStateAndPresentation then
+        NS.RunLogic.ResetRunStateAndPresentation()
     end
 
     return true

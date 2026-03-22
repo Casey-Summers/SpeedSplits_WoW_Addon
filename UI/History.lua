@@ -54,6 +54,47 @@ local function IsRunPB(record)
     return math.abs(record.duration - pb.duration) < 0.001
 end
 
+local function BuildHistoryModeLabel(record)
+    if record.pbMode == "ignored" then
+        return "Ignored"
+    end
+    if record.speedrunMode == "last" or record.pbMode == "last" then
+        return "Last Boss"
+    end
+    return "All Bosses"
+end
+
+local function BuildHistoryViewRecord(record)
+    local duration = tonumber(record and record.duration)
+    local pbNode = record and NS.Database.GetHistoryPBNode(record) or nil
+    local pbDuration = tonumber(pbNode and pbNode.FullRun and pbNode.FullRun.duration)
+    local isPB = type(record) == "table" and record.success and duration and pbDuration and
+        math.abs(duration - pbDuration) < 0.001 or false
+    local diff = (pbDuration and duration) and (duration - pbDuration) or nil
+    local resultText, resultColor = "Incomplete", NS.Colors.darkRed
+    if isPB then
+        resultText, resultColor = "PB", NS.Colors.gold
+    elseif record and record.success then
+        resultText, resultColor = "Completed", NS.Colors.deepGreen
+    end
+
+    return {
+        record = record,
+        startedAt = tonumber(record and record.startedAt) or 0,
+        instanceNameNorm = Util.NormalizeName(record and record.instanceName),
+        tier = tonumber(record and record.tier) or 0,
+        duration = duration,
+        diff = diff,
+        isPB = isPB and true or false,
+        resultText = resultText,
+        resultColor = resultColor,
+        modeLabel = BuildHistoryModeLabel(record or {}),
+        formattedDate = FormatEpochShort(record and record.startedAt),
+        tierName = GetTierNameSafe(record and record.tier),
+        formattedDuration = duration and Util.FormatTime(duration) or "--:--.---",
+    }
+end
+
 local function History_GetRow(parent)
     UI.history.rowPool = UI.history.rowPool or {}
     local row = table.remove(UI.history.rowPool)
@@ -117,22 +158,21 @@ function UI.RefreshHistoryTable()
         for i = 1, #history do
             local record = history[i]
             if record.instanceName then
-                local nameNorm = Util.NormalizeName(record.instanceName)
-                local matchesSearch = (search == "" or nameNorm:find(search, 1, true))
-                local matchesTier = (filterTier == 0 or tonumber(record.tier) == filterTier)
-                local isPB = IsRunPB(record)
+                local view = BuildHistoryViewRecord(record)
+                local matchesSearch = (search == "" or view.instanceNameNorm:find(search, 1, true))
+                local matchesTier = (filterTier == 0 or view.tier == filterTier)
 
                 local matchesResult = true
                 if filterResult == "PB" then
-                    matchesResult = isPB
+                    matchesResult = view.isPB
                 elseif filterResult == "Completed" then
-                    matchesResult = (record.success and not isPB)
+                    matchesResult = (record.success and not view.isPB)
                 elseif filterResult == "Incomplete" then
                     matchesResult = (not record.success)
                 end
 
                 if matchesSearch and matchesTier and matchesResult then
-                    table.insert(filtered, record)
+                    filtered[#filtered + 1] = view
                 end
             end
         end
@@ -144,27 +184,19 @@ function UI.RefreshHistoryTable()
     table.sort(filtered, function(a, b)
         local valA, valB
         if sortCol == 1 then
-            valA, valB = tonumber(a.startedAt or 0), tonumber(b.startedAt or 0)
+            valA, valB = a.startedAt, b.startedAt
         elseif sortCol == 2 then
-            valA, valB = Util.NormalizeName(a.instanceName), Util.NormalizeName(b.instanceName)
+            valA, valB = a.instanceNameNorm, b.instanceNameNorm
         elseif sortCol == 3 then
-            valA, valB = tonumber(a.tier or 0), tonumber(b.tier or 0)
+            valA, valB = a.tier, b.tier
         elseif sortCol == 4 then
-            local function ResultOrder(x)
-                return IsRunPB(x) and 1 or (x.success and 2 or 3)
-            end
-            valA, valB = ResultOrder(a), ResultOrder(b)
+            valA, valB = a.isPB and 1 or (a.record.success and 2 or 3), b.isPB and 1 or (b.record.success and 2 or 3)
         elseif sortCol == 5 then
-            valA, valB = a.speedrunMode or "all", b.speedrunMode or "all"
+            valA, valB = a.modeLabel, b.modeLabel
         elseif sortCol == 6 then
-            valA, valB = tonumber(a.duration) or 999999, tonumber(b.duration) or 999999
+            valA, valB = a.duration or 999999, b.duration or 999999
         elseif sortCol == 7 then
-            local function GetDiff(x)
-                local node = NS.Database.GetHistoryPBNode(x)
-                local pb = node and node.FullRun and node.FullRun.duration
-                return (pb and x.duration) and (x.duration - pb) or 999999
-            end
-            valA, valB = GetDiff(a), GetDiff(b)
+            valA, valB = a.diff or 999999, b.diff or 999999
         end
 
         if valA ~= valB then
@@ -173,7 +205,7 @@ function UI.RefreshHistoryTable()
             end
             return valA > valB
         end
-        return tonumber(a.startedAt or 0) > tonumber(b.startedAt or 0)
+        return a.startedAt > b.startedAt
     end)
 
     UI.history.filteredData = filtered
@@ -218,14 +250,7 @@ end
 local function History_RestoreColWidths()
     local ui = UI.GetUISaved()
     local layout = ui and ui.frames and ui.frames.history or nil
-    local normalized = UI.NormalizeUILayoutSnapshot({
-        frames = {
-            history = {
-                columns = layout and layout.columns,
-            },
-        },
-    })
-    UI.history.colWidths = normalized.frames.history.columns
+    UI.history.colWidths = Util.CopyTable((layout and layout.columns) or UI.NormalizeHistoryColumns())
 end
 
 local function History_ApplyTableLayout()
@@ -239,13 +264,7 @@ local function History_ApplyTableLayout()
     local isShown = scrollbar and scrollbar:IsShown()
     local scrollWidth = isShown and 20 or 4
 
-    local widths = UI.NormalizeUILayoutSnapshot({
-        frames = {
-            history = {
-                columns = history.colWidths,
-            },
-        },
-    }).frames.history.columns
+    local widths = UI.NormalizeHistoryColumns(history.colWidths, history.colWidths)
     local resolved = Util.CopyTable(widths)
     local avail = math.max(200, history.listFrame:GetWidth() - scrollWidth)
     local total = resolved.date + resolved.dungeon + resolved.expansion + resolved.result + resolved.mode + resolved.time +
@@ -476,8 +495,7 @@ local function EnsureHistoryUI()
     title:SetText("Run History")
     title:SetTextColor(1, 1, 1, 1)
 
-    local close = CreateFrame("Button", nil, historyFrame, "UIPanelCloseButton")
-    close:SetPoint("TOPRIGHT", historyFrame, "TOPRIGHT", -2, -2)
+    local close = FrameFactory.CreateCloseButton(historyFrame, "TOPRIGHT", historyFrame, "TOPRIGHT", -2, -2)
 
     local searchLabel = controls:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     searchLabel:SetPoint("LEFT", title, "RIGHT", 16, 0)
@@ -608,42 +626,26 @@ local function EnsureHistoryUI()
             local row = UI.history.rows[i]
             if i <= numRows then
                 local idx = i + offset
-                local record = data[idx]
-                if record then
-                    local isPB = IsRunPB(record)
-                    local resultText, resultColor = "Incomplete", NS.Colors.darkRed
-                    if isPB then
-                        resultText, resultColor = "PB", NS.Colors.gold
-                    elseif record.success then
-                        resultText, resultColor = "Completed", NS.Colors.deepGreen
-                    end
-
-                    local node = NS.Database.GetHistoryPBNode(record)
-                    local pb = node and node.FullRun and node.FullRun.duration
-                    local diff = (pb and record.duration) and (record.duration - pb) or nil
+                local view = data[idx]
+                if view then
+                    local record = view.record
                     local textColor = NS.Colors.white
-                    local modeLabel = "All Bosses"
-                    if record.pbMode == "ignored" then
-                        modeLabel = "Ignored"
-                    elseif record.speedrunMode == "last" or record.pbMode == "last" then
-                        modeLabel = "Last Boss"
-                    end
 
-                    row.cols[1]:SetText(FormatEpochShort(record.startedAt))
+                    row.cols[1]:SetText(view.formattedDate)
                     row.cols[1]:SetTextColor(textColor.r, textColor.g, textColor.b, textColor.a or 1)
                     row.cols[2]:SetText(record.instanceName or "â€”")
-                    row.cols[3]:SetText(GetTierNameSafe(record.tier))
+                    row.cols[3]:SetText(view.tierName)
                     row.cols[3]:SetTextColor(textColor.r, textColor.g, textColor.b, textColor.a or 1)
-                    row.cols[4]:SetText(resultText)
-                    row.cols[4]:SetTextColor(resultColor.r, resultColor.g, resultColor.b)
-                    row.cols[5]:SetText(modeLabel)
+                    row.cols[4]:SetText(view.resultText)
+                    row.cols[4]:SetTextColor(view.resultColor.r, view.resultColor.g, view.resultColor.b)
+                    row.cols[5]:SetText(view.modeLabel)
                     row.cols[5]:SetTextColor(textColor.r, textColor.g, textColor.b, textColor.a or 1)
-                    row.cols[6]:SetText(record.duration and Util.FormatTime(record.duration) or "--:--.---")
+                    row.cols[6]:SetText(view.formattedDuration)
                     row.cols[6]:SetTextColor(textColor.r, textColor.g, textColor.b, textColor.a or 1)
 
-                    if diff then
-                        local _, _, _, hex = NS.GetPaceColor(diff, isPB)
-                        row.cols[7]:SetText(hex .. Util.FormatDelta(diff) .. "|r")
+                    if view.diff then
+                        local _, _, _, hex = NS.GetPaceColor(view.diff, view.isPB)
+                        row.cols[7]:SetText(hex .. Util.FormatDelta(view.diff) .. "|r")
                     else
                         row.cols[7]:SetText("â€”")
                     end

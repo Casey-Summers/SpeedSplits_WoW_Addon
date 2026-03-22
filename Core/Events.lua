@@ -71,10 +71,7 @@ local function MarkReloadInvalid()
     NS.Run.inInstance = true
     NS.Run.reloadInvalid = true
     NS.Run.reloadGateResolved = false
-    NS.RunLogic.ResetRun()
-    if NS.UI.ResetRunPresentation then
-        NS.UI.ResetRunPresentation()
-    end
+    NS.RunLogic.ResetRunStateAndPresentation()
     return NS.RefreshVisibility()
 end
 
@@ -108,11 +105,7 @@ function NS.RefreshVisibility()
             App:UnregisterEvent("PLAYER_STARTED_MOVING")
         end
     elseif not inInstance and not timerVisible and (NS.Run.active or NS.Run.waitingForMove) then
-        NS.RunLogic.StopRun(false)
-        NS.RunLogic.ResetRun()
-        if NS.UI.ResetRunPresentation then
-            NS.UI.ResetRunPresentation()
-        end
+        NS.RunLogic.StopRunAndResetPresentation(false)
     end
 
     return timerVisible, splitsVisible
@@ -125,15 +118,7 @@ local function EnterOrUpdateWorld()
     if not NS.Run.inInstance then
         NS.Run.reloadInvalid = false
         DisableInstanceEvents()
-
-        if NS.Run.active or NS.Run.waitingForMove then
-            NS.RunLogic.StopRun(false)
-        end
-
-        NS.RunLogic.ResetRun()
-        if NS.UI.ResetRunPresentation then
-            NS.UI.ResetRunPresentation()
-        end
+        NS.RunLogic.StopRunAndResetPresentation(false)
         local timerVisible = NS.RefreshVisibility()
         if timerVisible then
             App:RegisterEvent("PLAYER_STARTED_MOVING")
@@ -160,10 +145,7 @@ local function EnterOrUpdateWorld()
     NS.Run.reloadGateResolved = true
 
     EnableInstanceEvents()
-    NS.RunLogic.ResetRun()
-    if NS.UI.ResetRunPresentation then
-        NS.UI.ResetRunPresentation()
-    end
+    NS.RunLogic.ResetRunStateAndPresentation()
     NS.RunLogic.BeginInstanceSession()
 
     if GetUnitSpeed("player") > 0 then
@@ -198,10 +180,7 @@ App:SetScript("OnEvent", function(_, event, ...)
         if NS.UI and NS.UI.ApplyAllLayouts then
             NS.UI.ApplyAllLayouts()
         end
-        NS.RunLogic.ResetRun()
-        if NS.UI.ResetRunPresentation then
-            NS.UI.ResetRunPresentation()
-        end
+        NS.RunLogic.ResetRunStateAndPresentation()
         if NS.CreateOptionsPanel then
             NS.CreateOptionsPanel()
         end
@@ -226,15 +205,9 @@ App:SetScript("OnEvent", function(_, event, ...)
     end
 
     if event == "PLAYER_LEAVING_WORLD" then
-        if NS.Run.active or NS.Run.waitingForMove then
-            NS.RunLogic.StopRun(false)
-        end
         DisableInstanceEvents()
         NS.UI.HideAddonFrames()
-        NS.RunLogic.ResetRun()
-        if NS.UI.ResetRunPresentation then
-            NS.UI.ResetRunPresentation()
-        end
+        NS.RunLogic.StopRunAndResetPresentation(false)
         return
     end
 

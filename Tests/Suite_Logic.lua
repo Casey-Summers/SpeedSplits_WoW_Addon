@@ -872,8 +872,8 @@ System.RegisterTest({
             NS.RunLogic.RecordBossKill(101, "Opening Pull")
             System.AssertEqual(NS.Run.presentation.summary.latestRow.key, "E:101",
                 "After the first kill, the summary points at Opening Pull")
-            System.AssertNear(NS.Run.presentation.summary.pbTotal, 22.1, 0.001,
-                "After the first kill, PB total matches Opening Pull")
+            System.AssertNear(NS.Run.presentation.summary.pbTotal, 120.01, 0.001,
+                "After the first kill, PB total already reflects the final route boss PB")
             System.AssertNear(NS.Run.presentation.summary.splitTotal, 22.1, 0.001,
                 "After the first kill, split total matches Opening Pull")
 
@@ -884,7 +884,7 @@ System.RegisterTest({
             System.AssertEqual(NS.Run.presentation.summary.latestRow.key, "E:102",
                 "After the second kill, the summary advances to Final Tyrant")
             System.AssertNear(NS.Run.presentation.summary.pbTotal, 120.01, 0.001,
-                "After the second kill, PB total matches Final Tyrant")
+                "After the second kill, PB total still reflects the final route boss PB")
             System.AssertNear(NS.Run.presentation.summary.splitTotal, 79.816, 0.001,
                 "After the second kill, split total matches Final Tyrant")
             System.AssertNear(NS.Run.presentation.summary.diffTotal, -40.194, 0.001,

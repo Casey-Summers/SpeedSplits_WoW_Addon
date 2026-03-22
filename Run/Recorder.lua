@@ -175,8 +175,15 @@ local function BuildRunPresentation(run, pbTable)
         end
     end
 
+    local finalRouteEntry = (run.entries and #run.entries > 0) and run.entries[#run.entries] or nil
+    if finalRouteEntry then
+        local finalPB = progress.cumulativeDisplayByKey[finalRouteEntry.key]
+        if finalPB ~= nil and finalPB > 0 then
+            presentation.summary.pbTotal = finalPB
+        end
+    end
+
     if chronologicalLatestRow then
-        presentation.summary.pbTotal = chronologicalLatestRow.pbTime
         presentation.summary.splitTotal = chronologicalLatestRow.splitTime
         presentation.summary.splitColor = chronologicalLatestRow.color
         presentation.summary.latestRow = chronologicalLatestRow

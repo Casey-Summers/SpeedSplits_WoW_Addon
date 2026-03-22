@@ -2,7 +2,7 @@ local _, NS = ...
 
 local UI = NS.UI
 local Util = NS.Util
-local SECTION_TOTAL_PLACEHOLDER = "--:--.--"
+local Const = NS.Const
 
 local function SetKillCount(killed, total)
     local displayName = (NS.Run and NS.Run.instanceName ~= "") and NS.Run.instanceName or "Boss"
@@ -52,11 +52,13 @@ local function SetTotals(pbTotal, splitTotal, diffTotal, splitColor, diffColor)
         return
     end
 
+    local placeholder = (Const.UI_TEXT and Const.UI_TEXT.SECTION_TOTAL_PLACEHOLDER) or "--:--.--"
+
     if pbTotal == nil then
         UI.totalPB._rawSeconds = nil
         UI.totalPB._displayKind = "placeholder"
         UI.totalPB._placeholderMillis = 2
-        SetSummaryText(UI.totalPB, SECTION_TOTAL_PLACEHOLDER, NS.Colors.gold)
+        SetSummaryText(UI.totalPB, placeholder, NS.Colors.gold)
     else
         UI.totalPB._rawSeconds = pbTotal
         UI.totalPB._displayKind = "time"
@@ -69,7 +71,7 @@ local function SetTotals(pbTotal, splitTotal, diffTotal, splitColor, diffColor)
         UI.totalSplit._rawSeconds = nil
         UI.totalSplit._displayKind = "placeholder"
         UI.totalSplit._placeholderMillis = 2
-        SetSummaryText(UI.totalSplit, SECTION_TOTAL_PLACEHOLDER, NS.Colors.white)
+        SetSummaryText(UI.totalSplit, placeholder, NS.Colors.white)
         SetTextColor(UI.totalSplit, nil, NS.Colors.white)
     else
         UI.totalSplit._rawSeconds = splitTotal
@@ -83,7 +85,7 @@ local function SetTotals(pbTotal, splitTotal, diffTotal, splitColor, diffColor)
         UI.totalDelta._rawSeconds = nil
         UI.totalDelta._displayKind = "placeholder"
         UI.totalDelta._placeholderMillis = 2
-        SetSummaryText(UI.totalDelta, SECTION_TOTAL_PLACEHOLDER, diffColor or NS.Colors.white)
+        SetSummaryText(UI.totalDelta, placeholder, diffColor or NS.Colors.white)
     else
         UI.totalDelta._rawSeconds = diffTotal
         UI.totalDelta._displayKind = "delta"

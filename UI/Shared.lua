@@ -73,7 +73,6 @@ local function ApplyAlignedTimeAnchors(host, entry)
     end
 
     local spec = entry.layoutSpec or {}
-    local signLeft = tonumber(spec.signLeft) or 0
     local signWidth = tonumber(spec.signWidth) or 0
     local minuteRight = tonumber(spec.minuteRight) or 0
     local minuteBaseWidth = tonumber(spec.minuteBaseWidth) or 0
@@ -87,6 +86,10 @@ local function ApplyAlignedTimeAnchors(host, entry)
     local decimalWidth = tonumber(spec.decimalWidth) or 0
     local millisLeft = tonumber(spec.millisLeft) or 0
     local millisWidth = tonumber(spec.millisWidth) or 0
+    local groupType = spec.groupType or "time"
+    local firstVisibleSection = entry.firstVisibleSection or "second"
+    local signPad = tonumber(spec.signPad) or 0
+    local minuteLeft = minuteRight - minuteWidth
 
     entry.sign:ClearAllPoints()
     entry.minute:ClearAllPoints()
@@ -97,16 +100,23 @@ local function ApplyAlignedTimeAnchors(host, entry)
 
     if signWidth > 0 then
         entry.sign:SetJustifyH("RIGHT")
-        entry.sign:SetPoint("TOPLEFT", host, "TOPLEFT", signLeft, -1)
-        entry.sign:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", signLeft, 1)
         entry.sign:SetWidth(signWidth)
+        if groupType == "delta" then
+            local signTarget = firstVisibleSection == "minute" and entry.minute or entry.second
+            entry.sign:SetPoint("TOPRIGHT", signTarget, "TOPLEFT", -signPad, 0)
+            entry.sign:SetPoint("BOTTOMRIGHT", signTarget, "BOTTOMLEFT", -signPad, 0)
+        else
+            local signLeft = tonumber(spec.signMinuteLeft) or 0
+            entry.sign:SetPoint("TOPLEFT", host, "TOPLEFT", signLeft, -1)
+            entry.sign:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", signLeft, 1)
+        end
     else
         entry.sign:SetWidth(0.1)
     end
 
     entry.minute:SetJustifyH("RIGHT")
-    entry.minute:SetPoint("TOPLEFT", host, "TOPLEFT", minuteRight - minuteWidth, -1)
-    entry.minute:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", minuteRight - minuteWidth, 1)
+    entry.minute:SetPoint("TOPLEFT", host, "TOPLEFT", minuteLeft, -1)
+    entry.minute:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", minuteLeft, 1)
     entry.minute:SetWidth(minuteWidth)
 
     entry.colon:SetJustifyH("CENTER")
@@ -174,6 +184,7 @@ function UI.EnsureAlignedTimeGroup(host, key)
         millis = millis,
         layoutSpec = nil,
         minuteOverflowWidth = 0,
+        firstVisibleSection = "second",
         prefix = minute,
         suffix = millis,
     }
@@ -230,6 +241,7 @@ function UI.SetAlignedTimeGroupValue(host, key, parts, fontType, color)
     local spec = entry.layoutSpec or {}
     local extraMinuteDigits = math.max((tonumber(parts.minuteDigits) or 2) - 2, 0)
     entry.minuteOverflowWidth = extraMinuteDigits * (tonumber(spec.digitWidth) or 0)
+    entry.firstVisibleSection = parts.firstVisibleSection or (parts.showMinute and "minute" or "second")
 
     ApplyAlignedTimeAnchors(host, entry)
 

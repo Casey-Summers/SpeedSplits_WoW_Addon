@@ -8,9 +8,6 @@ local ScrollBarSkin = UI.Templates.ScrollBarSkin
 local IconButton = UI.Templates.IconButton
 local HoverFadeFrame = UI.Templates.HoverFadeFrame
 local HeaderCell = UI.Templates.HeaderCell
-local SECTION_TOTAL_PLACEHOLDER = "--:--.--"
-
-local BOSS_HEADER_LABELS = { "", "PB", "Split", "Diff" }
 
 function UI.ShowAddonFrames()
     if NS.RefreshVisibility then
@@ -70,9 +67,10 @@ function UI.RestyleBossTableHeaders(scale)
         return
     end
 
+    local labels = (Const.UI_TEXT and Const.UI_TEXT.BOSS_HEADER_LABELS) or {}
     for i = 1, #UI.customBossHeaders do
         local align = (UI.cols[i] and UI.cols[i].align) or "CENTER"
-        local text = BOSS_HEADER_LABELS[i] or ""
+        local text = labels[i] or ""
         if UI.cols[i] and UI.customBossHeaders[i] then
             UI.StyleHeaderCell(UI.customBossHeaders[i], align, scale or 1.0, text, "turquoise")
             UI.customBossHeaders[i]:EnableMouse(false)
@@ -86,8 +84,9 @@ local function EnsureBossHeaderCells(parent)
     end
 
     UI.customBossHeaders = {}
-    for i = 1, #BOSS_HEADER_LABELS do
-        local cell = HeaderCell.Create(parent, BOSS_HEADER_LABELS[i], "CENTER")
+    local labels = (Const.UI_TEXT and Const.UI_TEXT.BOSS_HEADER_LABELS) or {}
+    for i = 1, #labels do
+        local cell = HeaderCell.Create(parent, labels[i], "CENTER")
         cell:SetFrameLevel(parent:GetFrameLevel() + 3)
         cell:EnableMouse(false)
         UI.customBossHeaders[i] = cell
@@ -433,17 +432,17 @@ function UI.EnsureUI()
 
     local totalPB = CreateTotalHost("footerPB")
     UI.totalPB = totalPB
-    totalPB:SetText(SECTION_TOTAL_PLACEHOLDER)
+    totalPB:SetText((Const.UI_TEXT and Const.UI_TEXT.SECTION_TOTAL_PLACEHOLDER) or "--:--.--")
     totalPB:SetTextColor(NS.Colors.gold.r, NS.Colors.gold.g, NS.Colors.gold.b, NS.Colors.gold.a or 1)
 
     local totalSplit = CreateTotalHost("footerSplit")
     UI.totalSplit = totalSplit
-    totalSplit:SetText(SECTION_TOTAL_PLACEHOLDER)
+    totalSplit:SetText((Const.UI_TEXT and Const.UI_TEXT.SECTION_TOTAL_PLACEHOLDER) or "--:--.--")
     totalSplit:SetTextColor(NS.Colors.white.r, NS.Colors.white.g, NS.Colors.white.b, NS.Colors.white.a or 1)
 
     local totalDelta = CreateTotalHost("footerDiff")
     UI.totalDelta = totalDelta
-    totalDelta:SetText(SECTION_TOTAL_PLACEHOLDER)
+    totalDelta:SetText((Const.UI_TEXT and Const.UI_TEXT.SECTION_TOTAL_PLACEHOLDER) or "--:--.--")
     totalDelta:SetTextColor(NS.Colors.white.r, NS.Colors.white.g, NS.Colors.white.b, NS.Colors.white.a or 1)
 
     local timerGrip = UI.SetupSizeGrip(timerFrame, function()

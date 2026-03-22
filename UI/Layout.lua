@@ -44,21 +44,6 @@ local FRAME_RULES = {
     },
 }
 local FRAME_ORDER = { "timer", "boss", "history" }
-local BOSS_COLUMN_DEFAULTS = {
-    pb = 85,
-    split = 100,
-    diff = 70,
-}
-local HISTORY_COLUMN_DEFAULTS = {
-    date = 140,
-    dungeon = 220,
-    expansion = 140,
-    result = 130,
-    mode = 80,
-    time = 80,
-    diff = 120,
-    delete = 30,
-}
 
 local function RoundNumber(value)
     value = tonumber(value)
@@ -130,10 +115,11 @@ local function NormalizeBossColumns(source, fallback)
     source = type(source) == "table" and source or {}
     fallback = type(fallback) == "table" and fallback or {}
 
-    local pb = RoundNumber(source.pb) or RoundNumber(fallback.pb) or BOSS_COLUMN_DEFAULTS.pb
-    local split = RoundNumber(source.split) or RoundNumber(fallback.split) or BOSS_COLUMN_DEFAULTS.split
+    local defaults = Const.SPLITS_DEFAULTS and Const.SPLITS_DEFAULTS.BOSS_COLUMNS or {}
+    local pb = RoundNumber(source.pb) or RoundNumber(fallback.pb) or defaults.pb
+    local split = RoundNumber(source.split) or RoundNumber(fallback.split) or defaults.split
     local diff = RoundNumber(source.diff or source.delta) or RoundNumber(fallback.diff or fallback.delta) or
-        BOSS_COLUMN_DEFAULTS.diff
+        defaults.diff
 
     return {
         pb = math.max(Const.SPLITS_COL_MIN.PB or 1, pb),
@@ -146,19 +132,20 @@ local function NormalizeHistoryColumns(source, fallback)
     source = type(source) == "table" and source or {}
     fallback = type(fallback) == "table" and fallback or {}
 
+    local defaults = Const.SPLITS_DEFAULTS and Const.SPLITS_DEFAULTS.HISTORY_COLUMNS or {}
     return {
-        date = math.max(50, RoundNumber(source.date) or RoundNumber(fallback.date) or HISTORY_COLUMN_DEFAULTS.date),
+        date = math.max(50, RoundNumber(source.date) or RoundNumber(fallback.date) or defaults.date),
         dungeon = math.max(100,
-            RoundNumber(source.dungeon) or RoundNumber(fallback.dungeon) or HISTORY_COLUMN_DEFAULTS.dungeon),
+            RoundNumber(source.dungeon) or RoundNumber(fallback.dungeon) or defaults.dungeon),
         expansion = math.max(50,
-            RoundNumber(source.expansion) or RoundNumber(fallback.expansion) or HISTORY_COLUMN_DEFAULTS.expansion),
+            RoundNumber(source.expansion) or RoundNumber(fallback.expansion) or defaults.expansion),
         result = math.max(50,
-            RoundNumber(source.result) or RoundNumber(fallback.result) or HISTORY_COLUMN_DEFAULTS.result),
-        mode = math.max(50, RoundNumber(source.mode) or RoundNumber(fallback.mode) or HISTORY_COLUMN_DEFAULTS.mode),
-        time = math.max(50, RoundNumber(source.time) or RoundNumber(fallback.time) or HISTORY_COLUMN_DEFAULTS.time),
-        diff = math.max(50, RoundNumber(source.diff) or RoundNumber(fallback.diff) or HISTORY_COLUMN_DEFAULTS.diff),
+            RoundNumber(source.result) or RoundNumber(fallback.result) or defaults.result),
+        mode = math.max(50, RoundNumber(source.mode) or RoundNumber(fallback.mode) or defaults.mode),
+        time = math.max(50, RoundNumber(source.time) or RoundNumber(fallback.time) or defaults.time),
+        diff = math.max(50, RoundNumber(source.diff) or RoundNumber(fallback.diff) or defaults.diff),
         delete = math.max(30,
-            RoundNumber(source.delete) or RoundNumber(fallback.delete) or HISTORY_COLUMN_DEFAULTS.delete),
+            RoundNumber(source.delete) or RoundNumber(fallback.delete) or defaults.delete),
     }
 end
 
@@ -561,36 +548,43 @@ local function GetAlignedTimeMetrics()
         digitWidth = MeasureNumericTextWidth("8"),
     }
     metrics.digitWidth = math.max(1, metrics.digitWidth)
-    metrics.symbolPad = 1
+    metrics.symbolPad = (Const.ALIGNED_TIME and Const.ALIGNED_TIME.SYMBOL_PAD) or 1
+    metrics.signPad = (Const.ALIGNED_TIME and Const.ALIGNED_TIME.SIGN_PAD) or 2
     return metrics
 end
 
-local function BuildAlignedTimeSpec(width, metrics, hasSign)
+local function BuildAlignedTimeSpec(width, metrics, groupType)
     width = tonumber(width) or 0
     metrics = metrics or GetAlignedTimeMetrics()
-    local signWidth = hasSign and metrics.signWidth or 0
+    local isDelta = groupType == "delta"
+    local signWidth = isDelta and metrics.signWidth or 0
     local minuteWidth = metrics.minuteWidth
     local colonWidth = metrics.colonWidth
     local secondWidth = metrics.secondWidth
     local decimalWidth = metrics.decimalWidth
     local millisWidth = metrics.millisWidth
     local symbolPad = metrics.symbolPad
+    local signPad = metrics.signPad
     local decimalCenterX = math.floor((width / 2) + 0.5)
     local decimalLeft = decimalCenterX - (decimalWidth / 2)
     local secondLeft = decimalLeft - symbolPad - secondWidth
     local colonLeft = secondLeft - symbolPad - colonWidth
     local minuteLeft = colonLeft - symbolPad - minuteWidth
-    local signLeft = minuteLeft - signWidth
+    local minuteSignLeft = minuteLeft - signPad - signWidth
+    local secondSignLeft = secondLeft - signPad - signWidth
     local millisLeft = decimalLeft + decimalWidth + symbolPad
-    local groupLeft = signWidth > 0 and signLeft or minuteLeft
+    local groupLeft = isDelta and math.min(minuteSignLeft, secondSignLeft) or minuteLeft
     local groupWidth = (millisLeft + millisWidth) - groupLeft
 
     return {
+        groupType = isDelta and "delta" or "time",
         hostWidth = width,
         groupWidth = groupWidth,
         groupLeft = groupLeft,
-        signLeft = signLeft,
+        signMinuteLeft = minuteSignLeft,
+        signSecondLeft = secondSignLeft,
         signWidth = signWidth,
+        signPad = signPad,
         minuteLeft = minuteLeft,
         minuteBaseWidth = minuteWidth,
         minuteRight = minuteLeft + minuteWidth,
@@ -686,12 +680,12 @@ local function ApplyTableLayout()
     local metrics = GetAlignedTimeMetrics()
     UI._alignedTimeMetrics = metrics
     UI._alignedTimeSpecs = {
-        pb = BuildAlignedTimeSpec(UI._pbWidth, metrics, false),
-        split = BuildAlignedTimeSpec(UI._splitWidth, metrics, false),
-        diff = BuildAlignedTimeSpec(UI._deltaWidth, metrics, true),
-        footerPB = BuildAlignedTimeSpec(UI._pbWidth, metrics, false),
-        footerSplit = BuildAlignedTimeSpec(UI._splitWidth, metrics, false),
-        footerDiff = BuildAlignedTimeSpec(UI._deltaWidth, metrics, true),
+        pb = BuildAlignedTimeSpec(UI._pbWidth, metrics, "time"),
+        split = BuildAlignedTimeSpec(UI._splitWidth, metrics, "time"),
+        diff = BuildAlignedTimeSpec(UI._deltaWidth, metrics, "delta"),
+        footerPB = BuildAlignedTimeSpec(UI._pbWidth, metrics, "time"),
+        footerSplit = BuildAlignedTimeSpec(UI._splitWidth, metrics, "time"),
+        footerDiff = BuildAlignedTimeSpec(UI._deltaWidth, metrics, "delta"),
     }
 
     if UI.customBossHeaders then

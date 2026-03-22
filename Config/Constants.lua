@@ -4,10 +4,10 @@ local Const = NS.Const
 
 Const.SPLITS_COL_MIN = {
     GLOBAL = 20,
-    BOSS = 50,
-    PB = 100,
-    SPLIT = 100,
-    DIFFERENCE = 100,
+    BOSS = 110,
+    PB = 95,
+    SPLIT = 95,
+    DIFFERENCE = 115,
 }
 
 Const.SPLITS_COL_MAX = {
@@ -22,6 +22,40 @@ Const.SPLITS_LAYOUT = {
     TOP_BAR_H = 28,
     TOP_BAR_GAP = 4,
     MIN_HEIGHT = 85,
+}
+
+Const.SPLITS_DEFAULTS = {
+    BOSS_COLUMNS = {
+        pb = 85,
+        split = 100,
+        diff = 70,
+    },
+    HISTORY_COLUMNS = {
+        date = 140,
+        dungeon = 220,
+        expansion = 140,
+        result = 130,
+        mode = 80,
+        time = 80,
+        diff = 120,
+        delete = 30,
+    },
+}
+
+Const.UI_TEXT = {
+    SECTION_TOTAL_PLACEHOLDER = "--:--.--",
+    BOSS_HEADER_LABELS = { "", "PB", "Split", "Diff" },
+    DEVTOOLS_BOSS_COLUMN_LABELS = { "Boss", "PB", "Split", "Diff" },
+}
+
+Const.ALIGNED_TIME = {
+    SYMBOL_PAD = -2.75,
+    SIGN_PAD = -2.75,
+}
+
+Const.UI_POPUPS = {
+    WIPE_CONFIRM_ID = "SPEEDSPLITS_WIPE_CONFIRM",
+    FACTORY_RESET_ID = "SPEEDSPLITS_FACTORY_RESET",
 }
 
 Const.BOSS_MODEL = {

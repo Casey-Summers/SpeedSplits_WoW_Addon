@@ -52,7 +52,7 @@ local DEFAULT_PBSplitsLastBoss = {
 }
 
 local DEFAULT_splitsByKey = {
-    ["E:1001"] = 22.524,
+    ["E:1001"] = 622.524,
     ["E:1002"] = 43.666,
     ["E:1003"] = 70.666,
     ["E:1004"] = 102.816,
@@ -579,12 +579,15 @@ System.RegisterTest({
         if firstRow then
             System.AssertTrue(firstRow.cols ~= nil and firstRow.cols[2] ~= nil,
                 "Rows contain PB data for display", firstRow.cols ~= nil and firstRow.cols[2] ~= nil)
-            System.AssertTrue(firstRow.cols[3] ~= nil, "Rows contain live split data for display", firstRow.cols and firstRow.cols[3] ~= nil)
-            System.AssertTrue(firstRow.cols[4] ~= nil, "Rows contain diff data for display", firstRow.cols and firstRow.cols[4] ~= nil)
+            System.AssertTrue(firstRow.cols[3] ~= nil, "Rows contain live split data for display",
+                firstRow.cols and firstRow.cols[3] ~= nil)
+            System.AssertTrue(firstRow.cols[4] ~= nil, "Rows contain diff data for display",
+                firstRow.cols and firstRow.cols[4] ~= nil)
         end
         if lastRow then
             System.AssertTrue(lastRow.cols ~= nil and tostring(lastRow.cols[4] and lastRow.cols[4].value or "") ~= "",
-                "Completed simulation rows expose a diff value", lastRow.cols and lastRow.cols[4] and lastRow.cols[4].value)
+                "Completed simulation rows expose a diff value",
+                lastRow.cols and lastRow.cols[4] and lastRow.cols[4].value)
         end
         System.EndSection("Populate the live Splits table with run results", "PASS")
 
@@ -594,13 +597,17 @@ System.RegisterTest({
         System.AssertTrue(presentation and presentation.summary ~= nil, "Simulation builds a live presentation summary",
             presentation and presentation.summary ~= nil)
         System.AssertTrue(presentation and presentation.summary and presentation.summary.splitTotal ~= nil,
-            "Simulation computes a live split total", presentation and presentation.summary and presentation.summary.splitTotal)
+            "Simulation computes a live split total",
+            presentation and presentation.summary and presentation.summary.splitTotal)
         System.AssertTrue(presentation and presentation.summary and presentation.summary.pbTotal ~= nil,
-            "Simulation computes a live PB total", presentation and presentation.summary and presentation.summary.pbTotal)
+            "Simulation computes a live PB total", presentation and presentation.summary and presentation.summary
+            .pbTotal)
         System.AssertTrue(presentation and presentation.summary and presentation.summary.diffTotal ~= nil,
-            "Simulation computes a live diff total", presentation and presentation.summary and presentation.summary.diffTotal)
+            "Simulation computes a live diff total",
+            presentation and presentation.summary and presentation.summary.diffTotal)
         System.AssertTrue(presentation and presentation.summary and presentation.summary.diffColor ~= nil,
-            "Simulation computes a live diff color state", presentation and presentation.summary and presentation.summary.diffColor ~= nil)
+            "Simulation computes a live diff color state",
+            presentation and presentation.summary and presentation.summary.diffColor ~= nil)
         System.EndSection("Expose live presentation data for diff and color validation", "PASS")
 
         System.BeginSection("Verify row preview hook stays live")
@@ -610,7 +617,8 @@ System.RegisterTest({
         System.EndSection("Verify row preview hook stays live", "PASS")
 
         System.BeginSection("Leave the simulation active for manual inspection")
-        System.AssertTrue(Simulation.active == true, "Simulation remains active after the test entry completes", Simulation.active)
+        System.AssertTrue(Simulation.active == true, "Simulation remains active after the test entry completes",
+            Simulation.active)
         System.AssertTrue(Simulation.interactive == true, "Simulation remains interactive for row-click previews",
             Simulation.interactive)
         System.EndSection("Leave the simulation active for manual inspection", "PASS")

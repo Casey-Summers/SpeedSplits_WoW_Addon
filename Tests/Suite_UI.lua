@@ -183,6 +183,12 @@ System.RegisterTest({
             System.AssertEqual(entry.second:GetText(), "5", "Difference cells keep the seconds in the second slot")
             System.AssertEqual(entry.decimal:GetText(), ".", "Difference cells use a dedicated decimal glyph")
             System.AssertEqual(entry.millis:GetText(), "000", "Difference cells keep the milliseconds in the millis slot")
+            local signPoint, signRelative, _, signX = entry.sign:GetPoint(1)
+            System.AssertEqual(signPoint, "TOPRIGHT", "Difference sign anchors from its right edge")
+            System.AssertTrue(signRelative == entry.second,
+                "Difference sign attaches to the first visible numeric section for sub-minute values", signRelative)
+            System.AssertEqual(signX, -(NS.UI.GetAlignedTimeSpec("diff").signPad or 0),
+                "Difference sign uses the layout sign padding constant")
         end
         System.EndSection("Populate a synthetic boss row", "PASS")
     end,
@@ -297,18 +303,23 @@ System.RegisterTest({
             System.AssertTrue(entry ~= nil, "The Diff cell creates the aligned time-group font strings", entry ~= nil)
             System.AssertTrue(spec ~= nil, "The Diff column publishes a layout spec", spec ~= nil)
             if entry and spec then
+                local signPoint, signRelative, _, signX = entry.sign:GetPoint(1)
                 local minutePoint, minuteRelative, _, minuteX = entry.minute:GetPoint(1)
                 local secondPoint, secondRelative, _, secondX = entry.second:GetPoint(1)
                 local decimalPoint, decimalRelative, _, decimalX = entry.decimal:GetPoint(1)
                 local millisPoint, millisRelative, _, millisX = entry.millis:GetPoint(1)
+                System.AssertEqual(signPoint, "TOPRIGHT", "The sign slot anchors from its right edge")
                 System.AssertEqual(minutePoint, "TOPLEFT", "The minute slot anchors from the host origin")
                 System.AssertEqual(secondPoint, "TOPLEFT", "The second slot anchors from the host origin")
                 System.AssertEqual(decimalPoint, "TOPLEFT", "The decimal slot anchors from the host origin")
                 System.AssertEqual(millisPoint, "TOPLEFT", "The millis slot anchors from the host origin")
+                System.AssertTrue(signRelative == entry.second,
+                    "The sign attaches to the second slot when minutes are hidden", signRelative)
                 System.AssertTrue(minuteRelative == diffCell, "The minute slot is attached to the Diff cell", minuteRelative)
                 System.AssertTrue(secondRelative == diffCell, "The second slot is attached to the Diff cell", secondRelative)
                 System.AssertTrue(decimalRelative == diffCell, "The decimal slot is attached to the Diff cell", decimalRelative)
                 System.AssertTrue(millisRelative == diffCell, "The millis slot is attached to the Diff cell", millisRelative)
+                System.AssertEqual(signX, -spec.signPad, "The sign uses the configured sign padding")
                 System.AssertEqual(minuteX, spec.minuteRight - spec.minuteBaseWidth,
                     "The minute slot uses the layout-owned left edge")
                 System.AssertEqual(secondX, spec.secondLeft, "The second slot uses the layout-owned left edge")
@@ -316,6 +327,11 @@ System.RegisterTest({
                 System.AssertEqual(millisX, spec.millisLeft, "The millis slot uses the layout-owned left edge")
                 System.AssertEqual(spec.decimalCenterX, math.floor(beforeWidth / 2 + 0.5),
                     "The decimal spine stays centered on the live column width")
+                System.AssertEqual(spec.groupType, "delta", "The Diff column uses the delta layout group")
+                System.AssertTrue((spec.signPad or 0) > 0, "The Diff layout exposes a dedicated sign padding constant",
+                    spec.signPad)
+                System.AssertTrue((spec.symbolPad or 0) > 0, "The Diff layout exposes a shared symbol padding constant",
+                    spec.symbolPad)
             end
 
             System.EndSection("Render enough rows to force the scrollbar lane", "PASS")
@@ -332,14 +348,17 @@ System.RegisterTest({
             entry = diffCell._ssNumericCellParts and diffCell._ssNumericCellParts.num
             spec = NS.UI.GetAlignedTimeSpec and NS.UI.GetAlignedTimeSpec("diff") or nil
             if entry and spec then
+                local signPoint, signRelative, _, signX = entry.sign:GetPoint(1)
                 local minutePoint, minuteRelative, _, minuteX = entry.minute:GetPoint(1)
                 local secondPoint, secondRelative, _, secondX = entry.second:GetPoint(1)
                 local decimalPoint, decimalRelative, _, decimalX = entry.decimal:GetPoint(1)
                 local millisPoint, millisRelative, _, millisX = entry.millis:GetPoint(1)
+                System.AssertTrue(signRelative == entry.second, "The sign remains attached after resizing", signRelative)
                 System.AssertTrue(minuteRelative == diffCell, "The minute slot remains attached after resizing", minuteRelative)
                 System.AssertTrue(secondRelative == diffCell, "The second slot remains attached after resizing", secondRelative)
                 System.AssertTrue(decimalRelative == diffCell, "The decimal slot remains attached after resizing", decimalRelative)
                 System.AssertTrue(millisRelative == diffCell, "The millis slot remains attached after resizing", millisRelative)
+                System.AssertEqual(signX, -spec.signPad, "The sign keeps the configured padding after resizing")
                 System.AssertEqual(minuteX, spec.minuteRight - spec.minuteBaseWidth,
                     "The minute slot keeps the updated layout-owned left edge")
                 System.AssertEqual(secondX, spec.secondLeft, "The second slot keeps the updated layout-owned left edge")
@@ -551,6 +570,7 @@ System.RegisterTest({
         local pbEntry = row.cols[2]._ssNumericCellParts and row.cols[2]._ssNumericCellParts.num
         local splitEntry = row.cols[3]._ssNumericCellParts and row.cols[3]._ssNumericCellParts.num
         local diffEntry = row.cols[4]._ssNumericCellParts and row.cols[4]._ssNumericCellParts.num
+        local diffSpec = NS.UI.GetAlignedTimeSpec and NS.UI.GetAlignedTimeSpec("diff") or nil
 
         System.AssertTrue(pbEntry ~= nil, "PB cells create an aligned time-group entry", pbEntry ~= nil)
         System.AssertTrue(splitEntry ~= nil, "Split cells create an aligned time-group entry", splitEntry ~= nil)
@@ -573,6 +593,14 @@ System.RegisterTest({
             System.AssertEqual(diffEntry.second:GetText(), "5", "Diff seconds render in the fixed second slot")
             System.AssertEqual(diffEntry.decimal:GetText(), ".", "Diff keeps the decimal glyph")
             System.AssertEqual(diffEntry.millis:GetText(), "123", "Diff milliseconds render in the millis slot")
+            if diffSpec then
+                local signPoint, signRelative, _, signX = diffEntry.sign:GetPoint(1)
+                System.AssertEqual(signPoint, "TOPRIGHT", "Diff sign anchors from its right edge")
+                System.AssertTrue(signRelative == diffEntry.second,
+                    "Diff sign attaches to the visible second slot when minutes are hidden", signRelative)
+                System.AssertEqual(signX, -diffSpec.signPad, "Diff sign uses the layout sign padding")
+                System.AssertEqual(diffSpec.groupType, "delta", "Diff values use the delta group type")
+            end
         end
         System.EndSection("Render slot-based numeric cells", "PASS")
     end,
@@ -602,6 +630,7 @@ System.RegisterTest({
             System.AssertTrue(afterSpec ~= nil, "The footer diff publishes a layout spec after resizing", afterSpec ~= nil)
             System.AssertTrue(entry ~= nil, "The footer diff uses the aligned time-group widget", entry ~= nil)
             if beforeSpec and afterSpec and entry then
+                local signPoint, signRelative, _, signX = entry.sign:GetPoint(1)
                 local decimalPoint, decimalRelative, _, decimalX = entry.decimal:GetPoint(1)
                 local secondPoint, secondRelative, _, secondX = entry.second:GetPoint(1)
                 local minutePoint, minuteRelative, _, minuteX = entry.minute:GetPoint(1)
@@ -610,15 +639,19 @@ System.RegisterTest({
                 System.AssertEqual(afterSpec.hostWidth, NS.UI._deltaWidth, "The footer diff spec tracks the host width")
                 System.AssertEqual(afterSpec.decimalCenterX, math.floor(NS.UI._deltaWidth / 2 + 0.5),
                     "The footer decimal spine stays centered inside the host")
+                System.AssertEqual(signPoint, "TOPRIGHT", "The footer sign anchors from its right edge")
                 System.AssertEqual(decimalPoint, "TOPLEFT", "The footer decimal slot anchors from the host origin")
                 System.AssertEqual(secondPoint, "TOPLEFT", "The footer second slot anchors from the host origin")
                 System.AssertEqual(minutePoint, "TOPLEFT", "The footer minute slot anchors from the host origin")
+                System.AssertTrue(signRelative == entry.second, "The footer sign remains attached to the visible number",
+                    signRelative)
                 System.AssertTrue(decimalRelative == NS.UI.totalDelta, "The footer decimal remains attached to the host",
                     decimalRelative)
                 System.AssertTrue(secondRelative == NS.UI.totalDelta, "The footer second slot remains attached to the host",
                     secondRelative)
                 System.AssertTrue(minuteRelative == NS.UI.totalDelta, "The footer minute slot remains attached to the host",
                     minuteRelative)
+                System.AssertEqual(signX, -afterSpec.signPad, "The footer sign uses the updated sign padding")
                 System.AssertEqual(decimalX, afterSpec.decimalLeft, "The footer decimal slot uses the updated left edge")
                 System.AssertEqual(secondX, afterSpec.secondLeft, "The footer second slot uses the updated left edge")
                 System.AssertEqual(minuteX, afterSpec.minuteRight - afterSpec.minuteBaseWidth,
@@ -715,6 +748,51 @@ System.RegisterTest({
             System.AssertEqual(diffEntry.decimal:GetText(), ".", "Diff placeholder keeps the decimal glyph")
         end
         System.EndSection("Refresh totals without any run summary", "PASS")
+    end,
+})
+
+System.RegisterTest({
+    id = "ui_diff_subsecond_values_use_zero_second_lead_without_colon",
+    suite = "UI",
+    subcategory = "Boss Table",
+    name = "Formats sub-second Diff values as sign plus zero-second lead without a colon",
+    func = function()
+        NS.Database.EnsureDB()
+        NS.UI.EnsureUI()
+
+        System.BeginSection("Render sub-second Diff values")
+        NS.UI.data = {
+            {
+                key = "boss_subsecond",
+                cols = {
+                    { value = "Boss Subsecond" },
+                    { value = "0.424", rawSeconds = 0.424, displayKind = "time", placeholderMillis = 3, color = NS.Colors.gold },
+                    { value = "0.424", rawSeconds = 0.424, displayKind = "time", placeholderMillis = 3, color = NS.Colors.white },
+                    { value = "+0.424", rawSeconds = 0.424, displayKind = "delta", placeholderMillis = 3, color = NS.Colors.white },
+                },
+            },
+        }
+        NS.UI.rowByBossKey = { boss_subsecond = 1 }
+        NS.UI.st:SetData(NS.UI.data, true)
+        NS.UI.st:Refresh()
+
+        local row = NS.UI.st.rows[1]
+        local entry = row.cols[4]._ssNumericCellParts and row.cols[4]._ssNumericCellParts.num
+        local spec = NS.UI.GetAlignedTimeSpec and NS.UI.GetAlignedTimeSpec("diff") or nil
+        System.AssertTrue(entry ~= nil, "Sub-second Diff cells still use the aligned widget", entry ~= nil)
+        if entry and spec then
+            local signPoint, signRelative, _, signX = entry.sign:GetPoint(1)
+            System.AssertEqual(entry.sign:GetText(), "+", "Sub-second Diff keeps the sign")
+            System.AssertTrue(entry.minute:IsShown() == false, "Sub-second Diff hides the minute slot", entry.minute:IsShown())
+            System.AssertTrue(entry.colon:IsShown() == false, "Sub-second Diff does not show a colon", entry.colon:IsShown())
+            System.AssertEqual(entry.second:GetText(), "0", "Sub-second Diff uses a single zero second lead")
+            System.AssertEqual(entry.decimal:GetText(), ".", "Sub-second Diff keeps the decimal glyph")
+            System.AssertEqual(entry.millis:GetText(), "424", "Sub-second Diff keeps the milliseconds")
+            System.AssertEqual(signPoint, "TOPRIGHT", "Sub-second Diff sign anchors from its right edge")
+            System.AssertTrue(signRelative == entry.second, "Sub-second Diff sign attaches to the second slot", signRelative)
+            System.AssertEqual(signX, -spec.signPad, "Sub-second Diff sign uses the sign padding constant")
+        end
+        System.EndSection("Render sub-second Diff values", "PASS")
     end,
 })
 

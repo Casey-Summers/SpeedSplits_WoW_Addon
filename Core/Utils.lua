@@ -96,6 +96,7 @@ function Util.BuildAlignedTimeParts(seconds, opts)
     if kind == "empty" then
         return {
             showGroup = false,
+            isDelta = false,
             signText = "",
             minuteText = "",
             showMinute = false,
@@ -104,6 +105,8 @@ function Util.BuildAlignedTimeParts(seconds, opts)
             secondText = "",
             decimalText = ".",
             millisText = "",
+            firstVisibleSection = "second",
+            showZeroSecondLead = false,
             isPlaceholder = false,
             overflowMinutes = false,
             minuteDigits = 2,
@@ -113,6 +116,7 @@ function Util.BuildAlignedTimeParts(seconds, opts)
     if kind == "placeholder" then
         return {
             showGroup = true,
+            isDelta = false,
             signText = "",
             minuteText = "--",
             showMinute = true,
@@ -121,6 +125,8 @@ function Util.BuildAlignedTimeParts(seconds, opts)
             secondText = "--",
             decimalText = ".",
             millisText = string.rep("-", math.max(1, placeholderMillis)),
+            firstVisibleSection = "minute",
+            showZeroSecondLead = false,
             isPlaceholder = true,
             overflowMinutes = false,
             minuteDigits = 2,
@@ -143,19 +149,21 @@ function Util.BuildAlignedTimeParts(seconds, opts)
     local secondPart = wholeSeconds % 60
 
     local showMinute = totalMinutes > 0
-    local showColon = showMinute or wholeSeconds == 0
+    local showZeroSecondLead = wholeSeconds == 0
+    local showColon = showMinute or (showZeroSecondLead and not isDelta)
     local minuteText = showMinute and tostring(totalMinutes) or ""
     local secondText
     if showMinute then
         secondText = string.format("%02d", secondPart)
-    elseif wholeSeconds == 0 then
-        secondText = "00"
+    elseif showZeroSecondLead then
+        secondText = isDelta and "0" or "00"
     else
         secondText = tostring(secondPart)
     end
 
     return {
         showGroup = true,
+        isDelta = isDelta,
         signText = signText,
         minuteText = minuteText,
         showMinute = showMinute,
@@ -164,6 +172,8 @@ function Util.BuildAlignedTimeParts(seconds, opts)
         secondText = secondText,
         decimalText = ".",
         millisText = string.format("%03d", millis),
+        firstVisibleSection = showMinute and "minute" or "second",
+        showZeroSecondLead = showZeroSecondLead,
         isPlaceholder = false,
         overflowMinutes = #minuteText > 2,
         minuteDigits = math.max(2, #minuteText),

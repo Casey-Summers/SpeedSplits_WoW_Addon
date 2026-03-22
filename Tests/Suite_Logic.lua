@@ -258,6 +258,263 @@ System.RegisterTest({
 })
 
 System.RegisterTest({
+    id = "logic_reload_awareness_invalidates_in_instance_bootstrap_without_zone_change",
+    suite = "Logic",
+    subcategory = "Reload Awareness",
+    name = "Marks startup invalid when the addon loads into an instance without a zone-change prime",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldIsInInstance = IsInInstance
+        local oldGetUnitSpeed = GetUnitSpeed
+        local oldBeginInstanceSession = NS.RunLogic.BeginInstanceSession
+        local oldStartRunTimer = NS.RunLogic.StartRunTimer
+        local oldEnsureUI = NS.UI.EnsureUI
+        local oldSetTimerWarning = NS.UI.SetTimerWarning
+        local oldClearTimerWarning = NS.UI.ClearTimerWarning
+        local oldResetRunPresentation = NS.UI.ResetRunPresentation
+        local oldRunState = NS.Util.CopyTable(NS.Run)
+        local oldVisibility = NS.Util.CopyTable(NS.DB.Settings.visibility or {})
+        local began = 0
+        local started = 0
+        local warning = nil
+
+        System.WithCleanup(function()
+            System.BeginSection("Enter the world in-instance without startup priming")
+            NS.DB.Settings.visibility.timer = "instance"
+            NS.DB.Settings.visibility.splits = "instance"
+            IsInInstance = function()
+                return true
+            end
+            GetUnitSpeed = function()
+                return 0
+            end
+            NS.RunLogic.BeginInstanceSession = function()
+                began = began + 1
+            end
+            NS.RunLogic.StartRunTimer = function()
+                started = started + 1
+            end
+            NS.UI.EnsureUI = function() end
+            NS.UI.SetTimerWarning = function(message)
+                warning = message
+            end
+            NS.UI.ClearTimerWarning = function() end
+            NS.UI.ResetRunPresentation = function() end
+
+            if NS.RunLogic.ResetReloadAwareness then
+                NS.RunLogic.ResetReloadAwareness()
+            end
+            NS.RunLogic.ResetRun()
+            NS.App:GetScript("OnEvent")(NS.App, "PLAYER_ENTERING_WORLD")
+            NS.App:GetScript("OnEvent")(NS.App, "PLAYER_STARTED_MOVING")
+
+            System.AssertTrue(NS.Run.reloadInvalid == true, "In-instance startup is marked invalid", NS.Run.reloadInvalid)
+            System.AssertEqual(began, 0, "Invalid startup does not begin an instance session")
+            System.AssertEqual(started, 0, "Invalid startup does not start the timer")
+            System.AssertEqual(NS.Run.waitingForMove, false, "Invalid startup does not arm movement priming")
+            System.AssertEqual(warning, NS.Const.UI_TEXT.RELOAD_INVALID_WARNING,
+                "Invalid startup shows the reload warning through the timer surface")
+            System.EndSection("Enter the world in-instance without startup priming", "PASS")
+        end, function()
+            IsInInstance = oldIsInInstance
+            GetUnitSpeed = oldGetUnitSpeed
+            NS.RunLogic.BeginInstanceSession = oldBeginInstanceSession
+            NS.RunLogic.StartRunTimer = oldStartRunTimer
+            NS.UI.EnsureUI = oldEnsureUI
+            NS.UI.SetTimerWarning = oldSetTimerWarning
+            NS.UI.ClearTimerWarning = oldClearTimerWarning
+            NS.UI.ResetRunPresentation = oldResetRunPresentation
+            NS.DB.Settings.visibility = oldVisibility
+            for key in pairs(NS.Run) do
+                NS.Run[key] = nil
+            end
+            for key, value in pairs(oldRunState) do
+                NS.Run[key] = value
+            end
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_reload_awareness_allows_primed_instance_bootstrap",
+    suite = "Logic",
+    subcategory = "Reload Awareness",
+    name = "Starts a normal instance session when the zone-change prime was seen first",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldIsInInstance = IsInInstance
+        local oldGetUnitSpeed = GetUnitSpeed
+        local oldBeginInstanceSession = NS.RunLogic.BeginInstanceSession
+        local oldEnsureUI = NS.UI.EnsureUI
+        local oldClearTimerWarning = NS.UI.ClearTimerWarning
+        local oldResetRunPresentation = NS.UI.ResetRunPresentation
+        local oldRunState = NS.Util.CopyTable(NS.Run)
+        local oldVisibility = NS.Util.CopyTable(NS.DB.Settings.visibility or {})
+        local began = 0
+
+        System.WithCleanup(function()
+            System.BeginSection("Prime startup with a zone change before entering the instance")
+            NS.DB.Settings.visibility.timer = "instance"
+            NS.DB.Settings.visibility.splits = "instance"
+            IsInInstance = function()
+                return true
+            end
+            GetUnitSpeed = function()
+                return 0
+            end
+            NS.RunLogic.BeginInstanceSession = function()
+                began = began + 1
+            end
+            NS.UI.EnsureUI = function() end
+            NS.UI.ClearTimerWarning = function() end
+            NS.UI.ResetRunPresentation = function() end
+
+            if NS.RunLogic.ResetReloadAwareness then
+                NS.RunLogic.ResetReloadAwareness()
+            end
+            NS.RunLogic.ResetRun()
+            NS.App:GetScript("OnEvent")(NS.App, "ZONE_CHANGED_NEW_AREA")
+            NS.App:GetScript("OnEvent")(NS.App, "PLAYER_ENTERING_WORLD")
+
+            System.AssertTrue(NS.Run.reloadInvalid ~= true, "Primed instance startup stays valid")
+            System.AssertTrue(NS.Run.startupZoneSeen == true, "Zone-change prime is retained for startup gating")
+            System.AssertEqual(began, 1, "Primed startup enters the normal instance session path")
+            System.EndSection("Prime startup with a zone change before entering the instance", "PASS")
+        end, function()
+            IsInInstance = oldIsInInstance
+            GetUnitSpeed = oldGetUnitSpeed
+            NS.RunLogic.BeginInstanceSession = oldBeginInstanceSession
+            NS.UI.EnsureUI = oldEnsureUI
+            NS.UI.ClearTimerWarning = oldClearTimerWarning
+            NS.UI.ResetRunPresentation = oldResetRunPresentation
+            NS.DB.Settings.visibility = oldVisibility
+            for key in pairs(NS.Run) do
+                NS.Run[key] = nil
+            end
+            for key, value in pairs(oldRunState) do
+                NS.Run[key] = value
+            end
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_reload_awareness_allows_outdoor_bootstrap_with_outdoor_visibility",
+    suite = "Logic",
+    subcategory = "Reload Awareness",
+    name = "Keeps outdoor startup working when timer visibility is outdoor-only",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldIsInInstance = IsInInstance
+        local oldGetUnitSpeed = GetUnitSpeed
+        local oldRunState = NS.Util.CopyTable(NS.Run)
+        local oldVisibility = NS.Util.CopyTable(NS.DB.Settings.visibility or {})
+
+        System.WithCleanup(function()
+            System.BeginSection("Load outdoors with outdoor-only timer visibility")
+            NS.DB.Settings.visibility.timer = "outdoor"
+            NS.DB.Settings.visibility.splits = "instance"
+            IsInInstance = function()
+                return false
+            end
+            GetUnitSpeed = function()
+                return 0
+            end
+
+            if NS.RunLogic.ResetReloadAwareness then
+                NS.RunLogic.ResetReloadAwareness()
+            end
+            NS.RunLogic.ResetRun()
+            NS.App:GetScript("OnEvent")(NS.App, "PLAYER_ENTERING_WORLD")
+
+            System.AssertTrue(NS.Run.reloadInvalid ~= true, "Outdoor startup does not invalidate the run")
+            System.AssertTrue(NS.Run.waitingForMove == true, "Outdoor startup still waits for first movement")
+            System.EndSection("Load outdoors with outdoor-only timer visibility", "PASS")
+        end, function()
+            IsInInstance = oldIsInInstance
+            GetUnitSpeed = oldGetUnitSpeed
+            NS.DB.Settings.visibility = oldVisibility
+            for key in pairs(NS.Run) do
+                NS.Run[key] = nil
+            end
+            for key, value in pairs(oldRunState) do
+                NS.Run[key] = value
+            end
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_reload_awareness_recovers_after_zone_change",
+    suite = "Logic",
+    subcategory = "Reload Awareness",
+    name = "Clears invalid startup state after a later zone change",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldIsInInstance = IsInInstance
+        local oldGetUnitSpeed = GetUnitSpeed
+        local oldBeginInstanceSession = NS.RunLogic.BeginInstanceSession
+        local oldEnsureUI = NS.UI.EnsureUI
+        local oldSetTimerWarning = NS.UI.SetTimerWarning
+        local oldClearTimerWarning = NS.UI.ClearTimerWarning
+        local oldResetRunPresentation = NS.UI.ResetRunPresentation
+        local oldRunState = NS.Util.CopyTable(NS.Run)
+        local oldVisibility = NS.Util.CopyTable(NS.DB.Settings.visibility or {})
+        local began = 0
+
+        System.WithCleanup(function()
+            System.BeginSection("Recover an invalid startup after a real zone change")
+            NS.DB.Settings.visibility.timer = "instance"
+            NS.DB.Settings.visibility.splits = "instance"
+            IsInInstance = function()
+                return true
+            end
+            GetUnitSpeed = function()
+                return 0
+            end
+            NS.RunLogic.BeginInstanceSession = function()
+                began = began + 1
+            end
+            NS.UI.EnsureUI = function() end
+            NS.UI.SetTimerWarning = function() end
+            NS.UI.ClearTimerWarning = function() end
+            NS.UI.ResetRunPresentation = function() end
+
+            if NS.RunLogic.ResetReloadAwareness then
+                NS.RunLogic.ResetReloadAwareness()
+            end
+            NS.RunLogic.ResetRun()
+            NS.App:GetScript("OnEvent")(NS.App, "PLAYER_ENTERING_WORLD")
+            NS.App:GetScript("OnEvent")(NS.App, "ZONE_CHANGED_NEW_AREA")
+
+            System.AssertTrue(NS.Run.reloadInvalid ~= true, "Zone change clears the invalid startup state")
+            System.AssertTrue(NS.Run.startupZoneSeen == true, "Zone change primes the startup gate")
+            System.AssertEqual(began, 1, "Recovery enters the normal instance session path exactly once")
+            System.EndSection("Recover an invalid startup after a real zone change", "PASS")
+        end, function()
+            IsInInstance = oldIsInInstance
+            GetUnitSpeed = oldGetUnitSpeed
+            NS.RunLogic.BeginInstanceSession = oldBeginInstanceSession
+            NS.UI.EnsureUI = oldEnsureUI
+            NS.UI.SetTimerWarning = oldSetTimerWarning
+            NS.UI.ClearTimerWarning = oldClearTimerWarning
+            NS.UI.ResetRunPresentation = oldResetRunPresentation
+            NS.DB.Settings.visibility = oldVisibility
+            for key in pairs(NS.Run) do
+                NS.Run[key] = nil
+            end
+            for key, value in pairs(oldRunState) do
+                NS.Run[key] = value
+            end
+        end)
+    end,
+})
+
+System.RegisterTest({
     id = "logic_layout_initialize_migrates_legacy_shape",
     suite = "Logic",
     subcategory = "Layout Reset",

@@ -106,6 +106,10 @@ local function TryLoadBossList()
 end
 
 local function BeginInstanceSession()
+    if NS.Run.reloadInvalid then
+        return
+    end
+
     if NS.UI.EnsureUI then
         NS.UI.EnsureUI()
     end

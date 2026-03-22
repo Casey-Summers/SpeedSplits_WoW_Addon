@@ -44,6 +44,32 @@ System.RegisterTest({
 })
 
 System.RegisterTest({
+    id = "ui_timer_warning_mode",
+    suite = "UI",
+    subcategory = "Timer",
+    name = "Shows and clears the reload-invalid timer warning",
+    func = function()
+        NS.Database.EnsureDB()
+        NS.UI.EnsureUI()
+
+        System.BeginSection("Toggle timer warning mode")
+        NS.UI.SetTimerWarning("Cannot Reload during a Speedrun.\nThis run is invalid.")
+        System.AssertTrue(NS.UI.IsTimerWarningActive() == true, "Timer warning is active after being set",
+            NS.UI.IsTimerWarningActive())
+        System.AssertTrue(NS.UI.timerWarningText:IsShown() == true, "Warning text is shown", NS.UI.timerWarningText:IsShown())
+        System.AssertTrue(NS.UI.timerTextSec:IsShown() == false, "Seconds text hides while warning is active",
+            NS.UI.timerTextSec:IsShown())
+
+        NS.UI.ClearTimerWarning()
+        System.AssertTrue(NS.UI.IsTimerWarningActive() == false, "Timer warning is no longer active after clearing",
+            NS.UI.IsTimerWarningActive())
+        System.AssertTrue(NS.UI.timerTextSec:IsShown() == true, "Seconds text returns after clearing the warning",
+            NS.UI.timerTextSec:IsShown())
+        System.EndSection("Toggle timer warning mode", "PASS")
+    end,
+})
+
+System.RegisterTest({
     id = "ui_header_colors_follow_accent",
     suite = "UI",
     subcategory = "Header",

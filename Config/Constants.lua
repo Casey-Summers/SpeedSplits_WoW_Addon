@@ -45,6 +45,7 @@ Const.SPLITS_DEFAULTS = {
 
 Const.UI_TEXT = {
     SECTION_TOTAL_PLACEHOLDER = "--:--.--",
+    RELOAD_INVALID_WARNING = "Cannot Reload during a Speedrun.\nThis run is invalid.",
     BOSS_HEADER_LABELS = { "", "PB", "Split", "Diff" },
     DEVTOOLS_BOSS_COLUMN_LABELS = { "Boss", "PB", "Split", "Diff" },
 }

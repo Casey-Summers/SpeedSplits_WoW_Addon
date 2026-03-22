@@ -41,6 +41,10 @@ Run.routeModeReason = Run.routeModeReason or "route-default"
 Run.hasIgnoredEntries = Run.hasIgnoredEntries or false
 Run._bossLoadTries = Run._bossLoadTries or 0
 Run._bossLoaded = Run._bossLoaded or false
+Run.startupZoneSeen = Run.startupZoneSeen or false
+Run.startupWorldSeen = Run.startupWorldSeen or false
+Run.reloadInvalid = Run.reloadInvalid or false
+Run.reloadGateResolved = Run.reloadGateResolved or false
 
 NS.Run = Run
 
@@ -97,6 +101,13 @@ local function ResetRun()
     Run._bossLoaded = false
 end
 
+local function ResetReloadAwareness()
+    Run.startupZoneSeen = false
+    Run.startupWorldSeen = false
+    Run.reloadInvalid = false
+    Run.reloadGateResolved = false
+end
+
 local function ResetRunPresentation()
     if NS.UI.SetTimerText then
         NS.UI.SetTimerText(0, false)
@@ -117,5 +128,6 @@ end
 
 NS.RunLogic.IsBossIgnored = IsBossIgnored
 NS.RunLogic.ResetRun = ResetRun
+NS.RunLogic.ResetReloadAwareness = ResetReloadAwareness
 NS.UI.ResetRunPresentation = ResetRunPresentation
 NS.IsBossIgnored = IsBossIgnored

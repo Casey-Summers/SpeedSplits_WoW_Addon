@@ -1,6 +1,7 @@
 local _, NS = ...
 
 local App = NS.App
+local Const = NS.Const
 
 local function EnableInstanceEvents()
     App:RegisterEvent("PLAYER_STARTED_MOVING")
@@ -48,6 +49,31 @@ local function ApplyVisibility(timerVisible, splitsVisible)
     end
 end
 
+local function ApplyReloadInvalidVisibility(timerVisible)
+    ApplyVisibility(timerVisible, false)
+    App:UnregisterEvent("PLAYER_STARTED_MOVING")
+    NS.Run.waitingForMove = false
+
+    if timerVisible and NS.UI.SetTimerWarning then
+        NS.UI.SetTimerWarning((Const.UI_TEXT and Const.UI_TEXT.RELOAD_INVALID_WARNING) or
+            "Cannot Reload during a Speedrun.\nThis run is invalid.")
+    elseif NS.UI.ClearTimerWarning then
+        NS.UI.ClearTimerWarning()
+    end
+end
+
+local function MarkReloadInvalid()
+    DisableInstanceEvents()
+    NS.Run.inInstance = true
+    NS.Run.reloadInvalid = true
+    NS.Run.reloadGateResolved = false
+    NS.RunLogic.ResetRun()
+    if NS.UI.ResetRunPresentation then
+        NS.UI.ResetRunPresentation()
+    end
+    return NS.RefreshVisibility()
+end
+
 function NS.RefreshVisibility()
     if not NS.DB or not NS.DB.Settings or not NS.DB.Settings.visibility then
         return false, false
@@ -57,6 +83,16 @@ function NS.RefreshVisibility()
 
     local inInstance = IsInInstance()
     local timerVisible, splitsVisible = EvaluateVisibility(NS.DB.Settings, inInstance)
+
+    if NS.Run.reloadInvalid then
+        ApplyReloadInvalidVisibility(timerVisible)
+        return timerVisible, false
+    end
+
+    if NS.UI.ClearTimerWarning then
+        NS.UI.ClearTimerWarning()
+    end
+
     ApplyVisibility(timerVisible, splitsVisible)
 
     if not inInstance and timerVisible and not NS.Run.active and not NS.Run.waitingForMove then
@@ -80,8 +116,10 @@ end
 
 local function EnterOrUpdateWorld()
     NS.Run.inInstance = IsInInstance() and true or false
+    NS.Run.startupWorldSeen = true
 
     if not NS.Run.inInstance then
+        NS.Run.reloadInvalid = false
         DisableInstanceEvents()
 
         if NS.Run.active or NS.Run.waitingForMove then
@@ -105,6 +143,14 @@ local function EnterOrUpdateWorld()
         return
     end
 
+    if not NS.Run.startupZoneSeen and not NS.Run.reloadGateResolved then
+        MarkReloadInvalid()
+        return
+    end
+
+    NS.Run.reloadInvalid = false
+    NS.Run.reloadGateResolved = true
+
     EnableInstanceEvents()
     NS.RunLogic.ResetRun()
     if NS.UI.ResetRunPresentation then
@@ -125,6 +171,9 @@ App:SetScript("OnEvent", function(_, event, ...)
             return
         end
         NS.Database.EnsureDB()
+        if NS.RunLogic.ResetReloadAwareness then
+            NS.RunLogic.ResetReloadAwareness()
+        end
         if NS.UI and NS.UI.InitializeDefaults then
             NS.UI.InitializeDefaults()
         end
@@ -149,6 +198,17 @@ App:SetScript("OnEvent", function(_, event, ...)
 
     if event == "PLAYER_ENTERING_WORLD" then
         EnterOrUpdateWorld()
+        return
+    end
+
+    if event == "ZONE_CHANGED_NEW_AREA" then
+        NS.Run.startupZoneSeen = true
+        NS.Run.reloadGateResolved = true
+
+        if NS.Run.reloadInvalid then
+            NS.Run.reloadInvalid = false
+            EnterOrUpdateWorld()
+        end
         return
     end
 
@@ -198,3 +258,4 @@ end)
 App:RegisterEvent("ADDON_LOADED")
 App:RegisterEvent("PLAYER_ENTERING_WORLD")
 App:RegisterEvent("PLAYER_LEAVING_WORLD")
+App:RegisterEvent("ZONE_CHANGED_NEW_AREA")

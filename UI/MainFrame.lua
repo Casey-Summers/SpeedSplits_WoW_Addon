@@ -180,6 +180,15 @@ function UI.EnsureUI()
     NS.ApplyFontToFS(timerDeltaText, "num")
     timerDeltaText:SetText("")
 
+    local timerWarningText = timerFrame:CreateFontString(nil, "OVERLAY")
+    timerWarningText:SetPoint("TOPLEFT", timerFrame, "TOPLEFT", 10, -10)
+    timerWarningText:SetPoint("BOTTOMRIGHT", timerFrame, "BOTTOMRIGHT", -10, 10)
+    timerWarningText:SetJustifyH("CENTER")
+    timerWarningText:SetJustifyV("MIDDLE")
+    timerWarningText:SetSpacing(2)
+    timerWarningText:Hide()
+    UI.timerWarningText = timerWarningText
+
     local timerToastBg = timerFrame:CreateTexture(nil, "BACKGROUND", nil, -5)
     timerToastBg:SetAllPoints(timerFrame)
     timerToastBg:SetAlpha(0)
@@ -566,6 +575,13 @@ function NS.UpdateFontsOnly()
         local fontSize = math.max(8, math.floor((f and f.size or 24) * 0.55))
         local fontFlags = f and f.flags or "OUTLINE"
         UI.timerDeltaText:SetFont(fontPath, fontSize, fontFlags)
+    end
+    if UI.timerWarningText then
+        local f = NS.DB and NS.DB.Settings and NS.DB.Settings.fonts and NS.DB.Settings.fonts.timer
+        local fontPath = f and f.font or "Fonts\\FRIZQT__.TTF"
+        local fontSize = math.max(10, math.floor((f and f.size or 24) * 0.52))
+        local fontFlags = f and f.flags or "OUTLINE"
+        UI.timerWarningText:SetFont(fontPath, fontSize, fontFlags)
     end
 
     if UI.st and UI.st.Refresh then

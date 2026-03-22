@@ -3,7 +3,13 @@ local _, NS = ...
 NS.Migrations = NS.Migrations or {}
 
 local Util = NS.Util
+local WipedDataOnFirstLogin = false
 local CURRENT_SCHEMA_VERSION = 3
+local FIRST_LOGIN_WIPE_TOKEN = "migration-first-login-wipe-v1"
+
+local function HasFirstLoginWipeBeenApplied(db)
+    return type(db) == "table" and db.__firstLoginWipeApplied == true
+end
 
 local function EnsurePBTables(db)
     db.InstanceRoutes = db.InstanceRoutes or {}
@@ -137,6 +143,19 @@ local function ApplySavedVariablesMigrations(db)
     db.SchemaVersion = CURRENT_SCHEMA_VERSION
 end
 
+local function ShouldWipeDataOnFirstLogin(db)
+    return WipedDataOnFirstLogin == true and not HasFirstLoginWipeBeenApplied(db)
+end
+
+local function BuildFreshDatabase()
+    return {
+        __firstLoginWipeApplied = true,
+        __firstLoginWipeToken = FIRST_LOGIN_WIPE_TOKEN,
+    }
+end
+
 NS.Migrations.CurrentSchemaVersion = CURRENT_SCHEMA_VERSION
 NS.Migrations.ApplySavedVariablesMigrations = ApplySavedVariablesMigrations
 NS.Migrations.NormalizeBossIndexTable = NormalizeBossIndexTable
+NS.Migrations.ShouldWipeDataOnFirstLogin = ShouldWipeDataOnFirstLogin
+NS.Migrations.BuildFreshDatabase = BuildFreshDatabase

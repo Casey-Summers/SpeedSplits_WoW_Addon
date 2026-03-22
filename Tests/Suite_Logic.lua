@@ -258,6 +258,52 @@ System.RegisterTest({
 })
 
 System.RegisterTest({
+    id = "logic_first_login_wipe_rebuilds_latest_db_shape",
+    suite = "Logic",
+    subcategory = "Migration",
+    name = "Rebuilds the saved variables table from scratch when the first-login wipe hook requests it",
+    func = function()
+        local oldSpeedSplitsDB = SpeedSplitsDB
+        local oldDB = NS.DB
+        local oldShouldWipe = NS.Migrations.ShouldWipeDataOnFirstLogin
+        local oldBuildFresh = NS.Migrations.BuildFreshDatabase
+
+        System.WithCleanup(function()
+            System.BeginSection("Force a first-login wipe during EnsureDB")
+            SpeedSplitsDB = {
+                RunHistory = { { instanceName = "Old Run" } },
+                Settings = { speedrunMode = "last" },
+            }
+
+            NS.Migrations.ShouldWipeDataOnFirstLogin = function()
+                return true
+            end
+            NS.Migrations.BuildFreshDatabase = function()
+                return { __firstLoginWipeToken = "test-token" }
+            end
+
+            local db = NS.Database.EnsureDB()
+
+            System.AssertTrue(type(db.RunHistory) == "table" and #db.RunHistory == 0,
+                "EnsureDB rebuilds an empty latest-shape RunHistory after the wipe")
+            System.AssertTrue(type(db.Settings) == "table", "EnsureDB rebuilds the Settings table after the wipe")
+            System.AssertTrue(db.__firstLoginWipeApplied == true,
+                "EnsureDB persists a one-time marker after the first-login wipe", db.__firstLoginWipeApplied)
+            System.AssertEqual(db.SchemaVersion, NS.Migrations.CurrentSchemaVersion,
+                "EnsureDB reapplies the latest schema after the wipe")
+            System.AssertTrue(type(db.InstanceBestRoute) == "table",
+                "EnsureDB rebuilds the PB containers after the wipe", type(db.InstanceBestRoute))
+            System.EndSection("Force a first-login wipe during EnsureDB", "PASS")
+        end, function()
+            SpeedSplitsDB = oldSpeedSplitsDB
+            NS.DB = oldDB
+            NS.Migrations.ShouldWipeDataOnFirstLogin = oldShouldWipe
+            NS.Migrations.BuildFreshDatabase = oldBuildFresh
+        end)
+    end,
+})
+
+System.RegisterTest({
     id = "logic_reload_awareness_invalidates_in_instance_bootstrap_without_zone_change",
     suite = "Logic",
     subcategory = "Reload Awareness",
@@ -503,6 +549,71 @@ System.RegisterTest({
             NS.UI.SetTimerWarning = oldSetTimerWarning
             NS.UI.ClearTimerWarning = oldClearTimerWarning
             NS.UI.ResetRunPresentation = oldResetRunPresentation
+            NS.DB.Settings.visibility = oldVisibility
+            for key in pairs(NS.Run) do
+                NS.Run[key] = nil
+            end
+            for key, value in pairs(oldRunState) do
+                NS.Run[key] = value
+            end
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_reload_awareness_can_be_disabled_for_dev_tools",
+    suite = "Logic",
+    subcategory = "Reload Awareness",
+    name = "Bypasses invalid startup gating when reload awareness is disabled",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldIsInInstance = IsInInstance
+        local oldGetUnitSpeed = GetUnitSpeed
+        local oldBeginInstanceSession = NS.RunLogic.BeginInstanceSession
+        local oldEnsureUI = NS.UI.EnsureUI
+        local oldClearTimerWarning = NS.UI.ClearTimerWarning
+        local oldResetRunPresentation = NS.UI.ResetRunPresentation
+        local oldReloadAwarenessEnabled = NS.Debug.reloadAwarenessEnabled
+        local oldRunState = NS.Util.CopyTable(NS.Run)
+        local oldVisibility = NS.Util.CopyTable(NS.DB.Settings.visibility or {})
+        local began = 0
+
+        System.WithCleanup(function()
+            System.BeginSection("Disable reload awareness and bootstrap inside an instance")
+            NS.DB.Settings.visibility.timer = "instance"
+            NS.DB.Settings.visibility.splits = "instance"
+            NS.Debug.reloadAwarenessEnabled = false
+            IsInInstance = function()
+                return true
+            end
+            GetUnitSpeed = function()
+                return 0
+            end
+            NS.RunLogic.BeginInstanceSession = function()
+                began = began + 1
+            end
+            NS.UI.EnsureUI = function() end
+            NS.UI.ClearTimerWarning = function() end
+            NS.UI.ResetRunPresentation = function() end
+
+            if NS.RunLogic.ResetReloadAwareness then
+                NS.RunLogic.ResetReloadAwareness()
+            end
+            NS.RunLogic.ResetRun()
+            NS.App:GetScript("OnEvent")(NS.App, "PLAYER_ENTERING_WORLD")
+
+            System.AssertTrue(NS.Run.reloadInvalid ~= true, "Disabled reload awareness does not invalidate startup")
+            System.AssertEqual(began, 1, "Disabled reload awareness allows the normal instance session path")
+            System.EndSection("Disable reload awareness and bootstrap inside an instance", "PASS")
+        end, function()
+            IsInInstance = oldIsInInstance
+            GetUnitSpeed = oldGetUnitSpeed
+            NS.RunLogic.BeginInstanceSession = oldBeginInstanceSession
+            NS.UI.EnsureUI = oldEnsureUI
+            NS.UI.ClearTimerWarning = oldClearTimerWarning
+            NS.UI.ResetRunPresentation = oldResetRunPresentation
+            NS.Debug.reloadAwarenessEnabled = oldReloadAwarenessEnabled
             NS.DB.Settings.visibility = oldVisibility
             for key in pairs(NS.Run) do
                 NS.Run[key] = nil

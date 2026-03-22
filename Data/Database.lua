@@ -104,6 +104,11 @@ local function EnsureDB()
         SpeedSplitsDB = {}
     end
 
+    if NS.Migrations and NS.Migrations.ShouldWipeDataOnFirstLogin and
+        NS.Migrations.ShouldWipeDataOnFirstLogin(SpeedSplitsDB) then
+        SpeedSplitsDB = (NS.Migrations.BuildFreshDatabase and NS.Migrations.BuildFreshDatabase()) or {}
+    end
+
     ApplyForcedVersionResetIfNeeded()
 
     SpeedSplitsDB.RunHistory = SpeedSplitsDB.RunHistory or SpeedSplitsDB.runs or {}

@@ -10,3 +10,4 @@ end
 
 NS.Print = Print
 NS.Debug.objectiveTrace = NS.Debug.objectiveTrace or false
+NS.Debug.reloadAwarenessEnabled = NS.Debug.reloadAwarenessEnabled ~= false

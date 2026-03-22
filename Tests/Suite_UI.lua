@@ -53,10 +53,12 @@ System.RegisterTest({
         NS.UI.EnsureUI()
 
         System.BeginSection("Toggle timer warning mode")
-        NS.UI.SetTimerWarning("Cannot Reload during a Speedrun.\nThis run is invalid.")
+        NS.UI.SetTimerWarning(NS.Const.UI_TEXT.RELOAD_INVALID_WARNING)
         System.AssertTrue(NS.UI.IsTimerWarningActive() == true, "Timer warning is active after being set",
             NS.UI.IsTimerWarningActive())
         System.AssertTrue(NS.UI.timerWarningText:IsShown() == true, "Warning text is shown", NS.UI.timerWarningText:IsShown())
+        System.AssertTrue(NS.UI.timerWarningText:GetText():find("|cffff2020This run is invalid.|r", 1, true) ~= nil,
+            "The invalid-run line is colored red in the warning text", NS.UI.timerWarningText:GetText())
         System.AssertTrue(NS.UI.timerTextSec:IsShown() == false, "Seconds text hides while warning is active",
             NS.UI.timerTextSec:IsShown())
 

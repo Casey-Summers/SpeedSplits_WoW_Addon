@@ -62,6 +62,10 @@ local function ApplyReloadInvalidVisibility(timerVisible)
     end
 end
 
+local function IsReloadAwarenessEnabled()
+    return NS.Debug.reloadAwarenessEnabled ~= false
+end
+
 local function MarkReloadInvalid()
     DisableInstanceEvents()
     NS.Run.inInstance = true
@@ -84,7 +88,7 @@ function NS.RefreshVisibility()
     local inInstance = IsInInstance()
     local timerVisible, splitsVisible = EvaluateVisibility(NS.DB.Settings, inInstance)
 
-    if NS.Run.reloadInvalid then
+    if NS.Run.reloadInvalid and IsReloadAwarenessEnabled() then
         ApplyReloadInvalidVisibility(timerVisible)
         return timerVisible, false
     end
@@ -143,7 +147,11 @@ local function EnterOrUpdateWorld()
         return
     end
 
-    if not NS.Run.startupZoneSeen and not NS.Run.reloadGateResolved then
+    if not IsReloadAwarenessEnabled() then
+        NS.Run.reloadInvalid = false
+        NS.Run.reloadGateResolved = true
+        NS.Run.startupZoneSeen = true
+    elseif not NS.Run.startupZoneSeen and not NS.Run.reloadGateResolved then
         MarkReloadInvalid()
         return
     end

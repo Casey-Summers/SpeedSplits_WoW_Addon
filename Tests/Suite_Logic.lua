@@ -626,6 +626,79 @@ System.RegisterTest({
 })
 
 System.RegisterTest({
+    id = "logic_dev_tools_toggle_reload_awareness_recovers_invalid_startup",
+    suite = "Logic",
+    subcategory = "Reload Awareness",
+    name = "Dev toggle recovers a blocked reload-invalid startup inside an instance",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldHandleWorldEntry = NS.HandleWorldEntry
+        local oldReloadAwarenessEnabled = NS.Debug.reloadAwarenessEnabled
+        local oldRunState = NS.Util.CopyTable(NS.Run)
+        local recovered = 0
+
+        System.WithCleanup(function()
+            System.BeginSection("Disable reload awareness through dev tools after a blocked startup")
+            NS.Debug.reloadAwarenessEnabled = true
+            NS.Run.reloadInvalid = true
+            NS.Run.reloadGateResolved = false
+            NS.Run.inInstance = true
+            NS.HandleWorldEntry = function()
+                recovered = recovered + 1
+                NS.Run.reloadInvalid = false
+                NS.Run.reloadGateResolved = true
+            end
+
+            local enabled = NS.DevTools.ToggleReloadAwareness()
+
+            System.AssertTrue(enabled == false, "Dev toggle disables reload awareness", enabled)
+            System.AssertEqual(recovered, 1, "Blocked startup is re-evaluated immediately", recovered)
+            System.AssertTrue(NS.Run.reloadInvalid ~= true, "Blocked startup is cleared after disabling reload awareness")
+            System.EndSection("Disable reload awareness through dev tools after a blocked startup", "PASS")
+        end, function()
+            NS.HandleWorldEntry = oldHandleWorldEntry
+            NS.Debug.reloadAwarenessEnabled = oldReloadAwarenessEnabled
+            for key in pairs(NS.Run) do
+                NS.Run[key] = nil
+            end
+            for key, value in pairs(oldRunState) do
+                NS.Run[key] = value
+            end
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_dev_tools_toggle_reload_awareness_persists_in_settings",
+    suite = "Logic",
+    subcategory = "Reload Awareness",
+    name = "Dev toggle persists reload awareness in saved settings",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldReloadAwarenessEnabled = NS.Debug.reloadAwarenessEnabled
+        local oldSavedValue = NS.DB.Settings.reloadAwarenessEnabled
+
+        System.WithCleanup(function()
+            System.BeginSection("Persist reload awareness through the dev toggle")
+            NS.Debug.reloadAwarenessEnabled = true
+            NS.DB.Settings.reloadAwarenessEnabled = true
+
+            local enabled = NS.DevTools.ToggleReloadAwareness()
+
+            System.AssertTrue(enabled == false, "Dev toggle returns the new disabled state", enabled)
+            System.AssertTrue(NS.Debug.reloadAwarenessEnabled == false, "Live reload awareness state is disabled")
+            System.AssertTrue(NS.DB.Settings.reloadAwarenessEnabled == false, "Saved reload awareness state is disabled")
+            System.EndSection("Persist reload awareness through the dev toggle", "PASS")
+        end, function()
+            NS.Debug.reloadAwarenessEnabled = oldReloadAwarenessEnabled
+            NS.DB.Settings.reloadAwarenessEnabled = oldSavedValue
+        end)
+    end,
+})
+
+System.RegisterTest({
     id = "logic_layout_initialize_migrates_legacy_shape",
     suite = "Logic",
     subcategory = "Layout Reset",

@@ -36,6 +36,7 @@ NS.FactoryDefaults = {
             timer = "instance",
             splits = "instance",
         },
+        reloadAwarenessEnabled = true,
         speedrunMode = "all",
         showNPCViewModels = false,
     },

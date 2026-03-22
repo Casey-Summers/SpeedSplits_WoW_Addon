@@ -147,6 +147,9 @@ local function EnsureDB()
     settings.toastSoundName = settings.toastSoundName or fallbacks.toastSoundName
     settings.toastVolume = settings.toastVolume or fallbacks.toastVolume
     settings.visibility = settings.visibility or Util.CopyTable(fallbacks.visibility)
+    if settings.reloadAwarenessEnabled == nil then
+        settings.reloadAwarenessEnabled = fallbacks.reloadAwarenessEnabled
+    end
     settings.speedrunMode = settings.speedrunMode or fallbacks.speedrunMode
     if settings.showNPCViewModels == nil then
         settings.showNPCViewModels = fallbacks.showNPCViewModels

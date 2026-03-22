@@ -172,6 +172,8 @@ local function EnterOrUpdateWorld()
     end
 end
 
+NS.HandleWorldEntry = EnterOrUpdateWorld
+
 App:SetScript("OnEvent", function(_, event, ...)
     if event == "ADDON_LOADED" then
         local loadedName = ...
@@ -179,6 +181,9 @@ App:SetScript("OnEvent", function(_, event, ...)
             return
         end
         NS.Database.EnsureDB()
+        if NS.DB and NS.DB.Settings then
+            NS.Debug.reloadAwarenessEnabled = NS.DB.Settings.reloadAwarenessEnabled ~= false
+        end
         if NS.RunLogic.ResetReloadAwareness then
             NS.RunLogic.ResetReloadAwareness()
         end

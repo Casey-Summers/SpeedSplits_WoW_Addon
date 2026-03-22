@@ -1,7 +1,6 @@
 local _, NS = ...
 
 local UI = NS.UI
-local Util = NS.Util
 local Colors = NS.Colors
 
 function NS.ApplyFontToFS(fs, typeKey, multiplier)
@@ -27,146 +26,260 @@ function NS.ApplyFontToFS(fs, typeKey, multiplier)
     end
 end
 
-local function GetDecimalAlignedParts(value)
-    value = tostring(value or "")
-    if value == "" then
-        return "", "", ""
-    end
-
-    local decimalIndex = string.find(value, "%.")
-    if not decimalIndex then
-        return value, "", ""
-    end
-
-    return string.sub(value, 1, decimalIndex - 1), ".", string.sub(value, decimalIndex + 1)
-end
-
-function UI.EnsureDecimalAlignedText(host, key)
+local function GetAlignedTimeGroupStore(host)
     if not host then
         return nil
     end
 
-    host._ssDecimalText = host._ssDecimalText or {}
-    local entry = host._ssDecimalText[key]
+    host._ssAlignedTimeGroups = host._ssAlignedTimeGroups or {}
+    host._ssNumericCellParts = host._ssAlignedTimeGroups
+    host._ssDecimalText = host._ssAlignedTimeGroups
+    return host._ssAlignedTimeGroups
+end
+
+local function SetPartColor(entry, color)
+    local active = color or Colors.white
+    local r = active.r or 1
+    local g = active.g or 1
+    local b = active.b or 1
+    local a = active.a or 1
+
+    entry.sign:SetTextColor(r, g, b, a)
+    entry.minute:SetTextColor(r, g, b, a)
+    entry.colon:SetTextColor(r, g, b, a)
+    entry.second:SetTextColor(r, g, b, a)
+    entry.decimal:SetTextColor(r, g, b, a)
+    entry.millis:SetTextColor(r, g, b, a)
+end
+
+local function ClearAlignedTimeGroup(entry)
+    entry.sign:SetText("")
+    entry.minute:SetText("")
+    entry.colon:SetText("")
+    entry.second:SetText("")
+    entry.decimal:SetText("")
+    entry.millis:SetText("")
+    entry.sign:Hide()
+    entry.minute:Hide()
+    entry.colon:Hide()
+    entry.second:Hide()
+    entry.decimal:Hide()
+    entry.millis:Hide()
+end
+
+local function ApplyAlignedTimeAnchors(host, entry)
+    if not host or not entry then
+        return
+    end
+
+    local spec = entry.layoutSpec or {}
+    local signLeft = tonumber(spec.signLeft) or 0
+    local signWidth = tonumber(spec.signWidth) or 0
+    local minuteRight = tonumber(spec.minuteRight) or 0
+    local minuteBaseWidth = tonumber(spec.minuteBaseWidth) or 0
+    local overflowWidth = tonumber(entry.minuteOverflowWidth) or 0
+    local minuteWidth = minuteBaseWidth + overflowWidth
+    local colonLeft = tonumber(spec.colonLeft) or 0
+    local colonWidth = tonumber(spec.colonWidth) or 0
+    local secondLeft = tonumber(spec.secondLeft) or 0
+    local secondWidth = tonumber(spec.secondWidth) or 0
+    local decimalLeft = tonumber(spec.decimalLeft) or 0
+    local decimalWidth = tonumber(spec.decimalWidth) or 0
+    local millisLeft = tonumber(spec.millisLeft) or 0
+    local millisWidth = tonumber(spec.millisWidth) or 0
+
+    entry.sign:ClearAllPoints()
+    entry.minute:ClearAllPoints()
+    entry.colon:ClearAllPoints()
+    entry.second:ClearAllPoints()
+    entry.decimal:ClearAllPoints()
+    entry.millis:ClearAllPoints()
+
+    if signWidth > 0 then
+        entry.sign:SetJustifyH("RIGHT")
+        entry.sign:SetPoint("TOPLEFT", host, "TOPLEFT", signLeft, -1)
+        entry.sign:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", signLeft, 1)
+        entry.sign:SetWidth(signWidth)
+    else
+        entry.sign:SetWidth(0.1)
+    end
+
+    entry.minute:SetJustifyH("RIGHT")
+    entry.minute:SetPoint("TOPLEFT", host, "TOPLEFT", minuteRight - minuteWidth, -1)
+    entry.minute:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", minuteRight - minuteWidth, 1)
+    entry.minute:SetWidth(minuteWidth)
+
+    entry.colon:SetJustifyH("CENTER")
+    entry.colon:SetPoint("TOPLEFT", host, "TOPLEFT", colonLeft, -1)
+    entry.colon:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", colonLeft, 1)
+    entry.colon:SetWidth(colonWidth)
+
+    entry.second:SetJustifyH("RIGHT")
+    entry.second:SetPoint("TOPLEFT", host, "TOPLEFT", secondLeft, -1)
+    entry.second:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", secondLeft, 1)
+    entry.second:SetWidth(secondWidth)
+
+    entry.decimal:SetJustifyH("CENTER")
+    entry.decimal:SetPoint("TOPLEFT", host, "TOPLEFT", decimalLeft, -1)
+    entry.decimal:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", decimalLeft, 1)
+    entry.decimal:SetWidth(decimalWidth)
+
+    entry.millis:SetJustifyH("LEFT")
+    entry.millis:SetPoint("TOPLEFT", host, "TOPLEFT", millisLeft, -1)
+    entry.millis:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", millisLeft, 1)
+    entry.millis:SetWidth(millisWidth)
+end
+
+function UI.EnsureAlignedTimeGroup(host, key)
+    if not host then
+        return nil
+    end
+
+    local store = GetAlignedTimeGroupStore(host)
+    local entry = store[key]
     if entry then
         return entry
     end
 
-    local prefix = host:CreateFontString(nil, "OVERLAY")
-    prefix:SetJustifyH("RIGHT")
-    prefix:SetJustifyV("MIDDLE")
-    prefix:SetWordWrap(false)
+    local sign = host:CreateFontString(nil, "OVERLAY")
+    sign:SetJustifyV("MIDDLE")
+    sign:SetWordWrap(false)
+
+    local minute = host:CreateFontString(nil, "OVERLAY")
+    minute:SetJustifyV("MIDDLE")
+    minute:SetWordWrap(false)
+
+    local colon = host:CreateFontString(nil, "OVERLAY")
+    colon:SetJustifyV("MIDDLE")
+    colon:SetWordWrap(false)
+
+    local second = host:CreateFontString(nil, "OVERLAY")
+    second:SetJustifyV("MIDDLE")
+    second:SetWordWrap(false)
 
     local decimal = host:CreateFontString(nil, "OVERLAY")
-    decimal:SetJustifyH("CENTER")
     decimal:SetJustifyV("MIDDLE")
     decimal:SetWordWrap(false)
 
-    local suffix = host:CreateFontString(nil, "OVERLAY")
-    suffix:SetJustifyH("LEFT")
-    suffix:SetJustifyV("MIDDLE")
-    suffix:SetWordWrap(false)
+    local millis = host:CreateFontString(nil, "OVERLAY")
+    millis:SetJustifyV("MIDDLE")
+    millis:SetWordWrap(false)
 
     entry = {
-        prefix = prefix,
+        sign = sign,
+        minute = minute,
+        colon = colon,
+        second = second,
         decimal = decimal,
-        suffix = suffix,
-        pivotX = 0,
-        boundsLeft = 0,
-        boundsRight = 0,
+        millis = millis,
+        layoutSpec = nil,
+        minuteOverflowWidth = 0,
+        prefix = minute,
+        suffix = millis,
     }
-    host._ssDecimalText[key] = entry
+    store[key] = entry
     return entry
 end
 
-function UI.HideDecimalAlignedText(host, key)
-    local entry = host and host._ssDecimalText and host._ssDecimalText[key]
+function UI.HideAlignedTimeGroup(host, key)
+    local store = host and host._ssAlignedTimeGroups
+    local entry = store and store[key]
     if not entry then
         return
     end
-
-    entry.prefix:SetText("")
-    entry.decimal:SetText("")
-    entry.suffix:SetText("")
-    entry.prefix:Hide()
-    entry.decimal:Hide()
-    entry.suffix:Hide()
+    ClearAlignedTimeGroup(entry)
 end
 
-function UI.SetDecimalAlignedText(host, key, value, fontType, color, pivotX, boundsLeft, boundsRight)
-    local entry = UI.EnsureDecimalAlignedText(host, key)
+function UI.ApplyAlignedTimeGroupLayout(host, key, spec)
+    local entry = UI.EnsureAlignedTimeGroup(host, key)
     if not entry then
         return nil
     end
 
-    local prefixText, decimalText, suffixText = GetDecimalAlignedParts(value)
-    local left = tonumber(boundsLeft) or 0
-    local right = tonumber(boundsRight) or 0
-    local pivot = tonumber(pivotX) or 0
+    entry.layoutSpec = spec or entry.layoutSpec or {}
+    ApplyAlignedTimeAnchors(host, entry)
+    return entry
+end
 
-    entry.pivotX = pivot
-    entry.boundsLeft = left
-    entry.boundsRight = right
+UI.HideNumericCellParts = UI.HideAlignedTimeGroup
+UI.ApplyNumericCellLayout = UI.ApplyAlignedTimeGroupLayout
 
-    local prefix = entry.prefix
-    local decimal = entry.decimal
-    local suffix = entry.suffix
-
-    NS.ApplyFontToFS(prefix, fontType)
-    NS.ApplyFontToFS(decimal, fontType)
-    NS.ApplyFontToFS(suffix, fontType)
-
-    local active = color or Colors.white
-    prefix:SetTextColor(active.r or 1, active.g or 1, active.b or 1, active.a or 1)
-    decimal:SetTextColor(active.r or 1, active.g or 1, active.b or 1, active.a or 1)
-    suffix:SetTextColor(active.r or 1, active.g or 1, active.b or 1, active.a or 1)
-
-    decimal:ClearAllPoints()
-    decimal:SetPoint("CENTER", host, "LEFT", pivot, 0)
-    decimal:SetText(decimalText or "")
-
-    prefix:ClearAllPoints()
-    prefix:SetPoint("TOPLEFT", host, "TOPLEFT", left, -1)
-    if decimalText ~= "" then
-        prefix:SetPoint("BOTTOMRIGHT", decimal, "BOTTOMLEFT", 0, 0)
-    else
-        prefix:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", right, 1)
-    end
-    prefix:SetText(prefixText or "")
-
-    suffix:ClearAllPoints()
-    if decimalText ~= "" then
-        suffix:SetPoint("TOPLEFT", decimal, "TOPRIGHT", 0, 0)
-    else
-        suffix:SetPoint("TOPLEFT", host, "TOPLEFT", pivot, -1)
-    end
-    suffix:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", right, 1)
-    suffix:SetText(suffixText or "")
-
-    if prefixText == "" then
-        prefix:Hide()
-    else
-        prefix:Show()
+function UI.SetAlignedTimeGroupValue(host, key, parts, fontType, color)
+    local entry = UI.EnsureAlignedTimeGroup(host, key)
+    if not entry then
+        return nil
     end
 
-    if decimalText == "" then
-        decimal:Hide()
-    else
-        decimal:Show()
+    parts = type(parts) == "table" and parts or {}
+
+    NS.ApplyFontToFS(entry.sign, fontType)
+    NS.ApplyFontToFS(entry.minute, fontType)
+    NS.ApplyFontToFS(entry.colon, fontType)
+    NS.ApplyFontToFS(entry.second, fontType)
+    NS.ApplyFontToFS(entry.decimal, fontType)
+    NS.ApplyFontToFS(entry.millis, fontType)
+    SetPartColor(entry, color)
+
+    if parts.showGroup == false then
+        entry.minuteOverflowWidth = 0
+        ApplyAlignedTimeAnchors(host, entry)
+        ClearAlignedTimeGroup(entry)
+        return entry
     end
 
-    if suffixText == "" then
-        suffix:Hide()
+    local spec = entry.layoutSpec or {}
+    local extraMinuteDigits = math.max((tonumber(parts.minuteDigits) or 2) - 2, 0)
+    entry.minuteOverflowWidth = extraMinuteDigits * (tonumber(spec.digitWidth) or 0)
+
+    ApplyAlignedTimeAnchors(host, entry)
+
+    entry.sign:SetText(parts.signText or "")
+    entry.minute:SetText(parts.minuteText or "")
+    entry.colon:SetText(parts.colonText or ":")
+    entry.second:SetText(parts.secondText or "")
+    entry.decimal:SetText(parts.decimalText or ".")
+    entry.millis:SetText(parts.millisText or "")
+
+    if entry.sign:GetText() == "" then
+        entry.sign:Hide()
     else
-        suffix:Show()
+        entry.sign:Show()
+    end
+
+    if parts.showMinute and entry.minute:GetText() ~= "" then
+        entry.minute:Show()
+    else
+        entry.minute:Hide()
+    end
+
+    if parts.showColon then
+        entry.colon:Show()
+    else
+        entry.colon:Hide()
+    end
+
+    if entry.second:GetText() == "" then
+        entry.second:Hide()
+    else
+        entry.second:Show()
+    end
+
+    if entry.decimal:GetText() == "" then
+        entry.decimal:Hide()
+    else
+        entry.decimal:Show()
+    end
+
+    if entry.millis:GetText() == "" then
+        entry.millis:Hide()
+    else
+        entry.millis:Show()
     end
 
     return entry
 end
 
-function UI.GetDecimalAlignedParts(value)
-    return GetDecimalAlignedParts(value)
-end
+UI.SetNumericCellValue = UI.SetAlignedTimeGroupValue
 
 function UI.ApplyThinSeparator(grip)
     if grip._line then

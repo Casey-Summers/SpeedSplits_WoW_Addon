@@ -13,6 +13,31 @@ local function GetDisplayDataIndex(column)
     return nil
 end
 
+local function GetAlignedTimeSpecKey(dataIndex)
+    if dataIndex == 2 then
+        return "pb"
+    elseif dataIndex == 3 then
+        return "split"
+    elseif dataIndex == 4 then
+        return "diff"
+    end
+    return nil
+end
+
+local function BuildCellParts(cell)
+    if not cell then
+        return nil
+    end
+
+    if Util.BuildAlignedTimeParts then
+        return Util.BuildAlignedTimeParts(cell.rawSeconds, {
+            kind = cell.displayKind or "empty",
+            placeholderMillis = cell.placeholderMillis,
+        })
+    end
+    return nil
+end
+
 local function GetVisibleRowModel(rowFrame)
     if not rowFrame then
         return nil
@@ -106,7 +131,7 @@ local function Num_DoCellUpdate(rowFrame, cellFrame, data, cols, row, realrow, c
             cellFrame.text:SetText("")
         end
         if cellFrame then
-            UI.HideDecimalAlignedText(cellFrame, "num")
+            UI.HideNumericCellParts(cellFrame, "num")
         end
         return
     end
@@ -134,28 +159,13 @@ local function Num_DoCellUpdate(rowFrame, cellFrame, data, cols, row, realrow, c
     end
 
     cellFrame:SetClipsChildren(false)
-    local width = cellFrame.GetWidth and cellFrame:GetWidth() or (cols[column] and cols[column].width) or 0
-    local leftPadding = 4
-    local rightPadding = -4
-    local pivotX = math.floor((width or 0) / 2 + 0.5)
-    local decimalText = UI.SetDecimalAlignedText(
-        cellFrame,
-        "num",
-        cell.value or "",
-        "num",
-        activeColor,
-        pivotX,
-        leftPadding,
-        rightPadding
-    )
-
-    if decimalText then
-        decimalText.prefix:Show()
-        if decimalText.suffix:GetText() == "" then
-            decimalText.suffix:Hide()
-        else
-            decimalText.suffix:Show()
-        end
+    local layoutKey = GetAlignedTimeSpecKey(dataIndex)
+    local layoutSpec = layoutKey and UI.GetAlignedTimeSpec and UI.GetAlignedTimeSpec(layoutKey) or nil
+    if UI.ApplyAlignedTimeGroupLayout then
+        UI.ApplyAlignedTimeGroupLayout(cellFrame, "num", layoutSpec)
+    end
+    if UI.SetAlignedTimeGroupValue then
+        UI.SetAlignedTimeGroupValue(cellFrame, "num", BuildCellParts(cell), "num", activeColor)
     end
 end
 
@@ -268,22 +278,37 @@ local function ApplyRowState(row, rowState)
     local color = rowState and rowState.color or nil
 
     row.cols[2].value = (pbTime and pbTime > 0) and Util.FormatTime(pbTime) or "--:--.---"
+    row.cols[2].rawSeconds = pbTime
+    row.cols[2].displayKind = (pbTime and pbTime > 0) and "time" or "placeholder"
+    row.cols[2].placeholderMillis = 3
     row.cols[2].color = isIgnored and ignoredColor or Colors.gold
 
     if splitTime == nil then
         row.cols[3].value = ""
+        row.cols[3].rawSeconds = nil
+        row.cols[3].displayKind = "empty"
+        row.cols[3].placeholderMillis = 3
         row.cols[3].color = nil
     else
         row.cols[3].value = Util.FormatTime(splitTime)
+        row.cols[3].rawSeconds = splitTime
+        row.cols[3].displayKind = "time"
+        row.cols[3].placeholderMillis = 3
         row.cols[3].color = isIgnored and ignoredColor or
             (color and { r = color.r, g = color.g, b = color.b, a = 1 } or Colors.white)
     end
 
     if diffTime == nil then
         row.cols[4].value = ""
+        row.cols[4].rawSeconds = nil
+        row.cols[4].displayKind = "empty"
+        row.cols[4].placeholderMillis = 3
         row.cols[4].color = nil
     else
         row.cols[4].value = Util.FormatDelta(diffTime)
+        row.cols[4].rawSeconds = diffTime
+        row.cols[4].displayKind = "delta"
+        row.cols[4].placeholderMillis = 3
         row.cols[4].color = isIgnored and ignoredColor or
             (color and { r = color.r, g = color.g, b = color.b, a = 1 } or Colors.white)
     end
@@ -318,10 +343,13 @@ local function RefreshBossTableData(entries, presentation)
                 { value = entry.name or "Unknown" },
                 {
                     value = (cumulativePB and cumulativePB > 0) and Util.FormatTime(cumulativePB) or "--:--.---",
+                    rawSeconds = cumulativePB,
+                    displayKind = (cumulativePB and cumulativePB > 0) and "time" or "placeholder",
+                    placeholderMillis = 3,
                     color = isIgnored and { r = 0.4, g = 0.4, b = 0.4, a = 1 } or Colors.gold,
                 },
-                { value = "" },
-                { value = "" },
+                { value = "", rawSeconds = nil, displayKind = "empty", placeholderMillis = 3 },
+                { value = "", rawSeconds = nil, displayKind = "empty", placeholderMillis = 3 },
             },
         }
         map[entry.key] = #data

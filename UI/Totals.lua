@@ -33,17 +33,17 @@ local function SetSummaryText(target, value, color)
     target._text = tostring(value or "")
     target._color = color or target._color or NS.Colors.white
 
-    if UI.SetDecimalAlignedText then
-        UI.SetDecimalAlignedText(
-            target,
-            "summary",
-            target._text,
-            "num",
-            target._color,
-            target._pivotX or math.floor((target:GetWidth() or 0) / 2 + 0.5),
-            0,
-            0
-        )
+    if UI.ApplyAlignedTimeGroupLayout then
+        local layoutKey = target._ssAlignedTimeSpecKey
+        local layoutSpec = layoutKey and UI.GetAlignedTimeSpec and UI.GetAlignedTimeSpec(layoutKey) or nil
+        UI.ApplyAlignedTimeGroupLayout(target, "summary", layoutSpec)
+    end
+    if UI.SetAlignedTimeGroupValue then
+        local parts = Util.BuildAlignedTimeParts(target._rawSeconds, {
+            kind = target._displayKind or "placeholder",
+            placeholderMillis = target._placeholderMillis or 2,
+        })
+        UI.SetAlignedTimeGroupValue(target, "summary", parts, "num", target._color)
     end
 end
 
@@ -53,23 +53,41 @@ local function SetTotals(pbTotal, splitTotal, diffTotal, splitColor, diffColor)
     end
 
     if pbTotal == nil then
+        UI.totalPB._rawSeconds = nil
+        UI.totalPB._displayKind = "placeholder"
+        UI.totalPB._placeholderMillis = 2
         SetSummaryText(UI.totalPB, SECTION_TOTAL_PLACEHOLDER, NS.Colors.gold)
     else
+        UI.totalPB._rawSeconds = pbTotal
+        UI.totalPB._displayKind = "time"
+        UI.totalPB._placeholderMillis = 2
         SetSummaryText(UI.totalPB, Util.FormatTime(pbTotal), NS.Colors.gold)
     end
     SetTextColor(UI.totalPB, NS.Colors.gold, NS.Colors.gold)
 
     if splitTotal == nil then
+        UI.totalSplit._rawSeconds = nil
+        UI.totalSplit._displayKind = "placeholder"
+        UI.totalSplit._placeholderMillis = 2
         SetSummaryText(UI.totalSplit, SECTION_TOTAL_PLACEHOLDER, NS.Colors.white)
         SetTextColor(UI.totalSplit, nil, NS.Colors.white)
     else
+        UI.totalSplit._rawSeconds = splitTotal
+        UI.totalSplit._displayKind = "time"
+        UI.totalSplit._placeholderMillis = 2
         SetSummaryText(UI.totalSplit, Util.FormatTime(splitTotal), splitColor or NS.Colors.white)
         SetTextColor(UI.totalSplit, splitColor, NS.Colors.white)
     end
 
     if diffTotal == nil then
+        UI.totalDelta._rawSeconds = nil
+        UI.totalDelta._displayKind = "placeholder"
+        UI.totalDelta._placeholderMillis = 2
         SetSummaryText(UI.totalDelta, SECTION_TOTAL_PLACEHOLDER, diffColor or NS.Colors.white)
     else
+        UI.totalDelta._rawSeconds = diffTotal
+        UI.totalDelta._displayKind = "delta"
+        UI.totalDelta._placeholderMillis = 2
         SetSummaryText(UI.totalDelta, Util.FormatDelta(diffTotal), diffColor or NS.Colors.white)
         SetTextColor(UI.totalDelta, diffColor, NS.Colors.white)
     end

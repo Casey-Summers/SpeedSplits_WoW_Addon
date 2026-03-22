@@ -405,10 +405,14 @@ function UI.EnsureUI()
     historyButton:SetPoint("LEFT", logoText, "RIGHT", 8, 0)
     UI.historyButton = historyButton
 
-    local function CreateTotalHost()
+    local function CreateTotalHost(layoutKey)
         local host = CreateFrame("Frame", nil, totalFrame)
         host:SetHeight(24)
+        host._ssAlignedTimeSpecKey = layoutKey
         host._text = ""
+        host._rawSeconds = nil
+        host._displayKind = "placeholder"
+        host._placeholderMillis = 2
         host.SetText = function(self, value)
             self._text = tostring(value or "")
             if UI.SetTotalSummaryText then
@@ -427,17 +431,17 @@ function UI.EnsureUI()
         return host
     end
 
-    local totalPB = CreateTotalHost()
+    local totalPB = CreateTotalHost("footerPB")
     UI.totalPB = totalPB
     totalPB:SetText(SECTION_TOTAL_PLACEHOLDER)
     totalPB:SetTextColor(NS.Colors.gold.r, NS.Colors.gold.g, NS.Colors.gold.b, NS.Colors.gold.a or 1)
 
-    local totalSplit = CreateTotalHost()
+    local totalSplit = CreateTotalHost("footerSplit")
     UI.totalSplit = totalSplit
     totalSplit:SetText(SECTION_TOTAL_PLACEHOLDER)
     totalSplit:SetTextColor(NS.Colors.white.r, NS.Colors.white.g, NS.Colors.white.b, NS.Colors.white.a or 1)
 
-    local totalDelta = CreateTotalHost()
+    local totalDelta = CreateTotalHost("footerDiff")
     UI.totalDelta = totalDelta
     totalDelta:SetText(SECTION_TOTAL_PLACEHOLDER)
     totalDelta:SetTextColor(NS.Colors.white.r, NS.Colors.white.g, NS.Colors.white.b, NS.Colors.white.a or 1)
@@ -549,6 +553,7 @@ function NS.UpdateFontsOnly()
 
     if UI.killCountCounterText then NS.ApplyFontToFS(UI.killCountCounterText, "counter", 0.95) end
     if UI.killCountText then NS.ApplyFontToFS(UI.killCountText, "header", 0.9) end
+    if UI.ApplyTableLayout then UI.ApplyTableLayout() end
     if UI.totalPB and UI.SetTotalSummaryText then UI.SetTotalSummaryText(UI.totalPB, UI.totalPB:GetText(), UI.totalPB._color) end
     if UI.totalSplit and UI.SetTotalSummaryText then UI.SetTotalSummaryText(UI.totalSplit, UI.totalSplit:GetText(), UI.totalSplit._color) end
     if UI.totalDelta and UI.SetTotalSummaryText then UI.SetTotalSummaryText(UI.totalDelta, UI.totalDelta:GetText(), UI.totalDelta._color) end
@@ -605,9 +610,7 @@ function NS.RefreshAllUI()
     end
     UI.RefreshBossTableData(NS.Run.entries or {}, presentation)
 
-    if NS.Run.entries and #NS.Run.entries > 0 then
-        UI.RefreshTotals(not NS.Run.active and NS.Run.endGameTime > 0)
-    end
+    UI.RefreshTotals(not NS.Run.active and NS.Run.endGameTime > 0)
 
     if not NS.Run.active and NS.Run.endGameTime > 0 then
         UI.SetTimerText(NS.Run.endGameTime - NS.Run.startGameTime, true)

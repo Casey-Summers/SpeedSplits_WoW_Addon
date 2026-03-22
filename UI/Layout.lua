@@ -535,6 +535,85 @@ local function GetScrollBarInset()
     return UI._rightInset or 2
 end
 
+local function GetNumericMeasureFontString()
+    UI._numericMeasureFrame = UI._numericMeasureFrame or CreateFrame("Frame", nil, UIParent)
+    if not UI._numericMeasureFrame.fs then
+        UI._numericMeasureFrame.fs = UI._numericMeasureFrame:CreateFontString(nil, "OVERLAY")
+    end
+    return UI._numericMeasureFrame.fs
+end
+
+local function MeasureNumericTextWidth(text)
+    local fs = GetNumericMeasureFontString()
+    NS.ApplyFontToFS(fs, "num")
+    fs:SetText(text or "")
+    return math.ceil((fs.GetStringWidth and fs:GetStringWidth()) or 0)
+end
+
+local function GetAlignedTimeMetrics()
+    local metrics = {
+        minuteWidth = MeasureNumericTextWidth("88"),
+        secondWidth = MeasureNumericTextWidth("88"),
+        millisWidth = MeasureNumericTextWidth("888"),
+        signWidth = MeasureNumericTextWidth("+"),
+        colonWidth = MeasureNumericTextWidth(":"),
+        decimalWidth = MeasureNumericTextWidth("."),
+        digitWidth = MeasureNumericTextWidth("8"),
+    }
+    metrics.digitWidth = math.max(1, metrics.digitWidth)
+    metrics.symbolPad = 1
+    return metrics
+end
+
+local function BuildAlignedTimeSpec(width, metrics, hasSign)
+    width = tonumber(width) or 0
+    metrics = metrics or GetAlignedTimeMetrics()
+    local signWidth = hasSign and metrics.signWidth or 0
+    local minuteWidth = metrics.minuteWidth
+    local colonWidth = metrics.colonWidth
+    local secondWidth = metrics.secondWidth
+    local decimalWidth = metrics.decimalWidth
+    local millisWidth = metrics.millisWidth
+    local symbolPad = metrics.symbolPad
+    local decimalCenterX = math.floor((width / 2) + 0.5)
+    local decimalLeft = decimalCenterX - (decimalWidth / 2)
+    local secondLeft = decimalLeft - symbolPad - secondWidth
+    local colonLeft = secondLeft - symbolPad - colonWidth
+    local minuteLeft = colonLeft - symbolPad - minuteWidth
+    local signLeft = minuteLeft - signWidth
+    local millisLeft = decimalLeft + decimalWidth + symbolPad
+    local groupLeft = signWidth > 0 and signLeft or minuteLeft
+    local groupWidth = (millisLeft + millisWidth) - groupLeft
+
+    return {
+        hostWidth = width,
+        groupWidth = groupWidth,
+        groupLeft = groupLeft,
+        signLeft = signLeft,
+        signWidth = signWidth,
+        minuteLeft = minuteLeft,
+        minuteBaseWidth = minuteWidth,
+        minuteRight = minuteLeft + minuteWidth,
+        colonLeft = colonLeft,
+        colonWidth = colonWidth,
+        secondLeft = secondLeft,
+        secondWidth = secondWidth,
+        decimalLeft = decimalLeft,
+        decimalWidth = decimalWidth,
+        decimalCenterX = decimalCenterX,
+        millisLeft = millisLeft,
+        millisWidth = millisWidth,
+        symbolPad = symbolPad,
+        digitWidth = metrics.digitWidth,
+        rightGutter = UI._rightInset or 0,
+        overflowPolicy = "grow_left",
+    }
+end
+
+local function GetAlignedTimeSpec(key)
+    return UI._alignedTimeSpecs and UI._alignedTimeSpecs[key] or nil
+end
+
 local function ApplyTableLayout()
     if not UI.bossFrame or not UI.st or not UI.cols then
         return
@@ -604,6 +683,16 @@ local function ApplyTableLayout()
     UI.cols[2].width = UI._pbWidth
     UI.cols[3].width = UI._splitWidth
     UI.cols[4].width = UI._deltaWidth
+    local metrics = GetAlignedTimeMetrics()
+    UI._alignedTimeMetrics = metrics
+    UI._alignedTimeSpecs = {
+        pb = BuildAlignedTimeSpec(UI._pbWidth, metrics, false),
+        split = BuildAlignedTimeSpec(UI._splitWidth, metrics, false),
+        diff = BuildAlignedTimeSpec(UI._deltaWidth, metrics, true),
+        footerPB = BuildAlignedTimeSpec(UI._pbWidth, metrics, false),
+        footerSplit = BuildAlignedTimeSpec(UI._splitWidth, metrics, false),
+        footerDiff = BuildAlignedTimeSpec(UI._deltaWidth, metrics, true),
+    }
 
     if UI.customBossHeaders then
         local headerLeft = 0
@@ -638,17 +727,13 @@ local function ApplyTableLayout()
         local xPBLeft = xBossRight
         local xSplitLeft = xPBLeft + UI._pbWidth
         local xDiffLeft = xSplitLeft + UI._splitWidth
-        UI._columnDecimalPivots = {
-            pb = xPBLeft + (UI._pbWidth / 2),
-            split = xSplitLeft + (UI._splitWidth / 2),
-            diff = xDiffLeft + (UI._deltaWidth / 2),
-        }
-
         UI.totalDelta:ClearAllPoints()
         UI.totalDelta:SetPoint("TOPLEFT", UI.totalFrame, "TOPLEFT", xDiffLeft, 0)
         UI.totalDelta:SetPoint("BOTTOMLEFT", UI.totalFrame, "BOTTOMLEFT", xDiffLeft, 0)
         UI.totalDelta:SetWidth(UI._deltaWidth)
-        UI.totalDelta._pivotX = UI._deltaWidth / 2
+        if UI.ApplyAlignedTimeGroupLayout then
+            UI.ApplyAlignedTimeGroupLayout(UI.totalDelta, "summary", UI._alignedTimeSpecs.footerDiff)
+        end
         if UI.SetTotalSummaryText then
             UI.SetTotalSummaryText(UI.totalDelta, UI.totalDelta:GetText(), UI.totalDelta._color)
         end
@@ -657,7 +742,9 @@ local function ApplyTableLayout()
         UI.totalSplit:SetPoint("TOPLEFT", UI.totalFrame, "TOPLEFT", xSplitLeft, 0)
         UI.totalSplit:SetPoint("BOTTOMLEFT", UI.totalFrame, "BOTTOMLEFT", xSplitLeft, 0)
         UI.totalSplit:SetWidth(UI._splitWidth)
-        UI.totalSplit._pivotX = UI._splitWidth / 2
+        if UI.ApplyAlignedTimeGroupLayout then
+            UI.ApplyAlignedTimeGroupLayout(UI.totalSplit, "summary", UI._alignedTimeSpecs.footerSplit)
+        end
         if UI.SetTotalSummaryText then
             UI.SetTotalSummaryText(UI.totalSplit, UI.totalSplit:GetText(), UI.totalSplit._color)
         end
@@ -666,7 +753,9 @@ local function ApplyTableLayout()
         UI.totalPB:SetPoint("TOPLEFT", UI.totalFrame, "TOPLEFT", xPBLeft, 0)
         UI.totalPB:SetPoint("BOTTOMLEFT", UI.totalFrame, "BOTTOMLEFT", xPBLeft, 0)
         UI.totalPB:SetWidth(UI._pbWidth)
-        UI.totalPB._pivotX = UI._pbWidth / 2
+        if UI.ApplyAlignedTimeGroupLayout then
+            UI.ApplyAlignedTimeGroupLayout(UI.totalPB, "summary", UI._alignedTimeSpecs.footerPB)
+        end
         if UI.SetTotalSummaryText then
             UI.SetTotalSummaryText(UI.totalPB, UI.totalPB:GetText(), UI.totalPB._color)
         end
@@ -725,7 +814,7 @@ local function UpdateColDrag()
 
     local curX = GetCursorPosition() / UI.st.frame:GetEffectiveScale()
     local dx = curX - UI._colDrag.startX
-    local available = UI.st.frame:GetWidth() or 0
+    local available = math.max((UI.st.frame:GetWidth() or 0) - (UI._rightInset or 0), 0)
     local splitMin = Const.SPLITS_COL_MIN
     local globalMin = splitMin.GLOBAL or 1
     local bossMin = math.max(globalMin, splitMin.BOSS or globalMin)
@@ -824,6 +913,7 @@ UI.NormalizeFrameSnapshot = function(frameKey, source)
     return NormalizeFrameNode(frameKey, source)
 end
 UI.GetScrollBarInset = GetScrollBarInset
+UI.GetAlignedTimeSpec = GetAlignedTimeSpec
 UI.GetModelColumnWidth = GetModelColumnWidth
 UI.ApplyTableLayout = ApplyTableLayout
 UI.SetupSizeGrip = SetupSizeGrip

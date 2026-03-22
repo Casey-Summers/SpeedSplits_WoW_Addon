@@ -87,6 +87,89 @@ function Util.FormatDelta(delta)
     return (delta >= 0 and "+" or "-") .. Util.FormatTime(math.abs(delta))
 end
 
+function Util.BuildAlignedTimeParts(seconds, opts)
+    opts = type(opts) == "table" and opts or {}
+
+    local kind = opts.kind or "time"
+    local placeholderMillis = tonumber(opts.placeholderMillis) or 3
+
+    if kind == "empty" then
+        return {
+            showGroup = false,
+            signText = "",
+            minuteText = "",
+            showMinute = false,
+            showColon = false,
+            colonText = ":",
+            secondText = "",
+            decimalText = ".",
+            millisText = "",
+            isPlaceholder = false,
+            overflowMinutes = false,
+            minuteDigits = 2,
+        }
+    end
+
+    if kind == "placeholder" then
+        return {
+            showGroup = true,
+            signText = "",
+            minuteText = "--",
+            showMinute = true,
+            showColon = true,
+            colonText = ":",
+            secondText = "--",
+            decimalText = ".",
+            millisText = string.rep("-", math.max(1, placeholderMillis)),
+            isPlaceholder = true,
+            overflowMinutes = false,
+            minuteDigits = 2,
+        }
+    end
+
+    local isDelta = (kind == "delta")
+    local signText = ""
+    local magnitude = tonumber(seconds) or 0
+    if isDelta then
+        signText = magnitude >= 0 and "+" or "-"
+        magnitude = math.abs(magnitude)
+    end
+
+    magnitude = Util.RoundTime(magnitude) or 0
+    local totalMillis = math.floor((magnitude * 1000) + 0.5)
+    local wholeSeconds = math.floor(totalMillis / 1000)
+    local millis = totalMillis % 1000
+    local totalMinutes = math.floor(wholeSeconds / 60)
+    local secondPart = wholeSeconds % 60
+
+    local showMinute = totalMinutes > 0
+    local showColon = showMinute or wholeSeconds == 0
+    local minuteText = showMinute and tostring(totalMinutes) or ""
+    local secondText
+    if showMinute then
+        secondText = string.format("%02d", secondPart)
+    elseif wholeSeconds == 0 then
+        secondText = "00"
+    else
+        secondText = tostring(secondPart)
+    end
+
+    return {
+        showGroup = true,
+        signText = signText,
+        minuteText = minuteText,
+        showMinute = showMinute,
+        showColon = showColon,
+        colonText = ":",
+        secondText = secondText,
+        decimalText = ".",
+        millisText = string.format("%03d", millis),
+        isPlaceholder = false,
+        overflowMinutes = #minuteText > 2,
+        minuteDigits = math.max(2, #minuteText),
+    }
+end
+
 function Util.GetDungeonKey(mapID, difficultyID)
     return ("%d:%d"):format(tonumber(mapID) or 0, tonumber(difficultyID) or 0)
 end

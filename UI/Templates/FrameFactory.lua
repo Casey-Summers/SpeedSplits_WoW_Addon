@@ -79,3 +79,19 @@ function Factory.CreateDialogFrame(name, width, height)
     frame:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
     return frame
 end
+
+function Factory.CreateCloseButton(parent, point, relativeTo, relativePoint, x, y)
+    local button = CreateFrame("Button", nil, parent, "UIPanelCloseButton")
+    button:SetPoint(point or "TOPRIGHT", relativeTo or parent, relativePoint or point or "TOPRIGHT", x or -4, y or -4)
+    return button
+end
+
+function Factory.CreateActionButton(parent, text, width, height, onClick)
+    local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+    button:SetSize(width or 120, height or 24)
+    button:SetText(text or "")
+    if onClick then
+        button:SetScript("OnClick", onClick)
+    end
+    return button
+end

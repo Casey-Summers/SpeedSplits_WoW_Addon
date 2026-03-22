@@ -2,13 +2,34 @@ local _, NS = ...
 
 local Util = NS.Util
 
+local function LayoutDeepCopy(source)
+    if NS.UI and NS.UI.DeepCopy then
+        return NS.UI.DeepCopy(source)
+    end
+    return Util.CopyTable(source or {})
+end
+
+local function InitializeLayoutState()
+    if NS.UI and NS.UI.InvalidateLayoutCache then
+        NS.UI.InvalidateLayoutCache()
+    end
+    if NS.UI and NS.UI.InitializeDefaults then
+        return NS.UI.InitializeDefaults()
+    end
+
+    SpeedSplitsDB.ui = LayoutDeepCopy(NS.FactoryDefaults.ui)
+    SpeedSplitsDB.DefaultLayout = SpeedSplitsDB.DefaultLayout or {}
+    SpeedSplitsDB.DefaultLayout.ui = LayoutDeepCopy(NS.FactoryDefaults.ui)
+    return SpeedSplitsDB.ui
+end
+
 local function EnsurePBNodeShape(node)
     node = node or {}
     if node.Segments and node.Segments ~= node.Splits then
         node.Splits = node.Segments
     end
     node.Splits = node.Splits or {}
-    node.Segments = node.Splits
+    node.Segments = nil
     node.FullRun = node.FullRun or {}
     return node
 end
@@ -74,6 +95,8 @@ local function EnsureDB()
         SpeedSplitsDB = {}
     end
 
+
+
     SpeedSplitsDB.RunHistory = SpeedSplitsDB.RunHistory or SpeedSplitsDB.runs or {}
     SpeedSplitsDB.Settings = SpeedSplitsDB.Settings or SpeedSplitsDB.settings or {}
 
@@ -110,6 +133,9 @@ local function EnsureDB()
     settings.toastSoundName = settings.toastSoundName or fallbacks.toastSoundName
     settings.toastVolume = settings.toastVolume or fallbacks.toastVolume
     settings.visibility = settings.visibility or Util.CopyTable(fallbacks.visibility)
+    if settings.reloadAwarenessEnabled == nil then
+        settings.reloadAwarenessEnabled = fallbacks.reloadAwarenessEnabled
+    end
     settings.speedrunMode = settings.speedrunMode or fallbacks.speedrunMode
     if settings.showNPCViewModels == nil then
         settings.showNPCViewModels = fallbacks.showNPCViewModels
@@ -122,10 +148,11 @@ local function EnsureDB()
     end
 
     if not SpeedSplitsDB.ui then
-        SpeedSplitsDB.ui = Util.CopyTable(NS.FactoryDefaults.ui)
+        SpeedSplitsDB.ui = LayoutDeepCopy(NS.FactoryDefaults.ui)
     end
 
     NS.DB = SpeedSplitsDB
+    InitializeLayoutState()
 
     if NS.UI and NS.UI.history then
         NS.UI.history.filters = NS.UI.history.filters or Util.HistoryFilterDefaults()
@@ -136,10 +163,14 @@ end
 
 local function ApplyFactoryReset()
     EnsureDB()
-    SpeedSplitsDB.Settings = Util.CopyTable(NS.FactoryDefaults.Settings)
-    SpeedSplitsDB.DefaultStyle = Util.CopyTable(NS.FactoryDefaults.Settings)
-    SpeedSplitsDB.ui = Util.CopyTable(NS.FactoryDefaults.ui)
-    SpeedSplitsDB.DefaultLayout = { ui = Util.CopyTable(NS.FactoryDefaults.ui) }
+    SpeedSplitsDB.Settings = LayoutDeepCopy(NS.FactoryDefaults.Settings)
+    SpeedSplitsDB.DefaultStyle = LayoutDeepCopy(NS.FactoryDefaults.Settings)
+    SpeedSplitsDB.ui = LayoutDeepCopy(NS.FactoryDefaults.ui)
+    SpeedSplitsDB.DefaultLayout = { ui = LayoutDeepCopy(NS.FactoryDefaults.ui) }
+    InitializeLayoutState()
+    if NS.UI and NS.UI.ApplyAllLayouts then
+        NS.UI.ApplyAllLayouts()
+    end
 end
 
 local function ApplyDatabaseWipe()
@@ -149,10 +180,13 @@ local function ApplyDatabaseWipe()
     SpeedSplitsDB.InstanceBestRoute = {}
     SpeedSplitsDB.InstanceBestLastBoss = {}
     SpeedSplitsDB.InstanceBestIgnored = {}
+    SpeedSplitsDB.runs = nil
+    SpeedSplitsDB.settings = nil
 end
 
-local function WipeDatabase(simulateOnly)
+local function WipeAllRecordsAndRebuild(simulateOnly)
     ApplyDatabaseWipe()
+    EnsurePBTables(SpeedSplitsDB)
     if NS.UpdateColorsFromSettings then
         NS.UpdateColorsFromSettings()
     end
@@ -163,9 +197,13 @@ local function WipeDatabase(simulateOnly)
         return
     end
     if NS.Print then
-        NS.Print("Records wiped. Reloading UI...")
+        NS.Print("All records wiped. Rebuilding tables and reloading UI...")
     end
     ReloadUI()
+end
+
+local function WipeDatabase(simulateOnly)
+    WipeAllRecordsAndRebuild(simulateOnly)
 end
 
 local function SaveDefaultLayout()
@@ -173,18 +211,23 @@ local function SaveDefaultLayout()
     if NS.UI and NS.UI.CaptureCurrentLayout then
         NS.UI.CaptureCurrentLayout()
     end
-    SpeedSplitsDB.DefaultLayout = { ui = Util.CopyTable(SpeedSplitsDB.ui or {}) }
+    SpeedSplitsDB.DefaultLayout = { ui = LayoutDeepCopy(SpeedSplitsDB.ui or {}) }
+    InitializeLayoutState()
 end
 
 local function ApplyLayoutReset()
     EnsureDB()
     local defaultUI
     if SpeedSplitsDB.DefaultLayout and SpeedSplitsDB.DefaultLayout.ui then
-        defaultUI = Util.CopyTable(SpeedSplitsDB.DefaultLayout.ui)
+        defaultUI = LayoutDeepCopy(SpeedSplitsDB.DefaultLayout.ui)
     else
-        defaultUI = Util.CopyTable(NS.FactoryDefaults.ui)
+        defaultUI = LayoutDeepCopy(NS.FactoryDefaults.ui)
     end
     SpeedSplitsDB.ui = defaultUI
+    InitializeLayoutState()
+    if NS.UI and NS.UI.ApplyAllLayouts then
+        NS.UI.ApplyAllLayouts()
+    end
 end
 
 local function ResetLayout(simulateOnly)
@@ -575,6 +618,7 @@ NS.Database.IsTestRunRecord = IsTestRunRecord
 NS.Database.PurgeTestRunHistory = PurgeTestRunHistory
 NS.Database.ApplyFactoryReset = ApplyFactoryReset
 NS.Database.ApplyDatabaseWipe = ApplyDatabaseWipe
+NS.Database.WipeAllRecordsAndRebuild = WipeAllRecordsAndRebuild
 NS.Database.ApplyLayoutReset = ApplyLayoutReset
 NS.Database.ResetLayout = ResetLayout
 NS.Database.ResetToFactorySettings = ResetToFactorySettings
@@ -597,6 +641,7 @@ NS.Database.GetHistoryPBNode = GetHistoryPBNode
 NS.Database.GetBestSplitsSubtable = GetBestRouteNode
 NS.ResetToFactorySettings = ResetToFactorySettings
 NS.WipeDatabase = WipeDatabase
+NS.WipeAllRecordsAndRebuild = WipeAllRecordsAndRebuild
 NS.ResetLayout = ResetLayout
 NS.SaveDefaultLayout = SaveDefaultLayout
 NS.GetBestSplitsSubtable = GetBestRouteNode

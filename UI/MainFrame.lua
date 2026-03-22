@@ -9,8 +9,6 @@ local IconButton = UI.Templates.IconButton
 local HoverFadeFrame = UI.Templates.HoverFadeFrame
 local HeaderCell = UI.Templates.HeaderCell
 
-local BOSS_HEADER_LABELS = { "", "PB", "Split", "Diff" }
-
 function UI.ShowAddonFrames()
     if NS.RefreshVisibility then
         NS.RefreshVisibility()
@@ -69,9 +67,10 @@ function UI.RestyleBossTableHeaders(scale)
         return
     end
 
+    local labels = (Const.UI_TEXT and Const.UI_TEXT.BOSS_HEADER_LABELS) or {}
     for i = 1, #UI.customBossHeaders do
         local align = (UI.cols[i] and UI.cols[i].align) or "CENTER"
-        local text = BOSS_HEADER_LABELS[i] or ""
+        local text = labels[i] or ""
         if UI.cols[i] and UI.customBossHeaders[i] then
             UI.StyleHeaderCell(UI.customBossHeaders[i], align, scale or 1.0, text, "turquoise")
             UI.customBossHeaders[i]:EnableMouse(false)
@@ -85,8 +84,9 @@ local function EnsureBossHeaderCells(parent)
     end
 
     UI.customBossHeaders = {}
-    for i = 1, #BOSS_HEADER_LABELS do
-        local cell = HeaderCell.Create(parent, BOSS_HEADER_LABELS[i], "CENTER")
+    local labels = (Const.UI_TEXT and Const.UI_TEXT.BOSS_HEADER_LABELS) or {}
+    for i = 1, #labels do
+        local cell = HeaderCell.Create(parent, labels[i], "CENTER")
         cell:SetFrameLevel(parent:GetFrameLevel() + 3)
         cell:EnableMouse(false)
         UI.customBossHeaders[i] = cell
@@ -111,8 +111,10 @@ function UI.EnsureUI()
     timerFrame:SetBackdropColor(0, 0, 0, 0)
     timerFrame:SetBackdropBorderColor(1, 1, 1, 0)
 
-    local timerRestored = UI.RestoreFrameGeom("timer", timerFrame, 140, 50)
     UI.timerFrame = timerFrame
+    if UI.RegisterManagedFrame then
+        UI.RegisterManagedFrame("timer", timerFrame)
+    end
 
     local pbShine = timerFrame:CreateTexture(nil, "OVERLAY")
     pbShine:SetAtlas("challenges-bannershine")
@@ -139,16 +141,14 @@ function UI.EnsureUI()
     shineOut:SetOrder(3)
     UI.pbShineAG = shineAG
 
-    if not timerRestored then
-        timerFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 200)
-    end
-
     timerFrame:SetScript("OnDragStart", function(self)
         self:StartMoving()
     end)
     timerFrame:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
-        UI.SaveFrameGeom("timer", self)
+        if UI.SaveFrameLayout then
+            UI.SaveFrameLayout("timer", self)
+        end
     end)
 
     HoverFadeFrame.Attach(timerFrame, 0.60, function(alpha)
@@ -179,6 +179,15 @@ function UI.EnsureUI()
     timerDeltaText:SetPoint("TOP", timerFrame, "CENTER", 0, -18)
     NS.ApplyFontToFS(timerDeltaText, "num")
     timerDeltaText:SetText("")
+
+    local timerWarningText = timerFrame:CreateFontString(nil, "OVERLAY")
+    timerWarningText:SetPoint("TOPLEFT", timerFrame, "TOPLEFT", 10, -10)
+    timerWarningText:SetPoint("BOTTOMRIGHT", timerFrame, "BOTTOMRIGHT", -10, 10)
+    timerWarningText:SetJustifyH("CENTER")
+    timerWarningText:SetJustifyV("MIDDLE")
+    timerWarningText:SetSpacing(2)
+    timerWarningText:Hide()
+    UI.timerWarningText = timerWarningText
 
     local timerToastBg = timerFrame:CreateTexture(nil, "BACKGROUND", nil, -5)
     timerToastBg:SetAllPoints(timerFrame)
@@ -216,7 +225,9 @@ function UI.EnsureUI()
     end)
     bossFrame:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
-        UI.SaveFrameGeom("boss", self)
+        if UI.SaveFrameLayout then
+            UI.SaveFrameLayout("boss", self)
+        end
     end)
     Util.ApplyResizeBounds(bossFrame, 450, Const.SPLITS_LAYOUT.MIN_HEIGHT, 1400, 1000)
     bossFrame:SetBackdrop({
@@ -227,11 +238,6 @@ function UI.EnsureUI()
     })
     bossFrame:SetBackdropColor(0, 0, 0, 0.9)
     bossFrame:SetBackdropBorderColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 0.8)
-
-    local bossRestored = UI.RestoreFrameGeom("boss", bossFrame, 520, 320)
-    if not bossRestored then
-        bossFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-    end
 
     local ST = Util.ResolveScrollingTable()
     if not ST and NS.Print then
@@ -407,30 +413,59 @@ function UI.EnsureUI()
     historyButton:SetPoint("LEFT", logoText, "RIGHT", 8, 0)
     UI.historyButton = historyButton
 
-    local totalPB = totalFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    totalPB:SetJustifyH("RIGHT")
-    totalPB:SetText("--:--.---")
+    local function CreateTotalHost(layoutKey)
+        local host = CreateFrame("Frame", nil, totalFrame)
+        host:SetHeight(24)
+        host._ssAlignedTimeSpecKey = layoutKey
+        host._text = ""
+        host._rawSeconds = nil
+        host._displayKind = "placeholder"
+        host._placeholderMillis = 2
+        host.SetText = function(self, value)
+            self._text = tostring(value or "")
+            if UI.SetTotalSummaryText then
+                UI.SetTotalSummaryText(self, self._text, self._color)
+            end
+        end
+        host.GetText = function(self)
+            return self._text or ""
+        end
+        host.SetTextColor = function(self, r, g, b, a)
+            self._color = { r = r or 1, g = g or 1, b = b or 1, a = a or 1 }
+            if UI.SetTotalSummaryText then
+                UI.SetTotalSummaryText(self, self._text, self._color)
+            end
+        end
+        return host
+    end
+
+    local totalPB = CreateTotalHost("footerPB")
     UI.totalPB = totalPB
+    totalPB:SetText((Const.UI_TEXT and Const.UI_TEXT.SECTION_TOTAL_PLACEHOLDER) or "--:--.--")
+    totalPB:SetTextColor(NS.Colors.gold.r, NS.Colors.gold.g, NS.Colors.gold.b, NS.Colors.gold.a or 1)
 
-    local totalSplit = totalFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    totalSplit:SetJustifyH("RIGHT")
-    totalSplit:SetText("--:--.---")
+    local totalSplit = CreateTotalHost("footerSplit")
     UI.totalSplit = totalSplit
+    totalSplit:SetText((Const.UI_TEXT and Const.UI_TEXT.SECTION_TOTAL_PLACEHOLDER) or "--:--.--")
+    totalSplit:SetTextColor(NS.Colors.white.r, NS.Colors.white.g, NS.Colors.white.b, NS.Colors.white.a or 1)
 
-    local totalDelta = totalFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    totalDelta:SetJustifyH("RIGHT")
-    totalDelta:SetText("--:--.---")
+    local totalDelta = CreateTotalHost("footerDiff")
     UI.totalDelta = totalDelta
+    totalDelta:SetText((Const.UI_TEXT and Const.UI_TEXT.SECTION_TOTAL_PLACEHOLDER) or "--:--.--")
+    totalDelta:SetTextColor(NS.Colors.white.r, NS.Colors.white.g, NS.Colors.white.b, NS.Colors.white.a or 1)
 
     local timerGrip = UI.SetupSizeGrip(timerFrame, function()
-        UI.SaveFrameGeom("timer", timerFrame)
+        if UI.SaveFrameLayout then
+            UI.SaveFrameLayout("timer", timerFrame)
+        end
     end)
     timerGrip:SetAlpha(0)
 
     local bossGrip = UI.SetupSizeGrip(bossFrame, function()
-        UI.SaveFrameGeom("boss", bossFrame)
+        if UI.SaveFrameLayout then
+            UI.SaveFrameLayout("boss", bossFrame)
+        end
         UI.ApplyTableLayout()
-        UI.SaveColWidths()
     end)
 
     bossFrame:SetScript("OnSizeChanged", function()
@@ -446,12 +481,19 @@ function UI.EnsureUI()
     UI.timerDeltaText = timerDeltaText
     UI.resizeGrip = bossGrip
     UI._timerResizeGrip = timerGrip
+    if UI.RegisterManagedFrame then
+        UI.RegisterManagedFrame("boss", bossFrame)
+    end
 
     local borderFrame = FrameFactory.CreateOverlayBorder(bossFrame, 30)
     UI.borderFrame = borderFrame
 
     UI.EnsureColGrips()
-    UI.ApplyTableLayout()
+    if UI.ApplyAllLayouts then
+        UI.ApplyAllLayouts()
+    else
+        UI.ApplyTableLayout()
+    end
     NS.RefreshAllUI()
 
     timerFrame:Hide()
@@ -519,9 +561,10 @@ function NS.UpdateFontsOnly()
 
     if UI.killCountCounterText then NS.ApplyFontToFS(UI.killCountCounterText, "counter", 0.95) end
     if UI.killCountText then NS.ApplyFontToFS(UI.killCountText, "header", 0.9) end
-    if UI.totalPB then NS.ApplyFontToFS(UI.totalPB, "num") end
-    if UI.totalSplit then NS.ApplyFontToFS(UI.totalSplit, "num") end
-    if UI.totalDelta then NS.ApplyFontToFS(UI.totalDelta, "num") end
+    if UI.ApplyTableLayout then UI.ApplyTableLayout() end
+    if UI.totalPB and UI.SetTotalSummaryText then UI.SetTotalSummaryText(UI.totalPB, UI.totalPB:GetText(), UI.totalPB._color) end
+    if UI.totalSplit and UI.SetTotalSummaryText then UI.SetTotalSummaryText(UI.totalSplit, UI.totalSplit:GetText(), UI.totalSplit._color) end
+    if UI.totalDelta and UI.SetTotalSummaryText then UI.SetTotalSummaryText(UI.totalDelta, UI.totalDelta:GetText(), UI.totalDelta._color) end
     if UI.timerTextMin then NS.ApplyFontToFS(UI.timerTextMin, "timer") end
     if UI.timerTextSec then NS.ApplyFontToFS(UI.timerTextSec, "timer") end
     if UI.timerTextMs then NS.ApplyFontToFS(UI.timerTextMs, "timer") end
@@ -532,6 +575,13 @@ function NS.UpdateFontsOnly()
         local fontSize = math.max(8, math.floor((f and f.size or 24) * 0.55))
         local fontFlags = f and f.flags or "OUTLINE"
         UI.timerDeltaText:SetFont(fontPath, fontSize, fontFlags)
+    end
+    if UI.timerWarningText then
+        local f = NS.DB and NS.DB.Settings and NS.DB.Settings.fonts and NS.DB.Settings.fonts.timer
+        local fontPath = f and f.font or "Fonts\\FRIZQT__.TTF"
+        local fontSize = math.max(10, math.floor((f and f.size or 24) * 0.52))
+        local fontFlags = f and f.flags or "OUTLINE"
+        UI.timerWarningText:SetFont(fontPath, fontSize, fontFlags)
     end
 
     if UI.st and UI.st.Refresh then
@@ -575,9 +625,7 @@ function NS.RefreshAllUI()
     end
     UI.RefreshBossTableData(NS.Run.entries or {}, presentation)
 
-    if NS.Run.entries and #NS.Run.entries > 0 then
-        UI.RefreshTotals(not NS.Run.active and NS.Run.endGameTime > 0)
-    end
+    UI.RefreshTotals(not NS.Run.active and NS.Run.endGameTime > 0)
 
     if not NS.Run.active and NS.Run.endGameTime > 0 then
         UI.SetTimerText(NS.Run.endGameTime - NS.Run.startGameTime, true)

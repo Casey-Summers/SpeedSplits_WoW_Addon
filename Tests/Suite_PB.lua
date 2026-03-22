@@ -72,6 +72,49 @@ System.RegisterTest({
 })
 
 System.RegisterTest({
+    id = "pb_schema_upgrade_removes_legacy_segments_alias_from_routes",
+    suite = "PB",
+    subcategory = "Migration",
+    name = "Upgrading moves route Segments into Splits and removes the Segments alias",
+    func = function()
+        local backupDB = NS.Util.CopyTable(SpeedSplitsDB)
+
+        System.WithCleanup(function()
+            System.BeginSection("Seed a route entry that still uses the legacy Segments alias")
+            SpeedSplitsDB = {
+                SchemaVersion = 2,
+                RunHistory = {},
+                InstanceRoutes = {
+                    ["Legacy Dungeon"] = {
+                        BossIndex = {
+                            Alpha = 1,
+                        },
+                        ["1"] = {
+                            Segments = { [1] = 12 },
+                            FullRun = { duration = 34 },
+                        },
+                    },
+                },
+                InstanceBestRoute = {},
+                InstanceBestLastBoss = {},
+                InstanceBestIgnored = {},
+                Settings = {},
+            }
+
+            local db = NS.Database.EnsureDB()
+            local node = db.InstanceRoutes["Legacy Dungeon"]["1"]
+
+            System.AssertEqual(node.Splits[1], 12, "Legacy route splits are preserved under Splits")
+            System.AssertTrue(node.Segments == nil, "Legacy Segments alias is removed from route entries", node.Segments)
+            System.EndSection("Seed a route entry that still uses the legacy Segments alias", "PASS")
+        end, function()
+            SpeedSplitsDB = backupDB
+            NS.Database.EnsureDB()
+        end)
+    end,
+})
+
+System.RegisterTest({
     id = "pb_apply_route_record_populates_default_route",
     suite = "PB",
     subcategory = "Persistence",

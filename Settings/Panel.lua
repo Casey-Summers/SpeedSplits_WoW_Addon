@@ -5,6 +5,55 @@ NS.Settings = NS.Settings or {}
 local Widgets = NS.Settings.Widgets
 local DropDown = NS.UI.Templates.DropDown
 
+local function BuildCurrentStyleSnapshot()
+    return {
+        colors = Widgets.CopyTable(NS.DB.Settings.colors),
+        fonts = Widgets.CopyTable(NS.DB.Settings.fonts),
+        titleTexture = NS.DB.Settings.titleTexture,
+        timerToastScale = NS.DB.Settings.timerToastScale,
+        showTimerToast = NS.DB.Settings.showTimerToast,
+        toastAllBosses = NS.DB.Settings.toastAllBosses,
+        toastSoundID = NS.DB.Settings.toastSoundID,
+        toastSoundName = NS.DB.Settings.toastSoundName,
+        toastVolume = NS.DB.Settings.toastVolume,
+        paceThreshold1 = NS.DB.Settings.paceThreshold1,
+        paceThreshold2 = NS.DB.Settings.paceThreshold2,
+        showNPCViewModels = NS.DB.Settings.showNPCViewModels,
+    }
+end
+
+local function ApplyDefaultStyleSnapshot()
+    if not NS.DB or not NS.DB.DefaultStyle then
+        return false
+    end
+
+    local d = NS.DB.DefaultStyle
+    NS.DB.Settings.colors = Widgets.CopyTable(d.colors)
+    NS.DB.Settings.fonts = Widgets.CopyTable(d.fonts)
+    NS.DB.Settings.titleTexture = d.titleTexture
+    NS.DB.Settings.timerToastScale = d.timerToastScale
+    NS.DB.Settings.showTimerToast = d.showTimerToast
+    NS.DB.Settings.toastAllBosses = d.toastAllBosses
+    NS.DB.Settings.toastSoundID = d.toastSoundID
+    NS.DB.Settings.toastSoundName = d.toastSoundName
+    NS.DB.Settings.toastVolume = d.toastVolume or 0.8
+    NS.DB.Settings.paceThreshold1 = d.paceThreshold1
+    NS.DB.Settings.paceThreshold2 = d.paceThreshold2
+    if d.showNPCViewModels == nil then
+        NS.DB.Settings.showNPCViewModels = true
+    else
+        NS.DB.Settings.showNPCViewModels = d.showNPCViewModels
+    end
+
+    NS.UpdateColorsFromSettings()
+    for _, refresh in ipairs(Widgets.Registry) do
+        refresh()
+    end
+    NS.RefreshAllUI()
+
+    return true
+end
+
 function NS.CreateSettingsPanel()
     if _G.SpeedSplitsOptionsPanel then
         return _G.SpeedSplitsOptionsPanel
@@ -19,11 +68,11 @@ function NS.CreateSettingsPanel()
 
     local colors = {
         { "Personal Best", "gold" },
-        { "On Pace", "deepGreen", "paceThreshold1" },
-        { "Behind Pace", "lightGreen", "paceThreshold2" },
-        { "Slow", "darkRed" },
-        { "UI Accents", "turquoise" },
-        { "Text", "white" },
+        { "On Pace",       "deepGreen",  "paceThreshold1" },
+        { "Behind Pace",   "lightGreen", "paceThreshold2" },
+        { "Slow",          "darkRed" },
+        { "UI Accents",    "turquoise" },
+        { "Text",          "white" },
     }
 
     local lastColorElem = themesHeader
@@ -187,10 +236,8 @@ function NS.CreateSettingsPanel()
     soundLabel:SetText("PB Toast Sound")
     soundLabel:SetTextColor(0.4, 0.8, 1)
 
-    local soundDD = CreateFrame("Frame", nil, rewardRow, "UIDropDownMenuTemplate")
+    local soundDD = DropDown.Create(rewardRow, 130, 0.85)
     soundDD:SetPoint("TOPLEFT", soundLabel, "BOTTOMLEFT", -15, -4)
-    UIDropDownMenu_SetWidth(soundDD, 130)
-    soundDD:SetScale(0.85)
 
     local function GetSoundNameByID(id)
         for _, info in ipairs(NS.SoundOptions or {}) do
@@ -209,29 +256,33 @@ function NS.CreateSettingsPanel()
 
     table.insert(Widgets.Registry, UpdateSoundDD)
 
-    UIDropDownMenu_Initialize(soundDD, function()
-        local current = NS.DB.Settings.toastSoundID or 0
-        for _, info in ipairs(NS.SoundOptions or {}) do
-            local item = UIDropDownMenu_CreateInfo()
-            item.text = info.name
-            item.value = info.id
-            item.func = function(self)
-                local id = self.value or 0
-                local name = (self.GetText and self:GetText()) or self.text or GetSoundNameByID(id) or "None"
-                NS.DB.Settings.toastSoundID = id
-                NS.DB.Settings.toastSoundName = name
-                UpdateSoundDD()
-                if id > 0 then
-                    local played = PlaySound(id, "SFX")
-                    if not played then
-                        PlaySoundFile(id, "SFX")
-                    end
+    DropDown.Bind(soundDD, {
+        buildItems = function()
+            local items = {}
+            for _, info in ipairs(NS.SoundOptions or {}) do
+                items[#items + 1] = { text = info.name, value = info.id }
+            end
+            return items
+        end,
+        getValue = function()
+            return NS.DB.Settings.toastSoundID or 0
+        end,
+        setValue = function(value)
+            local id = value or 0
+            local name = GetSoundNameByID(id) or NS.DB.Settings.toastSoundName or "None"
+            NS.DB.Settings.toastSoundID = id
+            NS.DB.Settings.toastSoundName = name
+        end,
+        onChanged = function(value)
+            UpdateSoundDD()
+            if value and value > 0 then
+                local played = PlaySound(value, "SFX")
+                if not played then
+                    PlaySoundFile(value, "SFX")
                 end
             end
-            item.checked = (info.id == current)
-            UIDropDownMenu_AddButton(item)
-        end
-    end)
+        end,
+    })
     UpdateSoundDD()
 
     local scaleLabel = rewardRow:CreateFontString(nil, "ARTWORK", "GameFontNormal")
@@ -239,11 +290,12 @@ function NS.CreateSettingsPanel()
     scaleLabel:SetText("Toast Scale")
     scaleLabel:SetTextColor(0.4, 0.8, 1)
 
-    local toastScaleSlider = Widgets.CreateSlider(rewardRow, "Scale", 0.5, 3.0, "settings", "timerToastScale", 130, function()
-        if NS.UpdateToastLayout then
-            NS.UpdateToastLayout()
-        end
-    end)
+    local toastScaleSlider = Widgets.CreateSlider(rewardRow, "Scale", 0.5, 3.0, "settings", "timerToastScale", 130,
+        function()
+            if NS.UpdateToastLayout then
+                NS.UpdateToastLayout()
+            end
+        end)
     toastScaleSlider:SetScale(0.85)
     toastScaleSlider:SetPoint("TOPLEFT", scaleLabel, "BOTTOMLEFT", 0, -18)
 
@@ -319,7 +371,7 @@ function NS.CreateSettingsPanel()
 
     local speedrunOpts = {
         { name = "All-bosses", value = "all" },
-        { name = "Last Boss", value = "last" },
+        { name = "Last Boss",  value = "last" },
     }
     local vMode = Widgets.SettingsDropDown(panel, "Speedrun Mode", "speedrunMode", speedrunOpts)
     vMode:SetPoint("TOPLEFT", vSplits, "BOTTOMLEFT", 0, -5)
@@ -335,53 +387,16 @@ function NS.CreateSettingsPanel()
         return btn
     end
 
-    local defBtn = Q("Set Default Styles", function()
-        NS.DB.DefaultStyle = {
-            colors = Widgets.CopyTable(NS.DB.Settings.colors),
-            fonts = Widgets.CopyTable(NS.DB.Settings.fonts),
-            titleTexture = NS.DB.Settings.titleTexture,
-            timerToastScale = NS.DB.Settings.timerToastScale,
-            showTimerToast = NS.DB.Settings.showTimerToast,
-            toastAllBosses = NS.DB.Settings.toastAllBosses,
-            toastSoundID = NS.DB.Settings.toastSoundID,
-            toastSoundName = NS.DB.Settings.toastSoundName,
-            toastVolume = NS.DB.Settings.toastVolume,
-            paceThreshold1 = NS.DB.Settings.paceThreshold1,
-            paceThreshold2 = NS.DB.Settings.paceThreshold2,
-            showNPCViewModels = NS.DB.Settings.showNPCViewModels,
-            visibility = Widgets.CopyTable(NS.DB.Settings.visibility),
-        }
+    local defBtn = Q("Save Current Styles", function()
+        NS.DB.DefaultStyle = BuildCurrentStyleSnapshot()
         if NS.Print then
-            NS.Print("Default styles saved.")
+            NS.Print("Current styles saved.")
         end
     end)
     defBtn:SetPoint("TOPLEFT", managementHeader, "BOTTOMLEFT", 10, -10)
 
     local resetBtn = Q("Restore Styles", function()
-        if NS.DB.DefaultStyle then
-            local d = NS.DB.DefaultStyle
-            NS.DB.Settings.colors = Widgets.CopyTable(d.colors)
-            NS.DB.Settings.fonts = Widgets.CopyTable(d.fonts)
-            NS.DB.Settings.titleTexture = d.titleTexture
-            NS.DB.Settings.timerToastScale = d.timerToastScale
-            NS.DB.Settings.showTimerToast = d.showTimerToast
-            NS.DB.Settings.toastAllBosses = d.toastAllBosses
-            NS.DB.Settings.toastSoundID = d.toastSoundID
-            NS.DB.Settings.toastSoundName = d.toastSoundName
-            NS.DB.Settings.toastVolume = d.toastVolume or 0.8
-            NS.DB.Settings.paceThreshold1 = d.paceThreshold1
-            NS.DB.Settings.paceThreshold2 = d.paceThreshold2
-            if d.showNPCViewModels == nil then
-                NS.DB.Settings.showNPCViewModels = true
-            else
-                NS.DB.Settings.showNPCViewModels = d.showNPCViewModels
-            end
-            NS.DB.Settings.visibility = Widgets.CopyTable(d.visibility or {})
-            NS.UpdateColorsFromSettings()
-            for _, refresh in ipairs(Widgets.Registry) do
-                refresh()
-            end
-            NS.RefreshAllUI()
+        if ApplyDefaultStyleSnapshot() then
             if NS.Print then
                 NS.Print("Styles reset to defaults.")
             end
@@ -389,12 +404,12 @@ function NS.CreateSettingsPanel()
     end)
     resetBtn:SetPoint("LEFT", defBtn, "RIGHT", 15, 0)
 
-    local layoutBtn = Q("Save Default Layout", function()
+    local layoutBtn = Q("Save Current Layout", function()
         if NS.SaveDefaultLayout then
             NS.SaveDefaultLayout()
         end
         if NS.Print then
-            NS.Print("Default layout saved.")
+            NS.Print("Current layout saved.")
         end
     end)
     layoutBtn:SetPoint("TOPLEFT", defBtn, "BOTTOMLEFT", 0, -6)
@@ -436,6 +451,9 @@ function NS.CreateSettingsPanel()
 
     return panel
 end
+
+NS.Settings.BuildCurrentStyleSnapshot = BuildCurrentStyleSnapshot
+NS.Settings.ApplyDefaultStyleSnapshot = ApplyDefaultStyleSnapshot
 
 function NS.OpenSettings()
     if Settings and Settings.OpenToCategory then

@@ -1,6 +1,6 @@
 ## Interface: 110207, 120000, 120001
 ## Title: Speed Splits
-## Notes: Track dungeon boss splits and personal bests.
+## Notes: Tracks speedrun routes, boss splits, and personal bests.
 ## Author: Aceman
 ## Version: 2.0.0
 ## SavedVariables: SpeedSplitsDB

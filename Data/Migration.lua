@@ -3,6 +3,7 @@ local _, NS = ...
 NS.Migrations = NS.Migrations or {}
 
 local Util = NS.Util
+
 local CURRENT_SCHEMA_VERSION = 3
 
 local function EnsurePBTables(db)
@@ -18,7 +19,7 @@ local function NormalizePBNodeShape(node)
         node.Splits = node.Segments
     end
     node.Splits = node.Splits or {}
-    node.Segments = node.Splits
+    node.Segments = nil
     node.FullRun = node.FullRun or {}
     return node
 end

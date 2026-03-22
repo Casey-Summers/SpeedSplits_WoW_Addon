@@ -10,7 +10,6 @@ local ScrollBarSkin = UI.Templates.ScrollBarSkin
 local HeaderCell = UI.Templates.HeaderCell
 local HistoryRowTemplate = UI.Templates.HistoryRow
 
-local UIDropDownMenu_SetWidth = _G.UIDropDownMenu_SetWidth
 local function FormatEpochShort(epoch)
     return (not epoch or epoch <= 0) and "â€”" or date("%H:%M %d/%m/%Y", epoch)
 end
@@ -55,6 +54,47 @@ local function IsRunPB(record)
     return math.abs(record.duration - pb.duration) < 0.001
 end
 
+local function BuildHistoryModeLabel(record)
+    if record.pbMode == "ignored" then
+        return "Ignored"
+    end
+    if record.speedrunMode == "last" or record.pbMode == "last" then
+        return "Last Boss"
+    end
+    return "All Bosses"
+end
+
+local function BuildHistoryViewRecord(record)
+    local duration = tonumber(record and record.duration)
+    local pbNode = record and NS.Database.GetHistoryPBNode(record) or nil
+    local pbDuration = tonumber(pbNode and pbNode.FullRun and pbNode.FullRun.duration)
+    local isPB = type(record) == "table" and record.success and duration and pbDuration and
+        math.abs(duration - pbDuration) < 0.001 or false
+    local diff = (pbDuration and duration) and (duration - pbDuration) or nil
+    local resultText, resultColor = "Incomplete", NS.Colors.darkRed
+    if isPB then
+        resultText, resultColor = "PB", NS.Colors.gold
+    elseif record and record.success then
+        resultText, resultColor = "Completed", NS.Colors.deepGreen
+    end
+
+    return {
+        record = record,
+        startedAt = tonumber(record and record.startedAt) or 0,
+        instanceNameNorm = Util.NormalizeName(record and record.instanceName),
+        tier = tonumber(record and record.tier) or 0,
+        duration = duration,
+        diff = diff,
+        isPB = isPB and true or false,
+        resultText = resultText,
+        resultColor = resultColor,
+        modeLabel = BuildHistoryModeLabel(record or {}),
+        formattedDate = FormatEpochShort(record and record.startedAt),
+        tierName = GetTierNameSafe(record and record.tier),
+        formattedDuration = duration and Util.FormatTime(duration) or "--:--.---",
+    }
+end
+
 local function History_GetRow(parent)
     UI.history.rowPool = UI.history.rowPool or {}
     local row = table.remove(UI.history.rowPool)
@@ -62,11 +102,7 @@ local function History_GetRow(parent)
         row = HistoryRowTemplate.Create(parent, NS.Database.DeleteRunRecord)
 
         row.UpdateLayout = function(self)
-            local widths = UI.history.colWidths
-            local avail = UI.history.listFrame:GetWidth() - 20
-            local used = widths.date + widths.expansion + widths.time + widths.result + widths.mode + widths.diff +
-                widths.delete
-            local dungeonWidth = math.max(avail - used, 100)
+            local widths = UI.history.resolvedColWidths or UI.history.colWidths
 
             local x = 0
             local msOff = 0
@@ -92,7 +128,7 @@ local function History_GetRow(parent)
             end
 
             SetCol(1, widths.date, "CENTER")
-            SetCol(2, dungeonWidth, "LEFT")
+            SetCol(2, widths.dungeon, "LEFT")
             SetCol(3, widths.expansion, "CENTER")
             SetCol(4, widths.result, "CENTER")
             SetCol(5, widths.mode, "CENTER")
@@ -122,22 +158,21 @@ function UI.RefreshHistoryTable()
         for i = 1, #history do
             local record = history[i]
             if record.instanceName then
-                local nameNorm = Util.NormalizeName(record.instanceName)
-                local matchesSearch = (search == "" or nameNorm:find(search, 1, true))
-                local matchesTier = (filterTier == 0 or tonumber(record.tier) == filterTier)
-                local isPB = IsRunPB(record)
+                local view = BuildHistoryViewRecord(record)
+                local matchesSearch = (search == "" or view.instanceNameNorm:find(search, 1, true))
+                local matchesTier = (filterTier == 0 or view.tier == filterTier)
 
                 local matchesResult = true
                 if filterResult == "PB" then
-                    matchesResult = isPB
+                    matchesResult = view.isPB
                 elseif filterResult == "Completed" then
-                    matchesResult = (record.success and not isPB)
+                    matchesResult = (record.success and not view.isPB)
                 elseif filterResult == "Incomplete" then
                     matchesResult = (not record.success)
                 end
 
                 if matchesSearch and matchesTier and matchesResult then
-                    table.insert(filtered, record)
+                    filtered[#filtered + 1] = view
                 end
             end
         end
@@ -149,27 +184,19 @@ function UI.RefreshHistoryTable()
     table.sort(filtered, function(a, b)
         local valA, valB
         if sortCol == 1 then
-            valA, valB = tonumber(a.startedAt or 0), tonumber(b.startedAt or 0)
+            valA, valB = a.startedAt, b.startedAt
         elseif sortCol == 2 then
-            valA, valB = Util.NormalizeName(a.instanceName), Util.NormalizeName(b.instanceName)
+            valA, valB = a.instanceNameNorm, b.instanceNameNorm
         elseif sortCol == 3 then
-            valA, valB = tonumber(a.tier or 0), tonumber(b.tier or 0)
+            valA, valB = a.tier, b.tier
         elseif sortCol == 4 then
-            local function ResultOrder(x)
-                return IsRunPB(x) and 1 or (x.success and 2 or 3)
-            end
-            valA, valB = ResultOrder(a), ResultOrder(b)
+            valA, valB = a.isPB and 1 or (a.record.success and 2 or 3), b.isPB and 1 or (b.record.success and 2 or 3)
         elseif sortCol == 5 then
-            valA, valB = a.speedrunMode or "all", b.speedrunMode or "all"
+            valA, valB = a.modeLabel, b.modeLabel
         elseif sortCol == 6 then
-            valA, valB = tonumber(a.duration) or 999999, tonumber(b.duration) or 999999
+            valA, valB = a.duration or 999999, b.duration or 999999
         elseif sortCol == 7 then
-            local function GetDiff(x)
-                local node = NS.Database.GetHistoryPBNode(x)
-                local pb = node and node.FullRun and node.FullRun.duration
-                return (pb and x.duration) and (x.duration - pb) or 999999
-            end
-            valA, valB = GetDiff(a), GetDiff(b)
+            valA, valB = a.diff or 999999, b.diff or 999999
         end
 
         if valA ~= valB then
@@ -178,7 +205,7 @@ function UI.RefreshHistoryTable()
             end
             return valA > valB
         end
-        return tonumber(a.startedAt or 0) > tonumber(b.startedAt or 0)
+        return a.startedAt > b.startedAt
     end)
 
     UI.history.filteredData = filtered
@@ -220,20 +247,10 @@ local function BuildHistoryResultItems()
     }
 end
 
-local function InitHistoryDropDown(dropdown, buildItems, getValue, setValue)
-    DropDown.Initialize(dropdown, buildItems, getValue, setValue, function()
-        UI.RefreshHistoryTable()
-    end)
-end
-
 local function History_RestoreColWidths()
-    UI.history.colWidths = {}
     local ui = UI.GetUISaved()
-    local saved = ui and ui.historyCols
-    local defaults = NS.FactoryDefaults.ui and NS.FactoryDefaults.ui.historyCols or {}
-    for key, def in pairs(defaults) do
-        UI.history.colWidths[key] = (saved and saved[key]) and tonumber(saved[key]) or def
-    end
+    local layout = ui and ui.frames and ui.frames.history or nil
+    UI.history.colWidths = Util.CopyTable((layout and layout.columns) or UI.NormalizeHistoryColumns())
 end
 
 local function History_ApplyTableLayout()
@@ -247,11 +264,40 @@ local function History_ApplyTableLayout()
     local isShown = scrollbar and scrollbar:IsShown()
     local scrollWidth = isShown and 20 or 4
 
-    local widths = history.colWidths
-    local avail = history.listFrame:GetWidth() - scrollWidth
-    local used = widths.date + widths.expansion + widths.time + widths.result + widths.mode + widths.diff + widths
-        .delete
-    local dungeonWidth = math.max(avail - used, 100)
+    local widths = UI.NormalizeHistoryColumns(history.colWidths, history.colWidths)
+    local resolved = Util.CopyTable(widths)
+    local avail = math.max(200, history.listFrame:GetWidth() - scrollWidth)
+    local total = resolved.date + resolved.dungeon + resolved.expansion + resolved.result + resolved.mode + resolved.time +
+        resolved.diff + resolved.delete
+
+    if total < avail then
+        resolved.dungeon = resolved.dungeon + (avail - total)
+    elseif total > avail then
+        local overflow = total - avail
+        local shrinkOrder = {
+            { key = "dungeon", min = 100 },
+            { key = "diff", min = 50 },
+            { key = "time", min = 50 },
+            { key = "mode", min = 50 },
+            { key = "result", min = 50 },
+            { key = "expansion", min = 50 },
+            { key = "date", min = 50 },
+        }
+
+        for _, item in ipairs(shrinkOrder) do
+            if overflow <= 0 then
+                break
+            end
+
+            local current = resolved[item.key]
+            local shrink = math.min(overflow, math.max(0, current - item.min))
+            resolved[item.key] = current - shrink
+            overflow = overflow - shrink
+        end
+    end
+
+    history.colWidths = widths
+    history.resolvedColWidths = resolved
 
     if history.rows then
         for _, row in ipairs(history.rows) do
@@ -267,14 +313,14 @@ local function History_ApplyTableLayout()
         x = x + width
     end
 
-    SetHeader(1, widths.date)
-    SetHeader(2, dungeonWidth)
-    SetHeader(3, widths.expansion)
-    SetHeader(4, widths.result)
-    SetHeader(5, widths.mode)
-    SetHeader(6, widths.time)
-    SetHeader(7, widths.diff)
-    SetHeader(8, widths.delete)
+    SetHeader(1, resolved.date)
+    SetHeader(2, resolved.dungeon)
+    SetHeader(3, resolved.expansion)
+    SetHeader(4, resolved.result)
+    SetHeader(5, resolved.mode)
+    SetHeader(6, resolved.time)
+    SetHeader(7, resolved.diff)
+    SetHeader(8, resolved.delete)
 
     if history.grips then
         local gripHeight = 24
@@ -285,13 +331,13 @@ local function History_ApplyTableLayout()
             history.grips[i]:SetPoint("TOPLEFT", history.header, "TOPLEFT", x - 5, 0)
             history.grips[i]:SetPoint("BOTTOMRIGHT", history.header, "TOPLEFT", x + 5, -gripHeight)
         end
-        SetGrip(1, widths.date)
-        SetGrip(2, dungeonWidth)
-        SetGrip(3, widths.expansion)
-        SetGrip(4, widths.result)
-        SetGrip(5, widths.mode)
-        SetGrip(6, widths.time)
-        SetGrip(7, widths.diff)
+        SetGrip(1, resolved.date)
+        SetGrip(2, resolved.dungeon)
+        SetGrip(3, resolved.expansion)
+        SetGrip(4, resolved.result)
+        SetGrip(5, resolved.mode)
+        SetGrip(6, resolved.time)
+        SetGrip(7, resolved.diff)
     end
 end
 
@@ -301,6 +347,7 @@ local function History_BeginColDrag(idx, startX)
         idx = idx,
         startX = startX,
         date = widths.date,
+        dungeon = widths.dungeon,
         expansion = widths.expansion,
         time = widths.time,
         result = widths.result,
@@ -312,8 +359,11 @@ end
 
 local function History_EndColDrag()
     UI.history.drag = nil
-    if UI.CaptureCurrentLayout then
-        UI.CaptureCurrentLayout()
+    if UI.SaveColumnWidths then
+        UI.SaveColumnWidths("history", UI.history.colWidths)
+    end
+    if UI.SaveFrameLayout and UI.history and UI.history.frame then
+        UI.SaveFrameLayout("history", UI.history.frame)
     end
 end
 
@@ -326,42 +376,31 @@ local function History_UpdateColDrag()
     local dx = curX - history.drag.startX
     local drag = history.drag
     local widths = history.colWidths
-    local avail = history.listFrame:GetWidth() - 20
-    local minDungeon = 100
+    local boundaries = {
+        [1] = { left = "date", right = "dungeon", leftMin = 50, rightMin = 100 },
+        [2] = { left = "dungeon", right = "expansion", leftMin = 100, rightMin = 50 },
+        [3] = { left = "expansion", right = "result", leftMin = 50, rightMin = 50 },
+        [4] = { left = "result", right = "mode", leftMin = 50, rightMin = 50 },
+        [5] = { left = "mode", right = "time", leftMin = 50, rightMin = 50 },
+        [6] = { left = "time", right = "diff", leftMin = 50, rightMin = 50 },
+        [7] = { left = "diff", right = "delete", leftMin = 50, rightMin = 30 },
+    }
+    local boundary = boundaries[drag.idx]
 
-    local function GetUsedExcept(idx)
-        local sum = widths.date + widths.expansion + widths.time + widths.result + widths.mode + widths.diff +
-            widths.delete
-        if idx == 1 then
-            sum = sum - widths.date
-        elseif idx == 3 then
-            sum = sum - widths.expansion
-        elseif idx == 4 then
-            sum = sum - widths.result
-        elseif idx == 5 then
-            sum = sum - widths.mode
-        elseif idx == 6 then
-            sum = sum - widths.time
-        elseif idx == 7 then
-            sum = sum - widths.diff
+    if boundary then
+        local leftStart = drag[boundary.left]
+        local rightStart = drag[boundary.right]
+        local applied = dx
+
+        if leftStart + applied < boundary.leftMin then
+            applied = boundary.leftMin - leftStart
         end
-        return sum
-    end
+        if rightStart - applied < boundary.rightMin then
+            applied = rightStart - boundary.rightMin
+        end
 
-    if drag.idx == 1 then
-        widths.date = Util.Clamp(drag.date + dx, 50, avail - GetUsedExcept(1) - minDungeon)
-    elseif drag.idx == 2 then
-        widths.expansion = Util.Clamp(drag.expansion - dx, 50, 400)
-    elseif drag.idx == 3 then
-        widths.expansion = Util.Clamp(drag.expansion + dx, 50, avail - GetUsedExcept(3) - minDungeon)
-    elseif drag.idx == 4 then
-        widths.result = Util.Clamp(drag.result + dx, 50, avail - GetUsedExcept(4) - minDungeon)
-    elseif drag.idx == 5 then
-        widths.mode = Util.Clamp(drag.mode + dx, 50, avail - GetUsedExcept(5) - minDungeon)
-    elseif drag.idx == 6 then
-        widths.time = Util.Clamp(drag.time + dx, 50, avail - GetUsedExcept(6) - minDungeon)
-    elseif drag.idx == 7 then
-        widths.diff = Util.Clamp(drag.diff + dx, 50, avail - GetUsedExcept(7) - minDungeon)
+        widths[boundary.left] = leftStart + applied
+        widths[boundary.right] = rightStart - applied
     end
     History_ApplyTableLayout()
 end
@@ -418,6 +457,7 @@ local function EnsureHistoryUI()
 
     local historyFrame = FrameFactory.CreateDialogFrame("SpeedSplitsHistoryFrame", 850, 500)
     UI.history.frame = historyFrame
+    historyFrame:SetClampedToScreen(true)
     historyFrame:EnableMouse(true)
     historyFrame:SetMovable(true)
     historyFrame:SetResizable(true)
@@ -430,12 +470,20 @@ local function EnsureHistoryUI()
     end)
     historyFrame:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
-        UI.SaveFrameGeom("history", self)
+        if UI.SaveFrameLayout then
+            UI.SaveFrameLayout("history", self)
+        end
     end)
-
-    if not UI.RestoreFrameGeom("history", historyFrame, 850, 500) then
-        historyFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-    end
+    historyFrame:SetScript("OnShow", function()
+        if UI.SaveFrameShown then
+            UI.SaveFrameShown("history", true)
+        end
+    end)
+    historyFrame:SetScript("OnHide", function()
+        if UI.SaveFrameShown then
+            UI.SaveFrameShown("history", false)
+        end
+    end)
 
     local controls = CreateFrame("Frame", nil, historyFrame)
     controls:SetPoint("TOPLEFT", 10, -10)
@@ -447,8 +495,7 @@ local function EnsureHistoryUI()
     title:SetText("Run History")
     title:SetTextColor(1, 1, 1, 1)
 
-    local close = CreateFrame("Button", nil, historyFrame, "UIPanelCloseButton")
-    close:SetPoint("TOPRIGHT", historyFrame, "TOPRIGHT", -2, -2)
+    local close = FrameFactory.CreateCloseButton(historyFrame, "TOPRIGHT", historyFrame, "TOPRIGHT", -2, -2)
 
     local searchLabel = controls:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     searchLabel:SetPoint("LEFT", title, "RIGHT", 16, 0)
@@ -466,34 +513,42 @@ local function EnsureHistoryUI()
     end)
     UI.history.searchBox = searchBox
 
-    local tierDropDown = CreateFrame("Frame", nil, controls, "UIDropDownMenuTemplate")
+    local tierDropDown = DropDown.Create(controls, 100, 1)
     tierDropDown:SetPoint("LEFT", searchBox, "RIGHT", -12, -2)
-    UIDropDownMenu_SetWidth(tierDropDown, 100)
-    InitHistoryDropDown(tierDropDown, BuildHistoryTierItems, function()
-        return UI.history.filters and UI.history.filters.tier or 0
-    end, function(v)
-        if UI.history.filters then
-            UI.history.filters.tier = tonumber(v) or 0
-        end
-    end)
-    DropDown.Refresh(tierDropDown, BuildHistoryTierItems, function()
-        return UI.history.filters and UI.history.filters.tier or 0
-    end, "Expansion")
+    DropDown.Bind(tierDropDown, {
+        buildItems = BuildHistoryTierItems,
+        getValue = function()
+            return UI.history.filters and UI.history.filters.tier or 0
+        end,
+        setValue = function(v)
+            if UI.history.filters then
+                UI.history.filters.tier = tonumber(v) or 0
+            end
+        end,
+        onChanged = function()
+            UI.RefreshHistoryTable()
+        end,
+        fallbackText = "Expansion",
+    })
     UI.history.tierDropDown = tierDropDown
 
-    local resultDropDown = CreateFrame("Frame", nil, controls, "UIDropDownMenuTemplate")
+    local resultDropDown = DropDown.Create(controls, 90, 1)
     resultDropDown:SetPoint("LEFT", tierDropDown, "RIGHT", -24, 0)
-    UIDropDownMenu_SetWidth(resultDropDown, 90)
-    InitHistoryDropDown(resultDropDown, BuildHistoryResultItems, function()
-        return UI.history.filters and UI.history.filters.result or "Any"
-    end, function(v)
-        if UI.history.filters then
-            UI.history.filters.result = v
-        end
-    end)
-    DropDown.Refresh(resultDropDown, BuildHistoryResultItems, function()
-        return UI.history.filters and UI.history.filters.result or "Any"
-    end, "Result")
+    DropDown.Bind(resultDropDown, {
+        buildItems = BuildHistoryResultItems,
+        getValue = function()
+            return UI.history.filters and UI.history.filters.result or "Any"
+        end,
+        setValue = function(v)
+            if UI.history.filters then
+                UI.history.filters.result = v
+            end
+        end,
+        onChanged = function()
+            UI.RefreshHistoryTable()
+        end,
+        fallbackText = "Result",
+    })
 
     local listFrame = FrameFactory.CreateBorderedFrame(historyFrame, 0.4, NS.Colors.turquoise)
     listFrame:SetPoint("TOPLEFT", controls, "BOTTOMLEFT", 0, -34)
@@ -571,42 +626,26 @@ local function EnsureHistoryUI()
             local row = UI.history.rows[i]
             if i <= numRows then
                 local idx = i + offset
-                local record = data[idx]
-                if record then
-                    local isPB = IsRunPB(record)
-                    local resultText, resultColor = "Incomplete", NS.Colors.darkRed
-                    if isPB then
-                        resultText, resultColor = "PB", NS.Colors.gold
-                    elseif record.success then
-                        resultText, resultColor = "Completed", NS.Colors.deepGreen
-                    end
-
-                    local node = NS.Database.GetHistoryPBNode(record)
-                    local pb = node and node.FullRun and node.FullRun.duration
-                    local diff = (pb and record.duration) and (record.duration - pb) or nil
+                local view = data[idx]
+                if view then
+                    local record = view.record
                     local textColor = NS.Colors.white
-                    local modeLabel = "All Bosses"
-                    if record.pbMode == "ignored" then
-                        modeLabel = "Ignored"
-                    elseif record.speedrunMode == "last" or record.pbMode == "last" then
-                        modeLabel = "Last Boss"
-                    end
 
-                    row.cols[1]:SetText(FormatEpochShort(record.startedAt))
+                    row.cols[1]:SetText(view.formattedDate)
                     row.cols[1]:SetTextColor(textColor.r, textColor.g, textColor.b, textColor.a or 1)
                     row.cols[2]:SetText(record.instanceName or "â€”")
-                    row.cols[3]:SetText(GetTierNameSafe(record.tier))
+                    row.cols[3]:SetText(view.tierName)
                     row.cols[3]:SetTextColor(textColor.r, textColor.g, textColor.b, textColor.a or 1)
-                    row.cols[4]:SetText(resultText)
-                    row.cols[4]:SetTextColor(resultColor.r, resultColor.g, resultColor.b)
-                    row.cols[5]:SetText(modeLabel)
+                    row.cols[4]:SetText(view.resultText)
+                    row.cols[4]:SetTextColor(view.resultColor.r, view.resultColor.g, view.resultColor.b)
+                    row.cols[5]:SetText(view.modeLabel)
                     row.cols[5]:SetTextColor(textColor.r, textColor.g, textColor.b, textColor.a or 1)
-                    row.cols[6]:SetText(record.duration and Util.FormatTime(record.duration) or "--:--.---")
+                    row.cols[6]:SetText(view.formattedDuration)
                     row.cols[6]:SetTextColor(textColor.r, textColor.g, textColor.b, textColor.a or 1)
 
-                    if diff then
-                        local _, _, _, hex = NS.GetPaceColor(diff, isPB)
-                        row.cols[7]:SetText(hex .. Util.FormatDelta(diff) .. "|r")
+                    if view.diff then
+                        local _, _, _, hex = NS.GetPaceColor(view.diff, view.isPB)
+                        row.cols[7]:SetText(hex .. Util.FormatDelta(view.diff) .. "|r")
                     else
                         row.cols[7]:SetText("â€”")
                     end
@@ -634,21 +673,31 @@ local function EnsureHistoryUI()
     end)
 
     local grip = UI.SetupSizeGrip(historyFrame, function()
-        UI.SaveFrameGeom("history", historyFrame)
+        if UI.SaveFrameLayout then
+            UI.SaveFrameLayout("history", historyFrame)
+        end
         History_ApplyTableLayout()
     end)
     UI.history.resizeGrip = grip
     UI.history.sort_col = 1
     UI.history.sort_asc = false
+    if UI.RegisterManagedFrame then
+        UI.RegisterManagedFrame("history", historyFrame)
+    end
+    if UI.ApplyAllLayouts then
+        UI.ApplyAllLayouts()
+    end
 
     C_Timer.After(0.1, function()
         UpdateHistoryRows()
         History_EnsureColGrips()
-        History_ApplyTableLayout()
+        if UI.ApplyAllLayouts then
+            UI.ApplyAllLayouts()
+        else
+            History_ApplyTableLayout()
+        end
         UI.RefreshHistoryTable()
     end)
-
-    historyFrame:Hide()
 end
 
 function UI.ToggleHistoryFrame()

@@ -8,6 +8,9 @@ NS.UI.Templates.DropDown = DropDown
 
 local UIDropDownMenu_SetText = _G.UIDropDownMenu_SetText
 local UIDropDownMenu_SetSelectedValue = _G.UIDropDownMenu_SetSelectedValue
+local UIDropDownMenu_SetSelectedName = _G.UIDropDownMenu_SetSelectedName
+local UIDropDownMenu_SetWidth = _G.UIDropDownMenu_SetWidth
+local UIDropDownMenu_JustifyText = _G.UIDropDownMenu_JustifyText
 local UIDropDownMenu_Initialize = _G.UIDropDownMenu_Initialize
 local UIDropDownMenu_AddButton = _G.UIDropDownMenu_AddButton
 local UIDropDownMenu_CreateInfo = _G.UIDropDownMenu_CreateInfo
@@ -34,12 +37,27 @@ local function GetTextRegion(dropdown)
     return nil
 end
 
+function DropDown.Create(parent, width, scale, name)
+    local dropdown = CreateFrame("Frame", name, parent, "UIDropDownMenuTemplate")
+    if UIDropDownMenu_SetWidth then
+        UIDropDownMenu_SetWidth(dropdown, width or 120)
+    end
+    if UIDropDownMenu_JustifyText then
+        UIDropDownMenu_JustifyText(dropdown, "LEFT")
+    end
+    dropdown:SetScale(scale or 1)
+    return dropdown
+end
+
 function DropDown.SetSelection(dropdown, value, text)
     if not dropdown then
         return
     end
     if UIDropDownMenu_SetSelectedValue then
         UIDropDownMenu_SetSelectedValue(dropdown, value)
+    end
+    if UIDropDownMenu_SetSelectedName then
+        UIDropDownMenu_SetSelectedName(dropdown, text or "")
     end
     if UIDropDownMenu_SetText then
         UIDropDownMenu_SetText(dropdown, text or "")
@@ -59,6 +77,24 @@ function DropDown.ResolveSelectedText(items, value, fallback)
         end
     end
     return fallback or ""
+end
+
+function DropDown.Bind(dropdown, config)
+    if not dropdown or type(config) ~= "table" then
+        return
+    end
+
+    dropdown._ssConfig = config
+    DropDown.Initialize(dropdown, config.buildItems, config.getValue, config.setValue, config.onChanged)
+    DropDown.Refresh(dropdown, config.buildItems, config.getValue, config.fallbackText)
+end
+
+function DropDown.RefreshBound(dropdown)
+    local config = dropdown and dropdown._ssConfig
+    if not config then
+        return
+    end
+    DropDown.Refresh(dropdown, config.buildItems, config.getValue, config.fallbackText)
 end
 
 function DropDown.Initialize(dropdown, buildItems, getValue, setValue, onChanged)

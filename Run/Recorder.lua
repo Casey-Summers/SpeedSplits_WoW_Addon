@@ -175,8 +175,15 @@ local function BuildRunPresentation(run, pbTable)
         end
     end
 
+    local finalRouteEntry = (run.entries and #run.entries > 0) and run.entries[#run.entries] or nil
+    if finalRouteEntry then
+        local finalPB = progress.cumulativeDisplayByKey[finalRouteEntry.key]
+        if finalPB ~= nil and finalPB > 0 then
+            presentation.summary.pbTotal = finalPB
+        end
+    end
+
     if chronologicalLatestRow then
-        presentation.summary.pbTotal = chronologicalLatestRow.pbTime
         presentation.summary.splitTotal = chronologicalLatestRow.splitTime
         presentation.summary.splitColor = chronologicalLatestRow.color
         presentation.summary.latestRow = chronologicalLatestRow
@@ -272,7 +279,7 @@ local function SaveRunRecord(success)
     local pbMode = NS.Run.routeMode or ((NS.Run.speedrunMode == "last") and "last" or "route")
     local routeSaveBlocked = NS.Run.routeSaveBlocked
     if pbMode == "ignored" and not hasIgnoredEntries then
-        if (NS.Run.isTest == true or (NS.Debug and NS.Debug.objectiveTrace)) and NS.Print then
+        if NS.Run.isTest == true and NS.Print then
             NS.Print(("Ignored-mode save corrected to route for %s"):format(tostring(NS.Run.instanceName or "")))
         end
         pbMode = "route"
@@ -360,7 +367,7 @@ local function RecordBossKill(encounterID, encounterName)
     end
 
     local pbSnapshot = GetActivePBSegments()
-    local presentation = NS.Run.presentation or BuildRunPresentation(NS.Run, pbSnapshot)
+    local presentation = BuildRunPresentation(NS.Run, pbSnapshot)
     local rowState = presentation.rowsByKey[bossEntry.key]
     if not rowState then
         return

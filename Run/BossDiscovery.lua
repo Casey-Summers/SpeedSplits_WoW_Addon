@@ -3,11 +3,20 @@ local _, NS = ...
 local Const = NS.Const
 local Util = NS.Util
 local Discovery = NS.Discovery
+local EJInstanceCatalog = nil
+local JournalTierCacheByID = {}
+local JournalLookupCacheByName = {}
 
-local function ForEachEJInstance(callback)
-    if not EJ_GetNumTiers or not EJ_SelectTier or not EJ_GetInstanceByIndex then
-        return
+local function GetEJInstanceCatalog()
+    if EJInstanceCatalog ~= nil then
+        return EJInstanceCatalog
     end
+
+    EJInstanceCatalog = {}
+    if not EJ_GetNumTiers or not EJ_SelectTier or not EJ_GetInstanceByIndex then
+        return EJInstanceCatalog
+    end
+
     local tierCount = EJ_GetNumTiers() or 0
     for tierIndex = 1, tierCount do
         EJ_SelectTier(tierIndex)
@@ -17,10 +26,23 @@ local function ForEachEJInstance(callback)
                 if not instanceID then
                     break
                 end
-                if callback(tierIndex, instanceID, name) then
-                    return
-                end
+                EJInstanceCatalog[#EJInstanceCatalog + 1] = {
+                    tierIndex = tierIndex,
+                    instanceID = tonumber(instanceID) or instanceID,
+                    name = name,
+                    normalizedName = Util.NormalizeName(name),
+                }
             end
+        end
+    end
+
+    return EJInstanceCatalog
+end
+
+local function ForEachEJInstance(callback)
+    for _, instance in ipairs(GetEJInstanceCatalog()) do
+        if callback(instance.tierIndex, instance.instanceID, instance.name, instance.normalizedName) then
+            return
         end
     end
 end
@@ -30,6 +52,9 @@ local function FindJournalTierForInstanceID(targetID)
     if not targetID then
         return nil
     end
+    if JournalTierCacheByID[targetID] ~= nil then
+        return JournalTierCacheByID[targetID]
+    end
     local found
     ForEachEJInstance(function(tierIndex, instanceID)
         if tonumber(instanceID) == targetID then
@@ -37,6 +62,7 @@ local function FindJournalTierForInstanceID(targetID)
             return true
         end
     end)
+    JournalTierCacheByID[targetID] = found
     return found
 end
 
@@ -45,21 +71,25 @@ local function FindJournalTierAndInstanceIDByName(instanceName)
     if wanted == "" then
         return nil, nil
     end
+    local cached = JournalLookupCacheByName[wanted]
+    if cached then
+        return cached.tier, cached.instanceID
+    end
 
     local foundTier, foundID
-    ForEachEJInstance(function(tierIndex, instanceID, name)
-        if Util.NormalizeName(name) == wanted then
+    ForEachEJInstance(function(tierIndex, instanceID, _, normalizedName)
+        if normalizedName == wanted then
             foundTier, foundID = tierIndex, instanceID
             return true
         end
     end)
     if foundID then
+        JournalLookupCacheByName[wanted] = { tier = foundTier, instanceID = foundID }
         return foundTier, foundID
     end
 
     local bestTier, bestID, bestLen = nil, nil, 999
-    ForEachEJInstance(function(tierIndex, instanceID, name)
-        local normalizedEJ = Util.NormalizeName(name)
+    ForEachEJInstance(function(tierIndex, instanceID, _, normalizedEJ)
         if normalizedEJ:find(wanted, 1, true) or wanted:find(normalizedEJ, 1, true) then
             local diff = math.abs(#normalizedEJ - #wanted)
             if diff < bestLen then
@@ -70,6 +100,7 @@ local function FindJournalTierAndInstanceIDByName(instanceName)
         end
     end)
 
+    JournalLookupCacheByName[wanted] = { tier = bestTier, instanceID = bestID }
     return bestTier, bestID
 end
 
@@ -178,14 +209,7 @@ local function GetBossNamesFromObjectives()
         if type(desc) == "string" then
             sawStringDescription = true
 
-            if NS.Debug and NS.Debug.objectiveTrace and NS.Print then
-                NS.Print(("OBJ[%d] raw: %q"):format(criteriaIndex, desc))
-            end
-
             local bossName = ExtractBossNameFromObjectiveText(desc)
-            if NS.Debug and NS.Debug.objectiveTrace and NS.Print then
-                NS.Print(("OBJ[%d] parsed: %s"):format(criteriaIndex, bossName and bossName or "<nil>"))
-            end
 
             if bossName then
                 names[#names + 1] = bossName

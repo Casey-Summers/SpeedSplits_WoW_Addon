@@ -217,13 +217,23 @@ System.RegisterTest({
         System.WithCleanup(function()
             System.BeginSection("Reset from a modified layout back to the saved default")
             NS.DB.ui = {
-                cols = { pb = 111, split = 112, delta = 113 },
-                frames = { boss = { x = 99, y = 98 } },
+                frames = {
+                    boss = {
+                        x = 99,
+                        y = 98,
+                        columns = { pb = 111, split = 112, diff = 113 },
+                    },
+                },
             }
             NS.DB.DefaultLayout = {
                 ui = {
-                    cols = { pb = 85, split = 90, delta = 95 },
-                    frames = { boss = { x = 12, y = 34 } },
+                    frames = {
+                        boss = {
+                            x = 12,
+                            y = 34,
+                            columns = { pb = 85, split = 90, diff = 95 },
+                        },
+                    },
                 },
             }
 
@@ -234,7 +244,7 @@ System.RegisterTest({
 
             NS.ResetLayout()
 
-            System.AssertEqual(NS.DB.ui.cols.pb, 85, "ResetLayout restores saved PB column width")
+            System.AssertEqual(NS.DB.ui.frames.boss.columns.pb, 85, "ResetLayout restores saved PB column width")
             System.AssertEqual(NS.DB.ui.frames.boss.x, 12, "ResetLayout restores saved boss-frame position")
             System.AssertTrue(reloaded == true, "ResetLayout still triggers a UI reload", reloaded)
             System.EndSection("Reset from a modified layout back to the saved default", "PASS")
@@ -243,6 +253,896 @@ System.RegisterTest({
             NS.DB.DefaultLayout = oldDefaultLayout
             ReloadUI = oldReloadUI
             NS.RefreshAllUI = oldRefreshAllUI
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_first_login_wipe_rebuilds_latest_db_shape",
+    suite = "Logic",
+    subcategory = "Migration",
+    name = "Rebuilds the saved variables table from scratch when the first-login wipe hook requests it",
+    func = function()
+        local oldSpeedSplitsDB = SpeedSplitsDB
+        local oldDB = NS.DB
+        local oldShouldWipe = NS.Migrations.ShouldWipeDataOnFirstLogin
+        local oldBuildFresh = NS.Migrations.BuildFreshDatabase
+
+        System.WithCleanup(function()
+            System.BeginSection("Force a first-login wipe during EnsureDB")
+            SpeedSplitsDB = {
+                RunHistory = { { instanceName = "Old Run" } },
+                Settings = { speedrunMode = "last" },
+            }
+
+            NS.Migrations.ShouldWipeDataOnFirstLogin = function()
+                return true
+            end
+            NS.Migrations.BuildFreshDatabase = function()
+                return { __firstLoginWipeToken = "test-token" }
+            end
+
+            local db = NS.Database.EnsureDB()
+
+            System.AssertTrue(type(db.RunHistory) == "table" and #db.RunHistory == 0,
+                "EnsureDB rebuilds an empty latest-shape RunHistory after the wipe")
+            System.AssertTrue(type(db.Settings) == "table", "EnsureDB rebuilds the Settings table after the wipe")
+            System.AssertTrue(db.__firstLoginWipeApplied == true,
+                "EnsureDB persists a one-time marker after the first-login wipe", db.__firstLoginWipeApplied)
+            System.AssertEqual(db.SchemaVersion, NS.Migrations.CurrentSchemaVersion,
+                "EnsureDB reapplies the latest schema after the wipe")
+            System.AssertTrue(type(db.InstanceBestRoute) == "table",
+                "EnsureDB rebuilds the PB containers after the wipe", type(db.InstanceBestRoute))
+            System.EndSection("Force a first-login wipe during EnsureDB", "PASS")
+        end, function()
+            SpeedSplitsDB = oldSpeedSplitsDB
+            NS.DB = oldDB
+            NS.Migrations.ShouldWipeDataOnFirstLogin = oldShouldWipe
+            NS.Migrations.BuildFreshDatabase = oldBuildFresh
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_reload_awareness_invalidates_in_instance_bootstrap_without_zone_change",
+    suite = "Logic",
+    subcategory = "Reload Awareness",
+    name = "Marks startup invalid when the addon loads into an instance without a zone-change prime",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldIsInInstance = IsInInstance
+        local oldGetUnitSpeed = GetUnitSpeed
+        local oldBeginInstanceSession = NS.RunLogic.BeginInstanceSession
+        local oldStartRunTimer = NS.RunLogic.StartRunTimer
+        local oldEnsureUI = NS.UI.EnsureUI
+        local oldSetTimerWarning = NS.UI.SetTimerWarning
+        local oldClearTimerWarning = NS.UI.ClearTimerWarning
+        local oldResetRunPresentation = NS.UI.ResetRunPresentation
+        local oldRunState = NS.Util.CopyTable(NS.Run)
+        local oldVisibility = NS.Util.CopyTable(NS.DB.Settings.visibility or {})
+        local began = 0
+        local started = 0
+        local warning = nil
+
+        System.WithCleanup(function()
+            System.BeginSection("Enter the world in-instance without startup priming")
+            NS.DB.Settings.visibility.timer = "instance"
+            NS.DB.Settings.visibility.splits = "instance"
+            IsInInstance = function()
+                return true
+            end
+            GetUnitSpeed = function()
+                return 0
+            end
+            NS.RunLogic.BeginInstanceSession = function()
+                began = began + 1
+            end
+            NS.RunLogic.StartRunTimer = function()
+                started = started + 1
+            end
+            NS.UI.EnsureUI = function() end
+            NS.UI.SetTimerWarning = function(message)
+                warning = message
+            end
+            NS.UI.ClearTimerWarning = function() end
+            NS.UI.ResetRunPresentation = function() end
+
+            if NS.RunLogic.ResetReloadAwareness then
+                NS.RunLogic.ResetReloadAwareness()
+            end
+            NS.RunLogic.ResetRun()
+            NS.App:GetScript("OnEvent")(NS.App, "PLAYER_ENTERING_WORLD")
+            NS.App:GetScript("OnEvent")(NS.App, "PLAYER_STARTED_MOVING")
+
+            System.AssertTrue(NS.Run.reloadInvalid == true, "In-instance startup is marked invalid", NS.Run.reloadInvalid)
+            System.AssertEqual(began, 0, "Invalid startup does not begin an instance session")
+            System.AssertEqual(started, 0, "Invalid startup does not start the timer")
+            System.AssertEqual(NS.Run.waitingForMove, false, "Invalid startup does not arm movement priming")
+            System.AssertEqual(warning, NS.Const.UI_TEXT.RELOAD_INVALID_WARNING,
+                "Invalid startup shows the reload warning through the timer surface")
+            System.EndSection("Enter the world in-instance without startup priming", "PASS")
+        end, function()
+            IsInInstance = oldIsInInstance
+            GetUnitSpeed = oldGetUnitSpeed
+            NS.RunLogic.BeginInstanceSession = oldBeginInstanceSession
+            NS.RunLogic.StartRunTimer = oldStartRunTimer
+            NS.UI.EnsureUI = oldEnsureUI
+            NS.UI.SetTimerWarning = oldSetTimerWarning
+            NS.UI.ClearTimerWarning = oldClearTimerWarning
+            NS.UI.ResetRunPresentation = oldResetRunPresentation
+            NS.DB.Settings.visibility = oldVisibility
+            for key in pairs(NS.Run) do
+                NS.Run[key] = nil
+            end
+            for key, value in pairs(oldRunState) do
+                NS.Run[key] = value
+            end
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_reload_awareness_allows_primed_instance_bootstrap",
+    suite = "Logic",
+    subcategory = "Reload Awareness",
+    name = "Starts a normal instance session when the zone-change prime was seen first",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldIsInInstance = IsInInstance
+        local oldGetUnitSpeed = GetUnitSpeed
+        local oldBeginInstanceSession = NS.RunLogic.BeginInstanceSession
+        local oldEnsureUI = NS.UI.EnsureUI
+        local oldClearTimerWarning = NS.UI.ClearTimerWarning
+        local oldResetRunPresentation = NS.UI.ResetRunPresentation
+        local oldRunState = NS.Util.CopyTable(NS.Run)
+        local oldVisibility = NS.Util.CopyTable(NS.DB.Settings.visibility or {})
+        local began = 0
+
+        System.WithCleanup(function()
+            System.BeginSection("Prime startup with a zone change before entering the instance")
+            NS.DB.Settings.visibility.timer = "instance"
+            NS.DB.Settings.visibility.splits = "instance"
+            IsInInstance = function()
+                return true
+            end
+            GetUnitSpeed = function()
+                return 0
+            end
+            NS.RunLogic.BeginInstanceSession = function()
+                began = began + 1
+            end
+            NS.UI.EnsureUI = function() end
+            NS.UI.ClearTimerWarning = function() end
+            NS.UI.ResetRunPresentation = function() end
+
+            if NS.RunLogic.ResetReloadAwareness then
+                NS.RunLogic.ResetReloadAwareness()
+            end
+            NS.RunLogic.ResetRun()
+            NS.App:GetScript("OnEvent")(NS.App, "ZONE_CHANGED_NEW_AREA")
+            NS.App:GetScript("OnEvent")(NS.App, "PLAYER_ENTERING_WORLD")
+
+            System.AssertTrue(NS.Run.reloadInvalid ~= true, "Primed instance startup stays valid")
+            System.AssertTrue(NS.Run.startupZoneSeen == true, "Zone-change prime is retained for startup gating")
+            System.AssertEqual(began, 1, "Primed startup enters the normal instance session path")
+            System.EndSection("Prime startup with a zone change before entering the instance", "PASS")
+        end, function()
+            IsInInstance = oldIsInInstance
+            GetUnitSpeed = oldGetUnitSpeed
+            NS.RunLogic.BeginInstanceSession = oldBeginInstanceSession
+            NS.UI.EnsureUI = oldEnsureUI
+            NS.UI.ClearTimerWarning = oldClearTimerWarning
+            NS.UI.ResetRunPresentation = oldResetRunPresentation
+            NS.DB.Settings.visibility = oldVisibility
+            for key in pairs(NS.Run) do
+                NS.Run[key] = nil
+            end
+            for key, value in pairs(oldRunState) do
+                NS.Run[key] = value
+            end
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_reload_awareness_allows_outdoor_bootstrap_with_outdoor_visibility",
+    suite = "Logic",
+    subcategory = "Reload Awareness",
+    name = "Keeps outdoor startup working when timer visibility is outdoor-only",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldIsInInstance = IsInInstance
+        local oldGetUnitSpeed = GetUnitSpeed
+        local oldRunState = NS.Util.CopyTable(NS.Run)
+        local oldVisibility = NS.Util.CopyTable(NS.DB.Settings.visibility or {})
+
+        System.WithCleanup(function()
+            System.BeginSection("Load outdoors with outdoor-only timer visibility")
+            NS.DB.Settings.visibility.timer = "outdoor"
+            NS.DB.Settings.visibility.splits = "instance"
+            IsInInstance = function()
+                return false
+            end
+            GetUnitSpeed = function()
+                return 0
+            end
+
+            if NS.RunLogic.ResetReloadAwareness then
+                NS.RunLogic.ResetReloadAwareness()
+            end
+            NS.RunLogic.ResetRun()
+            NS.App:GetScript("OnEvent")(NS.App, "PLAYER_ENTERING_WORLD")
+
+            System.AssertTrue(NS.Run.reloadInvalid ~= true, "Outdoor startup does not invalidate the run")
+            System.AssertTrue(NS.Run.waitingForMove == true, "Outdoor startup still waits for first movement")
+            System.EndSection("Load outdoors with outdoor-only timer visibility", "PASS")
+        end, function()
+            IsInInstance = oldIsInInstance
+            GetUnitSpeed = oldGetUnitSpeed
+            NS.DB.Settings.visibility = oldVisibility
+            for key in pairs(NS.Run) do
+                NS.Run[key] = nil
+            end
+            for key, value in pairs(oldRunState) do
+                NS.Run[key] = value
+            end
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_reload_awareness_recovers_after_zone_change",
+    suite = "Logic",
+    subcategory = "Reload Awareness",
+    name = "Clears invalid startup state after a later zone change",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldIsInInstance = IsInInstance
+        local oldGetUnitSpeed = GetUnitSpeed
+        local oldBeginInstanceSession = NS.RunLogic.BeginInstanceSession
+        local oldEnsureUI = NS.UI.EnsureUI
+        local oldSetTimerWarning = NS.UI.SetTimerWarning
+        local oldClearTimerWarning = NS.UI.ClearTimerWarning
+        local oldResetRunPresentation = NS.UI.ResetRunPresentation
+        local oldRunState = NS.Util.CopyTable(NS.Run)
+        local oldVisibility = NS.Util.CopyTable(NS.DB.Settings.visibility or {})
+        local began = 0
+
+        System.WithCleanup(function()
+            System.BeginSection("Recover an invalid startup after a real zone change")
+            NS.DB.Settings.visibility.timer = "instance"
+            NS.DB.Settings.visibility.splits = "instance"
+            IsInInstance = function()
+                return true
+            end
+            GetUnitSpeed = function()
+                return 0
+            end
+            NS.RunLogic.BeginInstanceSession = function()
+                began = began + 1
+            end
+            NS.UI.EnsureUI = function() end
+            NS.UI.SetTimerWarning = function() end
+            NS.UI.ClearTimerWarning = function() end
+            NS.UI.ResetRunPresentation = function() end
+
+            if NS.RunLogic.ResetReloadAwareness then
+                NS.RunLogic.ResetReloadAwareness()
+            end
+            NS.RunLogic.ResetRun()
+            NS.App:GetScript("OnEvent")(NS.App, "PLAYER_ENTERING_WORLD")
+            NS.App:GetScript("OnEvent")(NS.App, "ZONE_CHANGED_NEW_AREA")
+
+            System.AssertTrue(NS.Run.reloadInvalid ~= true, "Zone change clears the invalid startup state")
+            System.AssertTrue(NS.Run.startupZoneSeen == true, "Zone change primes the startup gate")
+            System.AssertEqual(began, 1, "Recovery enters the normal instance session path exactly once")
+            System.EndSection("Recover an invalid startup after a real zone change", "PASS")
+        end, function()
+            IsInInstance = oldIsInInstance
+            GetUnitSpeed = oldGetUnitSpeed
+            NS.RunLogic.BeginInstanceSession = oldBeginInstanceSession
+            NS.UI.EnsureUI = oldEnsureUI
+            NS.UI.SetTimerWarning = oldSetTimerWarning
+            NS.UI.ClearTimerWarning = oldClearTimerWarning
+            NS.UI.ResetRunPresentation = oldResetRunPresentation
+            NS.DB.Settings.visibility = oldVisibility
+            for key in pairs(NS.Run) do
+                NS.Run[key] = nil
+            end
+            for key, value in pairs(oldRunState) do
+                NS.Run[key] = value
+            end
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_reload_awareness_can_be_disabled_for_dev_tools",
+    suite = "Logic",
+    subcategory = "Reload Awareness",
+    name = "Bypasses invalid startup gating when reload awareness is disabled",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldIsInInstance = IsInInstance
+        local oldGetUnitSpeed = GetUnitSpeed
+        local oldBeginInstanceSession = NS.RunLogic.BeginInstanceSession
+        local oldEnsureUI = NS.UI.EnsureUI
+        local oldClearTimerWarning = NS.UI.ClearTimerWarning
+        local oldResetRunPresentation = NS.UI.ResetRunPresentation
+        local oldReloadAwarenessEnabled = NS.Debug.reloadAwarenessEnabled
+        local oldRunState = NS.Util.CopyTable(NS.Run)
+        local oldVisibility = NS.Util.CopyTable(NS.DB.Settings.visibility or {})
+        local began = 0
+
+        System.WithCleanup(function()
+            System.BeginSection("Disable reload awareness and bootstrap inside an instance")
+            NS.DB.Settings.visibility.timer = "instance"
+            NS.DB.Settings.visibility.splits = "instance"
+            NS.Debug.reloadAwarenessEnabled = false
+            IsInInstance = function()
+                return true
+            end
+            GetUnitSpeed = function()
+                return 0
+            end
+            NS.RunLogic.BeginInstanceSession = function()
+                began = began + 1
+            end
+            NS.UI.EnsureUI = function() end
+            NS.UI.ClearTimerWarning = function() end
+            NS.UI.ResetRunPresentation = function() end
+
+            if NS.RunLogic.ResetReloadAwareness then
+                NS.RunLogic.ResetReloadAwareness()
+            end
+            NS.RunLogic.ResetRun()
+            NS.App:GetScript("OnEvent")(NS.App, "PLAYER_ENTERING_WORLD")
+
+            System.AssertTrue(NS.Run.reloadInvalid ~= true, "Disabled reload awareness does not invalidate startup")
+            System.AssertEqual(began, 1, "Disabled reload awareness allows the normal instance session path")
+            System.EndSection("Disable reload awareness and bootstrap inside an instance", "PASS")
+        end, function()
+            IsInInstance = oldIsInInstance
+            GetUnitSpeed = oldGetUnitSpeed
+            NS.RunLogic.BeginInstanceSession = oldBeginInstanceSession
+            NS.UI.EnsureUI = oldEnsureUI
+            NS.UI.ClearTimerWarning = oldClearTimerWarning
+            NS.UI.ResetRunPresentation = oldResetRunPresentation
+            NS.Debug.reloadAwarenessEnabled = oldReloadAwarenessEnabled
+            NS.DB.Settings.visibility = oldVisibility
+            for key in pairs(NS.Run) do
+                NS.Run[key] = nil
+            end
+            for key, value in pairs(oldRunState) do
+                NS.Run[key] = value
+            end
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_reset_layout_preserves_visibility_settings",
+    suite = "Logic",
+    subcategory = "Layout Reset",
+    name = "ResetLayout leaves timer and splits visibility settings unchanged",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldUI = NS.Util.CopyTable(NS.DB.ui or {})
+        local oldDefaultLayout = NS.Util.CopyTable(NS.DB.DefaultLayout or {})
+        local oldVisibility = NS.Util.CopyTable(NS.DB.Settings.visibility or {})
+        local oldReloadUI = ReloadUI
+        local oldRefreshAllUI = NS.RefreshAllUI
+
+        System.WithCleanup(function()
+            System.BeginSection("Reset layout without changing the visibility settings")
+            NS.DB.Settings.visibility.timer = "outdoor"
+            NS.DB.Settings.visibility.splits = "both"
+            NS.DB.ui = {
+                frames = {
+                    boss = {
+                        x = 99,
+                        y = 98,
+                        columns = { pb = 111, split = 112, diff = 113 },
+                    },
+                },
+            }
+            NS.DB.DefaultLayout = {
+                ui = {
+                    frames = {
+                        boss = {
+                            x = 12,
+                            y = 34,
+                            columns = { pb = 85, split = 90, diff = 95 },
+                        },
+                    },
+                },
+            }
+
+            ReloadUI = function() end
+            NS.RefreshAllUI = function() end
+
+            NS.ResetLayout()
+
+            System.AssertEqual(NS.DB.Settings.visibility.timer, "outdoor",
+                "ResetLayout preserves timer visibility")
+            System.AssertEqual(NS.DB.Settings.visibility.splits, "both",
+                "ResetLayout preserves splits visibility")
+            System.EndSection("Reset layout without changing the visibility settings", "PASS")
+        end, function()
+            NS.DB.ui = oldUI
+            NS.DB.DefaultLayout = oldDefaultLayout
+            NS.DB.Settings.visibility = oldVisibility
+            ReloadUI = oldReloadUI
+            NS.RefreshAllUI = oldRefreshAllUI
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_dev_tools_toggle_reload_awareness_recovers_invalid_startup",
+    suite = "Logic",
+    subcategory = "Reload Awareness",
+    name = "Dev toggle recovers a blocked reload-invalid startup inside an instance",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldHandleWorldEntry = NS.HandleWorldEntry
+        local oldReloadAwarenessEnabled = NS.Debug.reloadAwarenessEnabled
+        local oldRunState = NS.Util.CopyTable(NS.Run)
+        local recovered = 0
+
+        System.WithCleanup(function()
+            System.BeginSection("Disable reload awareness through dev tools after a blocked startup")
+            NS.Debug.reloadAwarenessEnabled = true
+            NS.Run.reloadInvalid = true
+            NS.Run.reloadGateResolved = false
+            NS.Run.inInstance = true
+            NS.HandleWorldEntry = function()
+                recovered = recovered + 1
+                NS.Run.reloadInvalid = false
+                NS.Run.reloadGateResolved = true
+            end
+
+            local enabled = NS.DevTools.ToggleReloadAwareness()
+
+            System.AssertTrue(enabled == false, "Dev toggle disables reload awareness", enabled)
+            System.AssertEqual(recovered, 1, "Blocked startup is re-evaluated immediately", recovered)
+            System.AssertTrue(NS.Run.reloadInvalid ~= true, "Blocked startup is cleared after disabling reload awareness")
+            System.EndSection("Disable reload awareness through dev tools after a blocked startup", "PASS")
+        end, function()
+            NS.HandleWorldEntry = oldHandleWorldEntry
+            NS.Debug.reloadAwarenessEnabled = oldReloadAwarenessEnabled
+            for key in pairs(NS.Run) do
+                NS.Run[key] = nil
+            end
+            for key, value in pairs(oldRunState) do
+                NS.Run[key] = value
+            end
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_dev_tools_toggle_reload_awareness_persists_in_settings",
+    suite = "Logic",
+    subcategory = "Reload Awareness",
+    name = "Dev toggle persists reload awareness in saved settings",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldReloadAwarenessEnabled = NS.Debug.reloadAwarenessEnabled
+        local oldSavedValue = NS.DB.Settings.reloadAwarenessEnabled
+
+        System.WithCleanup(function()
+            System.BeginSection("Persist reload awareness through the dev toggle")
+            NS.Debug.reloadAwarenessEnabled = true
+            NS.DB.Settings.reloadAwarenessEnabled = true
+
+            local enabled = NS.DevTools.ToggleReloadAwareness()
+
+            System.AssertTrue(enabled == false, "Dev toggle returns the new disabled state", enabled)
+            System.AssertTrue(NS.Debug.reloadAwarenessEnabled == false, "Live reload awareness state is disabled")
+            System.AssertTrue(NS.DB.Settings.reloadAwarenessEnabled == false, "Saved reload awareness state is disabled")
+            System.EndSection("Persist reload awareness through the dev toggle", "PASS")
+        end, function()
+            NS.Debug.reloadAwarenessEnabled = oldReloadAwarenessEnabled
+            NS.DB.Settings.reloadAwarenessEnabled = oldSavedValue
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_reset_run_state_and_presentation_resets_both_owners",
+    suite = "Logic",
+    subcategory = "Runtime Ownership",
+    name = "Run reset helper clears runtime state and the UI presentation together",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldRunState = NS.Util.CopyTable(NS.Run)
+        local oldTimerText = NS.UI.SetTimerText
+        local oldKillCount = NS.UI.SetKillCount
+        local oldClearBossRows = NS.UI.ClearBossRows
+        local oldSetTotals = NS.SetTotals
+        local oldSetTimerDelta = NS.UI.SetTimerDelta
+        local timerCalls = 0
+        local killCalls = 0
+        local clearCalls = 0
+
+        System.WithCleanup(function()
+            System.BeginSection("Reset runtime state and presentation with one helper")
+            NS.Run.active = true
+            NS.Run.waitingForMove = true
+            NS.Run.entries = { { key = "boss_a" } }
+            NS.UI.SetTimerText = function()
+                timerCalls = timerCalls + 1
+            end
+            NS.UI.SetKillCount = function()
+                killCalls = killCalls + 1
+            end
+            NS.UI.ClearBossRows = function()
+                clearCalls = clearCalls + 1
+            end
+            NS.SetTotals = function() end
+            NS.UI.SetTimerDelta = function() end
+
+            NS.RunLogic.ResetRunStateAndPresentation()
+
+            System.AssertTrue(NS.Run.active == false, "Run active state is cleared", NS.Run.active)
+            System.AssertTrue(NS.Run.waitingForMove == false, "Move-waiting state is cleared", NS.Run.waitingForMove)
+            System.AssertEqual(#NS.Run.entries, 0, "Runtime entries are cleared")
+            System.AssertTrue(timerCalls > 0, "Presentation reset rewrites the timer text", timerCalls)
+            System.AssertTrue(killCalls > 0, "Presentation reset rewrites the kill counter", killCalls)
+            System.AssertTrue(clearCalls > 0, "Presentation reset clears boss rows", clearCalls)
+            System.EndSection("Reset runtime state and presentation with one helper", "PASS")
+        end, function()
+            NS.UI.SetTimerText = oldTimerText
+            NS.UI.SetKillCount = oldKillCount
+            NS.UI.ClearBossRows = oldClearBossRows
+            NS.SetTotals = oldSetTotals
+            NS.UI.SetTimerDelta = oldSetTimerDelta
+            for key in pairs(NS.Run) do
+                NS.Run[key] = nil
+            end
+            for key, value in pairs(oldRunState) do
+                NS.Run[key] = value
+            end
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_restore_styles_preserves_visibility_settings",
+    suite = "Logic",
+    subcategory = "Settings",
+    name = "Restore Styles leaves the UI visibility settings unchanged",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldSettings = NS.Util.CopyTable(NS.DB.Settings or {})
+        local oldDefaultStyle = NS.Util.CopyTable(NS.DB.DefaultStyle or {})
+        local oldUpdateColors = NS.UpdateColorsFromSettings
+        local oldRefreshAllUI = NS.RefreshAllUI
+
+        System.WithCleanup(function()
+            System.BeginSection("Restore styles without changing the visibility settings")
+            NS.DB.Settings.visibility.timer = "outdoor"
+            NS.DB.Settings.visibility.splits = "both"
+            NS.DB.DefaultStyle = {
+                colors = NS.Util.CopyTable(NS.DB.Settings.colors),
+                fonts = NS.Util.CopyTable(NS.DB.Settings.fonts),
+                titleTexture = NS.DB.Settings.titleTexture,
+                timerToastScale = NS.DB.Settings.timerToastScale,
+                showTimerToast = NS.DB.Settings.showTimerToast,
+                toastAllBosses = NS.DB.Settings.toastAllBosses,
+                toastSoundID = NS.DB.Settings.toastSoundID,
+                toastSoundName = NS.DB.Settings.toastSoundName,
+                toastVolume = NS.DB.Settings.toastVolume,
+                paceThreshold1 = NS.DB.Settings.paceThreshold1,
+                paceThreshold2 = NS.DB.Settings.paceThreshold2,
+                showNPCViewModels = NS.DB.Settings.showNPCViewModels,
+                visibility = { timer = "instance", splits = "instance" },
+            }
+            NS.UpdateColorsFromSettings = function() end
+            NS.RefreshAllUI = function() end
+
+            local applied = NS.Settings.ApplyDefaultStyleSnapshot()
+
+            System.AssertTrue(applied == true, "Restore-styles helper applies the saved style snapshot", applied)
+            System.AssertEqual(NS.DB.Settings.visibility.timer, "outdoor",
+                "Restore Styles preserves timer visibility")
+            System.AssertEqual(NS.DB.Settings.visibility.splits, "both",
+                "Restore Styles preserves splits visibility")
+            System.EndSection("Restore styles without changing the visibility settings", "PASS")
+        end, function()
+            NS.DB.Settings = oldSettings
+            NS.DB.DefaultStyle = oldDefaultStyle
+            NS.UpdateColorsFromSettings = oldUpdateColors
+            NS.RefreshAllUI = oldRefreshAllUI
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_layout_initialize_migrates_legacy_shape",
+    suite = "Logic",
+    subcategory = "Layout Reset",
+    name = "InitializeDefaults migrates legacy top-level layout fields into nested frame layout state",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldUI = NS.Util.CopyTable(NS.DB.ui or {})
+        local oldDefaultLayout = NS.DB.DefaultLayout and NS.Util.CopyTable(NS.DB.DefaultLayout) or nil
+
+        System.WithCleanup(function()
+            System.BeginSection("Migrate a legacy layout snapshot")
+            NS.DB.ui = {
+                cols = { pb = 101, split = 102, delta = 103 },
+                historyCols = { date = 141, dungeon = 221, expansion = 142, result = 131, mode = 81, time = 82, diff = 121, delete = 31 },
+                frames = {
+                    boss = { relPoint = "TOPLEFT", x = 11, y = 22, w = 600, h = 333 },
+                    history = { relPoint = "BOTTOM", x = 44, y = 55, w = 900, h = 444 },
+                },
+            }
+
+            NS.UI.InitializeDefaults()
+
+            System.AssertEqual(NS.DB.ui.frames.boss.relativePoint, "TOPLEFT",
+                "Legacy relPoint migrates into relativePoint")
+            System.AssertEqual(NS.DB.ui.frames.boss.width, 600, "Legacy boss width migrates into width")
+            System.AssertEqual(NS.DB.ui.frames.boss.height, 333, "Legacy boss height migrates into height")
+            System.AssertEqual(NS.DB.ui.frames.boss.columns.pb, 101, "Legacy boss columns migrate into nested columns")
+            System.AssertEqual(NS.DB.ui.frames.boss.columns.diff, 103, "Legacy delta migrates into nested diff width")
+            System.AssertEqual(NS.DB.ui.frames.history.columns.dungeon, 221,
+                "Legacy history column widths migrate into nested columns")
+            System.EndSection("Migrate a legacy layout snapshot", "PASS")
+        end, function()
+            NS.DB.ui = oldUI
+            NS.DB.DefaultLayout = oldDefaultLayout
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_apply_frame_layout_uses_wow_restore_order",
+    suite = "Logic",
+    subcategory = "Layout Reset",
+    name = "ApplyFrameLayout uses the required WoW restore order",
+    func = function()
+        local calls = {}
+        local frame = {
+            SetClampedToScreen = function() end,
+            SetScale = function()
+                calls[#calls + 1] = "SetScale"
+            end,
+            SetSize = function()
+                calls[#calls + 1] = "SetSize"
+            end,
+            ClearAllPoints = function()
+                calls[#calls + 1] = "ClearAllPoints"
+            end,
+            SetPoint = function()
+                calls[#calls + 1] = "SetPoint"
+            end,
+            SetResizeBounds = function() end,
+            SetResizable = function() end,
+        }
+
+        System.BeginSection("Apply a saved frame layout")
+        NS.UI.ApplyFrameLayout(frame, {
+            point = "CENTER",
+            relativePoint = "CENTER",
+            x = 0,
+            y = 0,
+            width = 451,
+            height = 156,
+            scale = 1,
+            shown = true,
+            columns = { pb = 85, split = 100, diff = 70 },
+        }, "boss")
+
+        System.AssertEqual(calls[1], "SetScale", "Frame scale is applied first")
+        System.AssertEqual(calls[2], "SetSize", "Frame size is applied second")
+        System.AssertEqual(calls[3], "ClearAllPoints", "Existing anchors are cleared before SetPoint")
+        System.AssertEqual(calls[4], "SetPoint", "Frame anchors are restored after ClearAllPoints")
+        System.EndSection("Apply a saved frame layout", "PASS")
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_capture_current_layout_writes_normalized_frame_metadata",
+    suite = "Logic",
+    subcategory = "Layout Reset",
+    name = "CaptureCurrentLayout stores point-based frame geometry",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldTimerFrame = NS.UI.timerFrame
+        local oldBossFrame = NS.UI.bossFrame
+        local oldHistoryFrame = NS.UI.history.frame
+        local oldUI = NS.Util.CopyTable(NS.DB.ui or {})
+
+        System.WithCleanup(function()
+            System.BeginSection("Capture live frame geometry into the saved layout snapshot")
+            local function MakeFrame(point, relativePoint, x, y, w, h)
+                return {
+                    GetPoint = function()
+                        return point, UIParent, relativePoint, x, y
+                    end,
+                    GetWidth = function()
+                        return w
+                    end,
+                    GetHeight = function()
+                        return h
+                    end,
+                    GetScale = function()
+                        return 1
+                    end,
+                    IsShown = function()
+                        return true
+                    end,
+                }
+            end
+
+            NS.UI.timerFrame = MakeFrame("TOP", "TOP", -10.1234, -55.9876, 200.3456, 70.6543)
+            NS.UI.bossFrame = MakeFrame("CENTER", "CENTER", 12.3456, 34.5678, 499.9999, 250.1111)
+            NS.UI.history.frame = MakeFrame("BOTTOMRIGHT", "BOTTOMRIGHT", -20.5555, 15.4444, 850.4444, 501.5555)
+            NS.DB.ui = {}
+
+            NS.UI.CaptureCurrentLayout()
+
+            System.AssertEqual(NS.DB.ui.frames.boss.point, "CENTER", "Boss frame point is captured")
+            System.AssertEqual(NS.DB.ui.frames.history.relativePoint, "BOTTOMRIGHT",
+                "History frame relativePoint is captured")
+            System.AssertNear(NS.DB.ui.frames.boss.width, 500, 0.001, "Boss frame width is normalized")
+            System.AssertNear(NS.DB.ui.frames.history.x, -20.556, 0.001, "History frame x-offset is normalized")
+            System.EndSection("Capture live frame geometry into the saved layout snapshot", "PASS")
+        end, function()
+            NS.UI.timerFrame = oldTimerFrame
+            NS.UI.bossFrame = oldBossFrame
+            NS.UI.history.frame = oldHistoryFrame
+            NS.DB.ui = oldUI
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_restore_frame_geom_falls_back_and_clamps",
+    suite = "Logic",
+    subcategory = "Layout Reset",
+    name = "RestoreFrameGeom clamps invalid saved geometry and falls back per frame",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldUI = NS.Util.CopyTable(NS.DB.ui or {})
+
+        System.WithCleanup(function()
+            System.BeginSection("Restore an invalid boss frame snapshot using validation rules")
+            local applied = {}
+            local frame = {
+                ClearAllPoints = function() end,
+                SetPoint = function(_, point, _, relPoint, x, y)
+                    applied.point = point
+                    applied.relPoint = relPoint
+                    applied.x = x
+                    applied.y = y
+                end,
+                SetSize = function(_, w, h)
+                    applied.w = w
+                    applied.h = h
+                end,
+                SetScale = function(_, scale)
+                    applied.scale = scale
+                end,
+                SetClampedToScreen = function(_, value)
+                    applied.clamped = value
+                end,
+                SetResizable = function() end,
+                SetResizeBounds = function(_, minW, minH, maxW, maxH)
+                    applied.minW = minW
+                    applied.minH = minH
+                    applied.maxW = maxW
+                    applied.maxH = maxH
+                end,
+            }
+
+            NS.DB.ui = {
+                frames = {
+                    boss = {
+                        point = "NOT_A_POINT",
+                        relativePoint = "ALSO_BAD",
+                        x = 999999,
+                        y = -999999,
+                        width = 10,
+                        height = 10,
+                    },
+                },
+            }
+
+            local restored = NS.UI.RestoreFrameGeom("boss", frame, 520, 320)
+
+            System.AssertTrue(restored == true, "RestoreFrameGeom treats the saved snapshot as present")
+            System.AssertEqual(applied.point, "CENTER", "Invalid point falls back to a valid anchor")
+            System.AssertEqual(applied.relPoint, "CENTER", "Invalid relativePoint falls back to a valid anchor")
+            System.AssertEqual(applied.w, 450, "Boss width is clamped to the minimum width")
+            System.AssertEqual(applied.h, NS.Const.SPLITS_LAYOUT.MIN_HEIGHT,
+                "Boss height is clamped to the minimum height")
+            System.AssertEqual(applied.clamped, true, "Restore reapplies clamped-to-screen behavior")
+            System.EndSection("Restore an invalid boss frame snapshot using validation rules", "PASS")
+        end, function()
+            NS.DB.ui = oldUI
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_restore_frame_geom_uses_factory_defaults_when_missing",
+    suite = "Logic",
+    subcategory = "Layout Reset",
+    name = "RestoreFrameGeom applies the Config factory layout when no saved snapshot exists",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldUI = NS.Util.CopyTable(NS.DB.ui or {})
+
+        System.WithCleanup(function()
+            System.BeginSection("Restore a missing boss snapshot from Config factory defaults")
+            local applied = {}
+            local frame = {
+                ClearAllPoints = function() end,
+                SetPoint = function(_, point, _, relPoint, x, y)
+                    applied.point = point
+                    applied.relPoint = relPoint
+                    applied.x = x
+                    applied.y = y
+                end,
+                SetSize = function(_, w, h)
+                    applied.w = w
+                    applied.h = h
+                end,
+                SetScale = function(_, scale)
+                    applied.scale = scale
+                end,
+                SetClampedToScreen = function(_, value)
+                    applied.clamped = value
+                end,
+                SetResizable = function() end,
+                SetResizeBounds = function(_, minW, minH, maxW, maxH)
+                    applied.minW = minW
+                    applied.minH = minH
+                    applied.maxW = maxW
+                    applied.maxH = maxH
+                end,
+            }
+
+            NS.DB.ui = {
+                frames = {},
+            }
+
+            local restored = NS.UI.RestoreFrameGeom("boss", frame, 520, 320)
+
+            System.AssertTrue(restored == false, "RestoreFrameGeom reports no saved snapshot was present", restored)
+            System.AssertEqual(applied.point, NS.FactoryDefaults.ui.frames.boss.point,
+                "Missing boss snapshot falls back to Config point")
+            System.AssertEqual(applied.relPoint, NS.FactoryDefaults.ui.frames.boss.relativePoint,
+                "Missing boss snapshot falls back to Config relativePoint")
+            System.AssertEqual(applied.w, NS.FactoryDefaults.ui.frames.boss.width,
+                "Missing boss snapshot falls back to Config width")
+            System.AssertEqual(applied.h, NS.FactoryDefaults.ui.frames.boss.height,
+                "Missing boss snapshot falls back to Config height")
+            System.AssertNear(applied.x, NS.FactoryDefaults.ui.frames.boss.x, 0.001,
+                "Missing boss snapshot falls back to Config x-offset")
+            System.AssertNear(applied.y, NS.FactoryDefaults.ui.frames.boss.y, 0.001,
+                "Missing boss snapshot falls back to Config y-offset")
+            System.EndSection("Restore a missing boss snapshot from Config factory defaults", "PASS")
+        end, function()
+            NS.DB.ui = oldUI
         end)
     end,
 })
@@ -262,19 +1162,25 @@ System.RegisterTest({
         System.WithCleanup(function()
             System.BeginSection("Save a live layout snapshot")
             NS.DB.ui = {
-                cols = { pb = 80, split = 81, delta = 82 },
-                frames = { boss = { x = 1, y = 2 } },
+                frames = {
+                    boss = { x = 1, y = 2, columns = { pb = 80, split = 81, diff = 82 } },
+                    history = { x = 3, y = 4 },
+                },
             }
             NS.UI.CaptureCurrentLayout = function()
-                NS.DB.ui.cols.pb = 120
-                NS.DB.ui.cols.split = 121
+                NS.DB.ui.frames.boss.columns.pb = 120
+                NS.DB.ui.frames.boss.columns.split = 121
                 NS.DB.ui.frames.boss.x = 55
+                NS.DB.ui.frames.history.width = 900
             end
 
             NS.SaveDefaultLayout()
 
-            System.AssertEqual(NS.DB.DefaultLayout.ui.cols.pb, 120, "SaveDefaultLayout captures the live PB width")
+            System.AssertEqual(NS.DB.DefaultLayout.ui.frames.boss.columns.pb, 120,
+                "SaveDefaultLayout captures the live PB width")
             System.AssertEqual(NS.DB.DefaultLayout.ui.frames.boss.x, 55, "SaveDefaultLayout captures the live boss position")
+            System.AssertEqual(NS.DB.DefaultLayout.ui.frames.history.width, 900,
+                "SaveDefaultLayout captures the live history dimensions")
             System.EndSection("Save a live layout snapshot", "PASS")
         end, function()
             NS.DB.ui = oldUI
@@ -348,7 +1254,24 @@ System.RegisterTest({
         System.WithCleanup(function()
             System.BeginSection("Simulate resetting to factory defaults")
             NS.DB.Settings.speedrunMode = "last"
-            NS.DB.ui.cols.pb = 123
+            NS.DB.ui.frames.boss = {
+                point = "TOPLEFT",
+                relativePoint = "TOPLEFT",
+                x = 1,
+                y = 2,
+                width = 999,
+                height = 888,
+                columns = { pb = 123, split = 321, diff = 654 },
+            }
+            NS.DB.ui.frames.history = {
+                point = "TOPLEFT",
+                relativePoint = "TOPLEFT",
+                x = 3,
+                y = 4,
+                width = 777,
+                height = 666,
+                columns = { date = 1, dungeon = 2, expansion = 3, result = 4, mode = 5, time = 6, diff = 7, delete = 8 },
+            }
             ReloadUI = function()
                 reloaded = true
             end
@@ -357,10 +1280,26 @@ System.RegisterTest({
 
             System.AssertEqual(NS.DB.Settings.speedrunMode, NS.FactoryDefaults.Settings.speedrunMode,
                 "Simulated factory reset restores factory settings")
-            System.AssertEqual(NS.DB.ui.cols.pb, NS.FactoryDefaults.ui.cols.pb,
+            System.AssertEqual(NS.DB.ui.frames.boss.columns.pb, NS.FactoryDefaults.ui.frames.boss.columns.pb,
                 "Simulated factory reset restores factory layout")
-            System.AssertEqual(NS.DB.DefaultLayout.ui.cols.pb, NS.FactoryDefaults.ui.cols.pb,
+            System.AssertEqual(NS.DB.ui.frames.boss.columns.split, NS.FactoryDefaults.ui.frames.boss.columns.split,
+                "Simulated factory reset restores factory split width")
+            System.AssertEqual(NS.DB.ui.frames.boss.columns.diff, NS.FactoryDefaults.ui.frames.boss.columns.diff,
+                "Simulated factory reset restores factory diff width")
+            System.AssertEqual(NS.DB.ui.frames.history.columns.date, NS.FactoryDefaults.ui.frames.history.columns.date,
+                "Simulated factory reset restores factory history column widths")
+            System.AssertEqual(NS.DB.DefaultLayout.ui.frames.boss.columns.pb, NS.FactoryDefaults.ui.frames.boss.columns.pb,
                 "Simulated factory reset refreshes the default layout snapshot")
+            System.AssertEqual(NS.DB.ui.frames.boss.point, NS.FactoryDefaults.ui.frames.boss.point,
+                "Simulated factory reset restores normalized boss frame geometry")
+            System.AssertNear(NS.DB.ui.frames.boss.x, NS.FactoryDefaults.ui.frames.boss.x, 0.001,
+                "Simulated factory reset restores boss x-offset from Config")
+            System.AssertNear(NS.DB.ui.frames.boss.y, NS.FactoryDefaults.ui.frames.boss.y, 0.001,
+                "Simulated factory reset restores boss y-offset from Config")
+            System.AssertEqual(NS.DB.ui.frames.history.width, NS.FactoryDefaults.ui.frames.history.width,
+                "Simulated factory reset restores history width from Config")
+            System.AssertEqual(NS.DB.ui.frames.history.height, NS.FactoryDefaults.ui.frames.history.height,
+                "Simulated factory reset restores history height from Config")
             System.AssertTrue(reloaded == false, "Simulated factory reset does not reload the UI", reloaded)
             System.EndSection("Simulate resetting to factory defaults", "PASS")
         end, function()
@@ -465,6 +1404,121 @@ System.RegisterTest({
             NS.Run.remainingCount = oldState.remainingCount
             NS.Run.killedCount = oldState.killedCount
             NS.Run.kills = oldState.kills
+            NS.Run.bossByDungeonEncounterID = oldState.bossByDungeonEncounterID
+            NS.Run.pbSegmentsSnapshot = oldState.pbSegmentsSnapshot
+            NS.Run.presentation = oldState.presentation
+            NS.Run.routeMode = oldState.routeMode
+            NS.DB.Settings.showTimerToast = oldState.showTimerToast
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_record_boss_kill_rebuilds_summary_from_latest_kill",
+    suite = "Logic",
+    subcategory = "Boss Recording",
+    name = "Refreshes the cached presentation summary after each kill",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldNow = NS.NowGameTime
+        local oldRefreshRunDisplay = NS.RunLogic.RefreshRunDisplay
+        local oldStopRun = NS.RunLogic.StopRun
+        local oldShowToast = NS.ShowToast
+        local oldState = {
+            instanceName = NS.Run.instanceName,
+            speedrunMode = NS.Run.speedrunMode,
+            active = NS.Run.active,
+            startGameTime = NS.Run.startGameTime,
+            entries = NS.Run.entries,
+            remaining = NS.Run.remaining,
+            remainingCount = NS.Run.remainingCount,
+            killedCount = NS.Run.killedCount,
+            kills = NS.Run.kills,
+            killOrder = NS.Run.killOrder,
+            killRouteIndices = NS.Run.killRouteIndices,
+            bossByDungeonEncounterID = NS.Run.bossByDungeonEncounterID,
+            pbSegmentsSnapshot = NS.Run.pbSegmentsSnapshot,
+            presentation = NS.Run.presentation,
+            routeMode = NS.Run.routeMode,
+            showTimerToast = NS.DB.Settings.showTimerToast,
+        }
+
+        System.WithCleanup(function()
+            System.BeginSection("Seed a two-boss run and suppress side effects")
+            NS.DB.Settings.showTimerToast = false
+            NS.RunLogic.RefreshRunDisplay = function() end
+            NS.RunLogic.StopRun = function() end
+            NS.ShowToast = function() end
+
+            NS.Run.instanceName = "Presentation Summary Refresh Test"
+            NS.Run.speedrunMode = "all"
+            NS.Run.active = true
+            NS.Run.startGameTime = 100
+            NS.Run.entries = {
+                { key = "E:101", name = "Opening Pull", dungeonEncounterID = 101, routeIndex = 1 },
+                { key = "E:102", name = "Final Tyrant", dungeonEncounterID = 102, routeIndex = 2 },
+            }
+            NS.Run.remaining = { ["E:101"] = true, ["E:102"] = true }
+            NS.Run.remainingCount = 2
+            NS.Run.killedCount = 0
+            NS.Run.kills = {}
+            NS.Run.killOrder = {}
+            NS.Run.killRouteIndices = {}
+            NS.Run.bossByDungeonEncounterID = {
+                [101] = NS.Run.entries[1],
+                [102] = NS.Run.entries[2],
+            }
+            NS.Run.pbSegmentsSnapshot = {
+                ["Opening Pull"] = 22.1,
+                ["Final Tyrant"] = 97.91,
+            }
+            NS.Run.presentation = nil
+            NS.Run.routeMode = "ignored"
+            System.EndSection("Seed a two-boss run and suppress side effects", "PASS")
+
+            System.BeginSection("Record kills and confirm the summary advances")
+            NS.NowGameTime = function()
+                return 122.1
+            end
+            NS.RunLogic.RecordBossKill(101, "Opening Pull")
+            System.AssertEqual(NS.Run.presentation.summary.latestRow.key, "E:101",
+                "After the first kill, the summary points at Opening Pull")
+            System.AssertNear(NS.Run.presentation.summary.pbTotal, 120.01, 0.001,
+                "After the first kill, PB total already reflects the final route boss PB")
+            System.AssertNear(NS.Run.presentation.summary.splitTotal, 22.1, 0.001,
+                "After the first kill, split total matches Opening Pull")
+
+            NS.NowGameTime = function()
+                return 179.816
+            end
+            NS.RunLogic.RecordBossKill(102, "Final Tyrant")
+            System.AssertEqual(NS.Run.presentation.summary.latestRow.key, "E:102",
+                "After the second kill, the summary advances to Final Tyrant")
+            System.AssertNear(NS.Run.presentation.summary.pbTotal, 120.01, 0.001,
+                "After the second kill, PB total still reflects the final route boss PB")
+            System.AssertNear(NS.Run.presentation.summary.splitTotal, 79.816, 0.001,
+                "After the second kill, split total matches Final Tyrant")
+            System.AssertNear(NS.Run.presentation.summary.diffTotal, -40.194, 0.001,
+                "After the second kill, diff total matches Final Tyrant")
+            System.EndSection("Record kills and confirm the summary advances", "PASS")
+        end, function()
+            NS.NowGameTime = oldNow
+            NS.RunLogic.RefreshRunDisplay = oldRefreshRunDisplay
+            NS.RunLogic.StopRun = oldStopRun
+            NS.ShowToast = oldShowToast
+
+            NS.Run.instanceName = oldState.instanceName
+            NS.Run.speedrunMode = oldState.speedrunMode
+            NS.Run.active = oldState.active
+            NS.Run.startGameTime = oldState.startGameTime
+            NS.Run.entries = oldState.entries
+            NS.Run.remaining = oldState.remaining
+            NS.Run.remainingCount = oldState.remainingCount
+            NS.Run.killedCount = oldState.killedCount
+            NS.Run.kills = oldState.kills
+            NS.Run.killOrder = oldState.killOrder
+            NS.Run.killRouteIndices = oldState.killRouteIndices
             NS.Run.bossByDungeonEncounterID = oldState.bossByDungeonEncounterID
             NS.Run.pbSegmentsSnapshot = oldState.pbSegmentsSnapshot
             NS.Run.presentation = oldState.presentation

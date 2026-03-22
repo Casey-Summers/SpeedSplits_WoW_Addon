@@ -4,6 +4,44 @@ local UI = NS.UI
 local Util = NS.Util
 local Colors = NS.Colors
 
+local function IsTimerWarningActive()
+    return UI.timerWarningText and UI.timerWarningText:IsShown() or false
+end
+
+local function ClearTimerWarning()
+    if not UI.timerWarningText then
+        return
+    end
+
+    UI.timerWarningText:SetText("")
+    UI.timerWarningText:Hide()
+
+    if UI.timerTextMin then UI.timerTextMin:Show() end
+    if UI.timerTextSec then UI.timerTextSec:Show() end
+    if UI.timerTextMs then UI.timerTextMs:Show() end
+    if UI.timerDeltaText then UI.timerDeltaText:Show() end
+end
+
+local function SetTimerWarning(message)
+    if not UI.timerWarningText then
+        return
+    end
+
+    local timerFont = NS.DB and NS.DB.Settings and NS.DB.Settings.fonts and NS.DB.Settings.fonts.timer
+    local fontPath = timerFont and timerFont.font or "Fonts\\FRIZQT__.TTF"
+    local fontSize = math.max(10, math.floor((timerFont and timerFont.size or 24) * 0.52))
+    local fontFlags = timerFont and timerFont.flags or "OUTLINE"
+    UI.timerWarningText:SetFont(fontPath, fontSize, fontFlags)
+    UI.timerWarningText:SetTextColor(Colors.deepGreen.r, Colors.deepGreen.g, Colors.deepGreen.b, 1)
+    UI.timerWarningText:SetText(message or "")
+    UI.timerWarningText:Show()
+
+    if UI.timerTextMin then UI.timerTextMin:Hide() end
+    if UI.timerTextSec then UI.timerTextSec:Hide() end
+    if UI.timerTextMs then UI.timerTextMs:Hide() end
+    if UI.timerDeltaText then UI.timerDeltaText:Hide() end
+end
+
 local function UpdateTimerFrameBounds()
     if not UI.timerFrame or not UI.timerTextSec then
         return
@@ -41,6 +79,8 @@ local function SetTimerText(seconds, finished)
         return
     end
 
+    ClearTimerWarning()
+
     local full = Util.FormatTime(seconds)
     local min, sec, ms = "", "", ""
     if full:find(":") then
@@ -75,6 +115,9 @@ local function SetTimerDelta(delta, colorState)
     if not UI.timerDeltaText then
         return
     end
+    if IsTimerWarningActive() then
+        return
+    end
     if delta == nil then
         UI.timerDeltaText:SetText("")
         if UI.timerToastBg then
@@ -96,3 +139,6 @@ end
 UI.UpdateTimerFrameBounds = UpdateTimerFrameBounds
 UI.SetTimerText = SetTimerText
 UI.SetTimerDelta = SetTimerDelta
+UI.SetTimerWarning = SetTimerWarning
+UI.ClearTimerWarning = ClearTimerWarning
+UI.IsTimerWarningActive = IsTimerWarningActive

@@ -16,6 +16,15 @@ function Util.RoundTime(seconds)
     return math.floor(seconds * 1000 + 0.5) / 1000
 end
 
+function Util.RoundNumber(value, precision)
+    if value == nil then
+        return nil
+    end
+    precision = precision or 3
+    local factor = 10 ^ precision
+    return math.floor(tonumber(value) * factor + 0.5) / factor
+end
+
 function Util.CopyTable(src)
     local dest = {}
     for k, v in pairs(src or {}) do
@@ -76,6 +85,99 @@ function Util.FormatDelta(delta)
         return ""
     end
     return (delta >= 0 and "+" or "-") .. Util.FormatTime(math.abs(delta))
+end
+
+function Util.BuildAlignedTimeParts(seconds, opts)
+    opts = type(opts) == "table" and opts or {}
+
+    local kind = opts.kind or "time"
+    local placeholderMillis = tonumber(opts.placeholderMillis) or 3
+
+    if kind == "empty" then
+        return {
+            showGroup = false,
+            isDelta = false,
+            signText = "",
+            minuteText = "",
+            showMinute = false,
+            showColon = false,
+            colonText = ":",
+            secondText = "",
+            decimalText = ".",
+            millisText = "",
+            firstVisibleSection = "second",
+            showZeroSecondLead = false,
+            isPlaceholder = false,
+            overflowMinutes = false,
+            minuteDigits = 2,
+        }
+    end
+
+    if kind == "placeholder" then
+        return {
+            showGroup = true,
+            isDelta = false,
+            signText = "",
+            minuteText = "--",
+            showMinute = true,
+            showColon = true,
+            colonText = ":",
+            secondText = "--",
+            decimalText = ".",
+            millisText = string.rep("-", math.max(1, placeholderMillis)),
+            firstVisibleSection = "minute",
+            showZeroSecondLead = false,
+            isPlaceholder = true,
+            overflowMinutes = false,
+            minuteDigits = 2,
+        }
+    end
+
+    local isDelta = (kind == "delta")
+    local signText = ""
+    local magnitude = tonumber(seconds) or 0
+    if isDelta then
+        signText = magnitude >= 0 and "+" or "-"
+        magnitude = math.abs(magnitude)
+    end
+
+    magnitude = Util.RoundTime(magnitude) or 0
+    local totalMillis = math.floor((magnitude * 1000) + 0.5)
+    local wholeSeconds = math.floor(totalMillis / 1000)
+    local millis = totalMillis % 1000
+    local totalMinutes = math.floor(wholeSeconds / 60)
+    local secondPart = wholeSeconds % 60
+
+    local showMinute = totalMinutes > 0
+    local showZeroSecondLead = wholeSeconds == 0
+    local showColon = showMinute or (showZeroSecondLead and not isDelta)
+    local minuteText = showMinute and tostring(totalMinutes) or ""
+    local secondText
+    if showMinute then
+        secondText = string.format("%02d", secondPart)
+    elseif showZeroSecondLead then
+        secondText = isDelta and "0" or "00"
+    else
+        secondText = tostring(secondPart)
+    end
+
+    return {
+        showGroup = true,
+        isDelta = isDelta,
+        signText = signText,
+        minuteText = minuteText,
+        showMinute = showMinute,
+        showColon = showColon,
+        colonText = ":",
+        secondText = secondText,
+        decimalText = ".",
+        millisText = string.format("%03d", millis),
+        firstVisibleSection = showMinute and "minute" or "second",
+        showZeroSecondLead = showZeroSecondLead,
+        isPlaceholder = false,
+        overflowMinutes = #minuteText > 2,
+        minuteDigits = math.max(2, #minuteText),
+    }
 end
 
 function Util.GetDungeonKey(mapID, difficultyID)

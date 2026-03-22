@@ -26,9 +26,48 @@ System.RegisterTest({
         NS.Database.EnsureDB()
         NS.UI.EnsureUI()
         System.BeginSection("Write totals into the footer")
-        NS.SetTotals(10, 12, 2, 1, 1, 1, "|cffffffff")
+        NS.SetTotals(10, 12, 2, NS.Colors.white, NS.Colors.white)
         System.AssertEqual(NS.UI.totalPB:GetText(), "10.000", "Footer PB text matches the formatted total")
+        local entry = NS.UI.totalPB._ssNumericCellParts and NS.UI.totalPB._ssNumericCellParts.summary
+        System.AssertTrue(entry ~= nil, "Footer PB uses the aligned time-group helper", entry ~= nil)
+        if entry then
+            System.AssertTrue(entry.minute:IsShown() == false, "Footer PB hides the minute slot for sub-minute values",
+                entry.minute:IsShown())
+            System.AssertTrue(entry.colon:IsShown() == false, "Footer PB hides the colon for sub-minute values",
+                entry.colon:IsShown())
+            System.AssertEqual(entry.second:GetText(), "10", "Footer PB keeps the seconds in the fixed second slot")
+            System.AssertEqual(entry.decimal:GetText(), ".", "Footer PB uses a dedicated decimal glyph")
+            System.AssertEqual(entry.millis:GetText(), "000", "Footer PB keeps the milliseconds in the millis slot")
+        end
         System.EndSection("Write totals into the footer", "PASS")
+    end,
+})
+
+System.RegisterTest({
+    id = "ui_timer_warning_mode",
+    suite = "UI",
+    subcategory = "Timer",
+    name = "Shows and clears the reload-invalid timer warning",
+    func = function()
+        NS.Database.EnsureDB()
+        NS.UI.EnsureUI()
+
+        System.BeginSection("Toggle timer warning mode")
+        NS.UI.SetTimerWarning(NS.Const.UI_TEXT.RELOAD_INVALID_WARNING)
+        System.AssertTrue(NS.UI.IsTimerWarningActive() == true, "Timer warning is active after being set",
+            NS.UI.IsTimerWarningActive())
+        System.AssertTrue(NS.UI.timerWarningText:IsShown() == true, "Warning text is shown", NS.UI.timerWarningText:IsShown())
+        System.AssertTrue(NS.UI.timerWarningText:GetText():find("|cffff2020This run is invalid.|r", 1, true) ~= nil,
+            "The invalid-run line is colored red in the warning text", NS.UI.timerWarningText:GetText())
+        System.AssertTrue(NS.UI.timerTextSec:IsShown() == false, "Seconds text hides while warning is active",
+            NS.UI.timerTextSec:IsShown())
+
+        NS.UI.ClearTimerWarning()
+        System.AssertTrue(NS.UI.IsTimerWarningActive() == false, "Timer warning is no longer active after clearing",
+            NS.UI.IsTimerWarningActive())
+        System.AssertTrue(NS.UI.timerTextSec:IsShown() == true, "Seconds text returns after clearing the warning",
+            NS.UI.timerTextSec:IsShown())
+        System.EndSection("Toggle timer warning mode", "PASS")
     end,
 })
 
@@ -148,9 +187,9 @@ System.RegisterTest({
                 key = "boss_a",
                 cols = {
                     { value = "Boss A" },
-                    { value = "01:00.000" },
-                    { value = "01:05.000" },
-                    { value = "+00:05.000", color = NS.Colors.gold },
+                    { value = "01:00.000", rawSeconds = 60, displayKind = "time", placeholderMillis = 3 },
+                    { value = "01:05.000", rawSeconds = 65, displayKind = "time", placeholderMillis = 3 },
+                    { value = "+00:05.000", rawSeconds = 5, displayKind = "delta", placeholderMillis = 3, color = NS.Colors.gold },
                 },
             },
         }
@@ -160,7 +199,27 @@ System.RegisterTest({
 
         local row = NS.UI.st.rows[1]
         System.AssertEqual(row.cols[1].text:GetText(), "Boss A", "Boss name remains in the boss-name display column")
-        System.AssertEqual(row.cols[4].text:GetText(), "+00:05.000", "Difference display column reads the difference payload")
+        local entry = row.cols[4]._ssNumericCellParts and row.cols[4]._ssNumericCellParts.num
+        System.AssertTrue(entry ~= nil, "Difference display column uses the aligned time-group widget", entry ~= nil)
+        System.AssertEqual(row.cols[4].text:GetText(), "", "The stock cell font string is cleared to avoid overlap")
+        if entry then
+            System.AssertEqual(entry.sign:GetText(), "+", "Difference cells keep the sign in a dedicated sign slot")
+            System.AssertTrue(entry.minute:IsShown() == false, "Difference cells hide the minute slot for sub-minute values",
+                entry.minute:IsShown())
+            System.AssertTrue(entry.colon:IsShown() == false, "Difference cells hide the colon for sub-minute values",
+                entry.colon:IsShown())
+            System.AssertEqual(entry.second:GetText(), "5", "Difference cells keep the seconds in the second slot")
+            System.AssertEqual(entry.decimal:GetText(), ".", "Difference cells use a dedicated decimal glyph")
+            System.AssertEqual(entry.millis:GetText(), "000", "Difference cells keep the milliseconds in the millis slot")
+            local spec = NS.UI.GetAlignedTimeSpec("diff")
+            local signPoint, signRelative, _, signX = entry.sign:GetPoint(1)
+            local expectedSignLeft = spec.secondLeft + spec.secondWidth - entry.second:GetStringWidth() - spec.signPad -
+                spec.signWidth
+            System.AssertEqual(signPoint, "TOPLEFT", "Difference sign anchors from the host origin after digit fitting")
+            System.AssertTrue(signRelative == row.cols[4], "Difference sign is positioned against the host", signRelative)
+            System.AssertEqual(signX, expectedSignLeft,
+                "Difference sign sits immediately left of the first rendered digit")
+        end
         System.EndSection("Populate a synthetic boss row", "PASS")
     end,
 })
@@ -269,14 +328,42 @@ System.RegisterTest({
             System.AssertTrue(diffCell ~= nil, "The first visible Diff cell exists", diffCell ~= nil)
 
             local beforeWidth = diffCell and diffCell:GetWidth() or 0
-            local pointA, relativeA, _, xA = diffCell.text:GetPoint(1)
-            local pointB, relativeB, _, xB = diffCell.text:GetPoint(2)
-            System.AssertEqual(pointA, "TOPLEFT", "Diff text anchors its first point to the cell's top-left corner")
-            System.AssertEqual(pointB, "BOTTOMRIGHT", "Diff text anchors its second point to the cell's bottom-right corner")
-            System.AssertTrue(relativeA == diffCell, "The first anchor is attached to the Diff cell itself", relativeA)
-            System.AssertTrue(relativeB == diffCell, "The second anchor is attached to the Diff cell itself", relativeB)
-            System.AssertEqual(xA, 4, "The first anchor uses the expected left padding")
-            System.AssertEqual(xB, -4, "The second anchor uses the expected right padding")
+            local entry = diffCell._ssNumericCellParts and diffCell._ssNumericCellParts.num
+            local spec = NS.UI.GetAlignedTimeSpec and NS.UI.GetAlignedTimeSpec("diff") or nil
+            System.AssertTrue(entry ~= nil, "The Diff cell creates the aligned time-group font strings", entry ~= nil)
+            System.AssertTrue(spec ~= nil, "The Diff column publishes a layout spec", spec ~= nil)
+            if entry and spec then
+                local signPoint, signRelative, _, signX = entry.sign:GetPoint(1)
+                local minutePoint, minuteRelative, _, minuteX = entry.minute:GetPoint(1)
+                local secondPoint, secondRelative, _, secondX = entry.second:GetPoint(1)
+                local decimalPoint, decimalRelative, _, decimalX = entry.decimal:GetPoint(1)
+                local millisPoint, millisRelative, _, millisX = entry.millis:GetPoint(1)
+                local expectedSignLeft = spec.secondLeft + spec.secondWidth - entry.second:GetStringWidth() - spec.signPad -
+                    spec.signWidth
+                System.AssertEqual(signPoint, "TOPLEFT", "The sign slot anchors from the host origin")
+                System.AssertEqual(minutePoint, "TOPLEFT", "The minute slot anchors from the host origin")
+                System.AssertEqual(secondPoint, "TOPLEFT", "The second slot anchors from the host origin")
+                System.AssertEqual(decimalPoint, "TOPLEFT", "The decimal slot anchors from the host origin")
+                System.AssertEqual(millisPoint, "TOPLEFT", "The millis slot anchors from the host origin")
+                System.AssertTrue(signRelative == diffCell, "The sign is attached to the Diff cell", signRelative)
+                System.AssertTrue(minuteRelative == diffCell, "The minute slot is attached to the Diff cell", minuteRelative)
+                System.AssertTrue(secondRelative == diffCell, "The second slot is attached to the Diff cell", secondRelative)
+                System.AssertTrue(decimalRelative == diffCell, "The decimal slot is attached to the Diff cell", decimalRelative)
+                System.AssertTrue(millisRelative == diffCell, "The millis slot is attached to the Diff cell", millisRelative)
+                System.AssertEqual(signX, expectedSignLeft, "The sign uses digit-edge alignment inside the second slot")
+                System.AssertEqual(minuteX, spec.minuteRight - spec.minuteBaseWidth,
+                    "The minute slot uses the layout-owned left edge")
+                System.AssertEqual(secondX, spec.secondLeft, "The second slot uses the layout-owned left edge")
+                System.AssertEqual(decimalX, spec.decimalLeft, "The decimal slot uses the layout-owned left edge")
+                System.AssertEqual(millisX, spec.millisLeft, "The millis slot uses the layout-owned left edge")
+                System.AssertEqual(spec.decimalCenterX, math.floor(beforeWidth / 2 + 0.5),
+                    "The decimal spine stays centered on the live column width")
+                System.AssertEqual(spec.groupType, "delta", "The Diff column uses the delta layout group")
+                System.AssertTrue((spec.signPad or 0) > 0, "The Diff layout exposes a dedicated sign padding constant",
+                    spec.signPad)
+                System.AssertTrue((spec.symbolPad or 0) > 0, "The Diff layout exposes a shared symbol padding constant",
+                    spec.symbolPad)
+            end
 
             System.EndSection("Render enough rows to force the scrollbar lane", "PASS")
 
@@ -289,12 +376,30 @@ System.RegisterTest({
             local afterWidth = diffCell and diffCell:GetWidth() or 0
             System.AssertTrue(afterWidth ~= beforeWidth, "Changing the Diff width changes the live cell width", afterWidth)
 
-            pointA, relativeA, _, xA = diffCell.text:GetPoint(1)
-            pointB, relativeB, _, xB = diffCell.text:GetPoint(2)
-            System.AssertTrue(relativeA == diffCell, "The first anchor remains attached after resizing", relativeA)
-            System.AssertTrue(relativeB == diffCell, "The second anchor remains attached after resizing", relativeB)
-            System.AssertEqual(xA, 4, "The left padding remains stable after resizing")
-            System.AssertEqual(xB, -4, "The right padding remains stable after resizing")
+            entry = diffCell._ssNumericCellParts and diffCell._ssNumericCellParts.num
+            spec = NS.UI.GetAlignedTimeSpec and NS.UI.GetAlignedTimeSpec("diff") or nil
+            if entry and spec then
+                local signPoint, signRelative, _, signX = entry.sign:GetPoint(1)
+                local minutePoint, minuteRelative, _, minuteX = entry.minute:GetPoint(1)
+                local secondPoint, secondRelative, _, secondX = entry.second:GetPoint(1)
+                local decimalPoint, decimalRelative, _, decimalX = entry.decimal:GetPoint(1)
+                local millisPoint, millisRelative, _, millisX = entry.millis:GetPoint(1)
+                local expectedSignLeft = spec.secondLeft + spec.secondWidth - entry.second:GetStringWidth() - spec.signPad -
+                    spec.signWidth
+                System.AssertTrue(signRelative == diffCell, "The sign remains attached to the host after resizing", signRelative)
+                System.AssertTrue(minuteRelative == diffCell, "The minute slot remains attached after resizing", minuteRelative)
+                System.AssertTrue(secondRelative == diffCell, "The second slot remains attached after resizing", secondRelative)
+                System.AssertTrue(decimalRelative == diffCell, "The decimal slot remains attached after resizing", decimalRelative)
+                System.AssertTrue(millisRelative == diffCell, "The millis slot remains attached after resizing", millisRelative)
+                System.AssertEqual(signX, expectedSignLeft, "The sign keeps digit-edge alignment after resizing")
+                System.AssertEqual(minuteX, spec.minuteRight - spec.minuteBaseWidth,
+                    "The minute slot keeps the updated layout-owned left edge")
+                System.AssertEqual(secondX, spec.secondLeft, "The second slot keeps the updated layout-owned left edge")
+                System.AssertEqual(decimalX, spec.decimalLeft, "The decimal slot keeps the updated layout-owned left edge")
+                System.AssertEqual(millisX, spec.millisLeft, "The millis slot keeps the updated layout-owned left edge")
+                System.AssertEqual(spec.decimalCenterX, math.floor(afterWidth / 2 + 0.5),
+                    "The decimal spine moves with the resized cell midpoint")
+            end
             System.EndSection("Resize the Diff column and confirm the cell width updates", "PASS")
         end, function()
             NS.UI._deltaWidth = oldDeltaWidth
@@ -466,6 +571,309 @@ System.RegisterTest({
             NS.ResetLayout = oldResetLayout
             StaticPopup_Show = oldStaticPopupShow
         end)
+    end,
+})
+
+System.RegisterTest({
+    id = "ui_decimal_aligned_cell_splits_time_text",
+    suite = "UI",
+    subcategory = "Boss Table",
+    name = "Builds slot-based numeric cells for PB, Split, and Diff",
+    func = function()
+        NS.Database.EnsureDB()
+        NS.UI.EnsureUI()
+
+        System.BeginSection("Render slot-based numeric cells")
+        NS.UI.data = {
+            {
+                key = "boss_decimal",
+                cols = {
+                    { value = "Boss Decimal" },
+                    { value = "1:05.123", rawSeconds = 65.123, displayKind = "time", placeholderMillis = 3, color = NS.Colors.gold },
+                    { value = "--:--.---", rawSeconds = nil, displayKind = "placeholder", placeholderMillis = 3, color = NS.Colors.white },
+                    { value = "+00:05.123", rawSeconds = 5.123, displayKind = "delta", placeholderMillis = 3, color = NS.Colors.gold },
+                },
+            },
+        }
+        NS.UI.rowByBossKey = { boss_decimal = 1 }
+        NS.UI.st:SetData(NS.UI.data, true)
+        NS.UI.st:Refresh()
+
+        local row = NS.UI.st.rows[1]
+        local pbEntry = row.cols[2]._ssNumericCellParts and row.cols[2]._ssNumericCellParts.num
+        local splitEntry = row.cols[3]._ssNumericCellParts and row.cols[3]._ssNumericCellParts.num
+        local diffEntry = row.cols[4]._ssNumericCellParts and row.cols[4]._ssNumericCellParts.num
+        local diffSpec = NS.UI.GetAlignedTimeSpec and NS.UI.GetAlignedTimeSpec("diff") or nil
+
+        System.AssertTrue(pbEntry ~= nil, "PB cells create an aligned time-group entry", pbEntry ~= nil)
+        System.AssertTrue(splitEntry ~= nil, "Split cells create an aligned time-group entry", splitEntry ~= nil)
+        System.AssertTrue(diffEntry ~= nil, "Diff cells create an aligned time-group entry", diffEntry ~= nil)
+        System.AssertEqual(row.cols[2].text:GetText(), "", "PB stock text is cleared after custom rendering")
+        if pbEntry and splitEntry and diffEntry then
+            System.AssertEqual(pbEntry.minute:GetText(), "1", "PB minutes render in the fixed minute slot")
+            System.AssertEqual(pbEntry.second:GetText(), "05", "PB seconds render in the fixed second slot")
+            System.AssertEqual(pbEntry.decimal:GetText(), ".", "PB uses a dedicated decimal glyph")
+            System.AssertEqual(pbEntry.millis:GetText(), "123", "PB milliseconds render in the fixed millis slot")
+            System.AssertEqual(splitEntry.minute:GetText(), "--", "Placeholder minutes render in the minute slot")
+            System.AssertEqual(splitEntry.second:GetText(), "--", "Placeholder seconds render in the second slot")
+            System.AssertEqual(splitEntry.decimal:GetText(), ".", "Placeholder values keep the decimal glyph")
+            System.AssertEqual(splitEntry.millis:GetText(), "---", "Placeholder milliseconds render in the millis slot")
+            System.AssertEqual(diffEntry.sign:GetText(), "+", "Diff sign renders in the sign slot")
+            System.AssertTrue(diffEntry.minute:IsShown() == false, "Diff hides the minute slot for sub-minute values",
+                diffEntry.minute:IsShown())
+            System.AssertTrue(diffEntry.colon:IsShown() == false, "Diff hides the colon for sub-minute values",
+                diffEntry.colon:IsShown())
+            System.AssertEqual(diffEntry.second:GetText(), "5", "Diff seconds render in the fixed second slot")
+            System.AssertEqual(diffEntry.decimal:GetText(), ".", "Diff keeps the decimal glyph")
+            System.AssertEqual(diffEntry.millis:GetText(), "123", "Diff milliseconds render in the millis slot")
+            if diffSpec then
+                local signPoint, signRelative, _, signX = diffEntry.sign:GetPoint(1)
+                local expectedSignLeft = diffSpec.secondLeft + diffSpec.secondWidth - diffEntry.second:GetStringWidth() -
+                    diffSpec.signPad - diffSpec.signWidth
+                System.AssertEqual(signPoint, "TOPLEFT", "Diff sign anchors from the host origin")
+                System.AssertTrue(signRelative == row.cols[4], "Diff sign is positioned against the host", signRelative)
+                System.AssertEqual(signX, expectedSignLeft, "Diff sign hugs the first rendered second digit")
+                System.AssertEqual(diffSpec.groupType, "delta", "Diff values use the delta group type")
+            end
+        end
+        System.EndSection("Render slot-based numeric cells", "PASS")
+    end,
+})
+
+System.RegisterTest({
+    id = "ui_footer_decimal_alignment_tracks_column_center",
+    suite = "UI",
+    subcategory = "Footer",
+    name = "Keeps footer totals anchored on the numeric column layout spec after resize",
+    func = function()
+        NS.Database.EnsureDB()
+        NS.UI.EnsureUI()
+
+        local oldDeltaWidth = NS.UI._deltaWidth
+
+        System.WithCleanup(function()
+            System.BeginSection("Resize the Diff column and verify the footer layout spec updates")
+            NS.SetTotals(100, 120, 5, NS.Colors.white, NS.Colors.gold)
+            local beforeSpec = NS.UI.GetAlignedTimeSpec and NS.UI.GetAlignedTimeSpec("footerDiff") or nil
+            NS.UI._deltaWidth = oldDeltaWidth + 40
+            NS.UI.ApplyTableLayout()
+            local afterSpec = NS.UI.GetAlignedTimeSpec and NS.UI.GetAlignedTimeSpec("footerDiff") or nil
+            local entry = NS.UI.totalDelta._ssNumericCellParts and NS.UI.totalDelta._ssNumericCellParts.summary
+
+            System.AssertTrue(beforeSpec ~= nil, "The footer diff publishes a layout spec before resizing", beforeSpec ~= nil)
+            System.AssertTrue(afterSpec ~= nil, "The footer diff publishes a layout spec after resizing", afterSpec ~= nil)
+            System.AssertTrue(entry ~= nil, "The footer diff uses the aligned time-group widget", entry ~= nil)
+            if beforeSpec and afterSpec and entry then
+                local signPoint, signRelative, _, signX = entry.sign:GetPoint(1)
+                local decimalPoint, decimalRelative, _, decimalX = entry.decimal:GetPoint(1)
+                local secondPoint, secondRelative, _, secondX = entry.second:GetPoint(1)
+                local minutePoint, minuteRelative, _, minuteX = entry.minute:GetPoint(1)
+                local expectedSignLeft = afterSpec.secondLeft + afterSpec.secondWidth - entry.second:GetStringWidth() -
+                    afterSpec.signPad - afterSpec.signWidth
+                System.AssertTrue(afterSpec.decimalCenterX ~= beforeSpec.decimalCenterX,
+                    "The footer decimal spine moves when the column width changes", afterSpec.decimalCenterX)
+                System.AssertEqual(afterSpec.hostWidth, NS.UI._deltaWidth, "The footer diff spec tracks the host width")
+                System.AssertEqual(afterSpec.decimalCenterX, math.floor(NS.UI._deltaWidth / 2 + 0.5),
+                    "The footer decimal spine stays centered inside the host")
+                System.AssertEqual(signPoint, "TOPLEFT", "The footer sign anchors from the host origin")
+                System.AssertEqual(decimalPoint, "TOPLEFT", "The footer decimal slot anchors from the host origin")
+                System.AssertEqual(secondPoint, "TOPLEFT", "The footer second slot anchors from the host origin")
+                System.AssertEqual(minutePoint, "TOPLEFT", "The footer minute slot anchors from the host origin")
+                System.AssertTrue(signRelative == NS.UI.totalDelta, "The footer sign is positioned against the footer host",
+                    signRelative)
+                System.AssertTrue(decimalRelative == NS.UI.totalDelta, "The footer decimal remains attached to the host",
+                    decimalRelative)
+                System.AssertTrue(secondRelative == NS.UI.totalDelta, "The footer second slot remains attached to the host",
+                    secondRelative)
+                System.AssertTrue(minuteRelative == NS.UI.totalDelta, "The footer minute slot remains attached to the host",
+                    minuteRelative)
+                System.AssertEqual(signX, expectedSignLeft, "The footer sign matches the digit-edge alignment rule")
+                System.AssertEqual(decimalX, afterSpec.decimalLeft, "The footer decimal slot uses the updated left edge")
+                System.AssertEqual(secondX, afterSpec.secondLeft, "The footer second slot uses the updated left edge")
+                System.AssertEqual(minuteX, afterSpec.minuteRight - afterSpec.minuteBaseWidth,
+                    "The footer minute slot uses the updated left edge")
+            end
+            System.EndSection("Resize the Diff column and verify the footer layout spec updates", "PASS")
+        end, function()
+            NS.UI._deltaWidth = oldDeltaWidth
+            NS.UI.ApplyTableLayout()
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "ui_scrollbar_gutter_keeps_numeric_widths_stable",
+    suite = "UI",
+    subcategory = "Boss Table",
+    name = "Keeps numeric column widths stable when the scrollbar lane activates",
+    func = function()
+        NS.Database.EnsureDB()
+        NS.UI.EnsureUI()
+
+        local beforePB = NS.UI.cols[2].width
+        local beforeSplit = NS.UI.cols[3].width
+        local beforeDiff = NS.UI.cols[4].width
+
+        System.BeginSection("Toggle enough rows to activate the scrollbar lane")
+        NS.UI.RefreshBossTableData({
+            { key = "A", name = "Boss A" },
+        }, {
+            ["Boss A"] = 30,
+        })
+        local withoutScrollPB = NS.UI.cols[2].width
+        local withoutScrollSplit = NS.UI.cols[3].width
+        local withoutScrollDiff = NS.UI.cols[4].width
+
+        local entries = {}
+        local presentation = { rowsByKey = {}, summary = {} }
+        for i = 1, 20 do
+            local key = "Scroll:" .. i
+            entries[#entries + 1] = { key = key, name = "Boss " .. i }
+            presentation.rowsByKey[key] = {
+                pbTime = i * 10,
+                splitTime = i * 11,
+                diffTime = i,
+                color = NS.Colors.white,
+            }
+        end
+        NS.UI.RefreshBossTableData(entries, presentation)
+        NS.UI.ApplyTableLayout()
+
+        System.AssertTrue(NS.UI._bossScrollLaneVisible == true, "The scrollbar lane becomes visible with many rows",
+            NS.UI._bossScrollLaneVisible)
+        System.AssertEqual(NS.UI.cols[2].width, withoutScrollPB, "PB width does not change when the scrollbar appears")
+        System.AssertEqual(NS.UI.cols[3].width, withoutScrollSplit,
+            "Split width does not change when the scrollbar appears")
+        System.AssertEqual(NS.UI.cols[4].width, withoutScrollDiff, "Diff width does not change when the scrollbar appears")
+        System.AssertEqual(NS.UI._rightInset, NS.UI._bossScrollLaneWidth,
+            "The reserved right gutter matches the scrollbar lane width")
+        System.EndSection("Toggle enough rows to activate the scrollbar lane", "PASS")
+
+        NS.UI._pbWidth = beforePB
+        NS.UI._splitWidth = beforeSplit
+        NS.UI._deltaWidth = beforeDiff
+        NS.UI.ApplyTableLayout()
+    end,
+})
+
+System.RegisterTest({
+    id = "ui_footer_placeholders_visible_without_entries",
+    suite = "UI",
+    subcategory = "Footer",
+    name = "Shows footer placeholders even when no run entries exist",
+    func = function()
+        NS.Database.EnsureDB()
+        NS.UI.EnsureUI()
+
+        System.BeginSection("Refresh totals without any run summary")
+        NS.SetTotals(nil, nil, nil)
+        local pbEntry = NS.UI.totalPB._ssNumericCellParts and NS.UI.totalPB._ssNumericCellParts.summary
+        local splitEntry = NS.UI.totalSplit._ssNumericCellParts and NS.UI.totalSplit._ssNumericCellParts.summary
+        local diffEntry = NS.UI.totalDelta._ssNumericCellParts and NS.UI.totalDelta._ssNumericCellParts.summary
+
+        System.AssertEqual(NS.UI.totalPB:GetText(), "--:--.--", "PB footer host retains the placeholder text")
+        System.AssertTrue(pbEntry ~= nil, "PB footer placeholder renders through the numeric widget", pbEntry ~= nil)
+        System.AssertTrue(splitEntry ~= nil, "Split footer placeholder renders through the numeric widget", splitEntry ~= nil)
+        System.AssertTrue(diffEntry ~= nil, "Diff footer placeholder renders through the numeric widget", diffEntry ~= nil)
+        if pbEntry and splitEntry and diffEntry then
+            System.AssertEqual(pbEntry.minute:GetText(), "--", "PB placeholder keeps the minute slot text")
+            System.AssertEqual(pbEntry.second:GetText(), "--", "PB placeholder keeps the second slot text")
+            System.AssertEqual(pbEntry.millis:GetText(), "--", "PB placeholder keeps the two-digit millis text")
+            System.AssertEqual(pbEntry.decimal:GetText(), ".", "PB placeholder keeps the decimal glyph")
+            System.AssertEqual(splitEntry.decimal:GetText(), ".", "Split placeholder keeps the decimal glyph")
+            System.AssertEqual(diffEntry.decimal:GetText(), ".", "Diff placeholder keeps the decimal glyph")
+        end
+        System.EndSection("Refresh totals without any run summary", "PASS")
+    end,
+})
+
+System.RegisterTest({
+    id = "ui_diff_subsecond_values_use_zero_second_lead_without_colon",
+    suite = "UI",
+    subcategory = "Boss Table",
+    name = "Formats sub-second Diff values as sign plus zero-second lead without a colon",
+    func = function()
+        NS.Database.EnsureDB()
+        NS.UI.EnsureUI()
+
+        System.BeginSection("Render sub-second Diff values")
+        NS.UI.data = {
+            {
+                key = "boss_subsecond",
+                cols = {
+                    { value = "Boss Subsecond" },
+                    { value = "0.424", rawSeconds = 0.424, displayKind = "time", placeholderMillis = 3, color = NS.Colors.gold },
+                    { value = "0.424", rawSeconds = 0.424, displayKind = "time", placeholderMillis = 3, color = NS.Colors.white },
+                    { value = "+0.424", rawSeconds = 0.424, displayKind = "delta", placeholderMillis = 3, color = NS.Colors.white },
+                },
+            },
+        }
+        NS.UI.rowByBossKey = { boss_subsecond = 1 }
+        NS.UI.st:SetData(NS.UI.data, true)
+        NS.UI.st:Refresh()
+
+        local row = NS.UI.st.rows[1]
+        local entry = row.cols[4]._ssNumericCellParts and row.cols[4]._ssNumericCellParts.num
+        local spec = NS.UI.GetAlignedTimeSpec and NS.UI.GetAlignedTimeSpec("diff") or nil
+        System.AssertTrue(entry ~= nil, "Sub-second Diff cells still use the aligned widget", entry ~= nil)
+        if entry and spec then
+            local signPoint, signRelative, _, signX = entry.sign:GetPoint(1)
+            local expectedSignLeft = spec.secondLeft + spec.secondWidth - entry.second:GetStringWidth() - spec.signPad -
+                spec.signWidth
+            System.AssertEqual(entry.sign:GetText(), "+", "Sub-second Diff keeps the sign")
+            System.AssertTrue(entry.minute:IsShown() == false, "Sub-second Diff hides the minute slot", entry.minute:IsShown())
+            System.AssertTrue(entry.colon:IsShown() == false, "Sub-second Diff does not show a colon", entry.colon:IsShown())
+            System.AssertEqual(entry.second:GetText(), "0", "Sub-second Diff uses a single zero second lead")
+            System.AssertEqual(entry.decimal:GetText(), ".", "Sub-second Diff keeps the decimal glyph")
+            System.AssertEqual(entry.millis:GetText(), "424", "Sub-second Diff keeps the milliseconds")
+            System.AssertEqual(signPoint, "TOPLEFT", "Sub-second Diff sign anchors from the host origin")
+            System.AssertTrue(signRelative == row.cols[4], "Sub-second Diff sign is positioned against the host", signRelative)
+            System.AssertEqual(signX, expectedSignLeft, "Sub-second Diff sign hugs the rendered zero")
+        end
+        System.EndSection("Render sub-second Diff values", "PASS")
+    end,
+})
+
+System.RegisterTest({
+    id = "ui_footer_summaries_follow_latest_row_state",
+    suite = "UI",
+    subcategory = "Footer",
+    name = "Uses the latest row summary values rather than the first row values",
+    func = function()
+        NS.Database.EnsureDB()
+        NS.UI.EnsureUI()
+
+        System.BeginSection("Apply a presentation summary that differs from the first row")
+        NS.UI.RefreshBossTableData({
+            { key = "A", name = "Opening Pull" },
+            { key = "B", name = "Final Tyrant" },
+        }, {
+            rowsByKey = {
+                A = { pbTime = 22.1, splitTime = 622.524, diffTime = 600.424, color = NS.Colors.red },
+                B = { pbTime = 120.01, splitTime = 179.816, diffTime = 59.806, color = NS.Colors.red },
+            },
+            summary = {
+                pbTotal = 120.01,
+                splitTotal = 179.816,
+                diffTotal = 59.806,
+                splitColor = NS.Colors.red,
+                diffColor = NS.Colors.red,
+            },
+        })
+        NS.SetTotals(120.01, 179.816, 59.806, NS.Colors.red, NS.Colors.red)
+
+        local pbEntry = NS.UI.totalPB._ssNumericCellParts and NS.UI.totalPB._ssNumericCellParts.summary
+        local splitEntry = NS.UI.totalSplit._ssNumericCellParts and NS.UI.totalSplit._ssNumericCellParts.summary
+        local diffEntry = NS.UI.totalDelta._ssNumericCellParts and NS.UI.totalDelta._ssNumericCellParts.summary
+        System.AssertTrue(pbEntry ~= nil, "PB footer summary is rendered", pbEntry ~= nil)
+        System.AssertTrue(splitEntry ~= nil, "Split footer summary is rendered", splitEntry ~= nil)
+        System.AssertTrue(diffEntry ~= nil, "Diff footer summary is rendered", diffEntry ~= nil)
+        if pbEntry and splitEntry and diffEntry then
+            System.AssertEqual(pbEntry.minute:GetText(), "2", "Footer PB reflects the latest row PB total")
+            System.AssertEqual(splitEntry.minute:GetText(), "2", "Footer Split reflects the latest row split total")
+            System.AssertEqual(diffEntry.second:GetText(), "59", "Footer Diff reflects the latest row diff total")
+        end
+        System.EndSection("Apply a presentation summary that differs from the first row", "PASS")
     end,
 })
 

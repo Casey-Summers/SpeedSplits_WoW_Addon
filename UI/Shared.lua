@@ -27,6 +27,147 @@ function NS.ApplyFontToFS(fs, typeKey, multiplier)
     end
 end
 
+local function GetDecimalAlignedParts(value)
+    value = tostring(value or "")
+    if value == "" then
+        return "", "", ""
+    end
+
+    local decimalIndex = string.find(value, "%.")
+    if not decimalIndex then
+        return value, "", ""
+    end
+
+    return string.sub(value, 1, decimalIndex - 1), ".", string.sub(value, decimalIndex + 1)
+end
+
+function UI.EnsureDecimalAlignedText(host, key)
+    if not host then
+        return nil
+    end
+
+    host._ssDecimalText = host._ssDecimalText or {}
+    local entry = host._ssDecimalText[key]
+    if entry then
+        return entry
+    end
+
+    local prefix = host:CreateFontString(nil, "OVERLAY")
+    prefix:SetJustifyH("RIGHT")
+    prefix:SetJustifyV("MIDDLE")
+    prefix:SetWordWrap(false)
+
+    local decimal = host:CreateFontString(nil, "OVERLAY")
+    decimal:SetJustifyH("CENTER")
+    decimal:SetJustifyV("MIDDLE")
+    decimal:SetWordWrap(false)
+
+    local suffix = host:CreateFontString(nil, "OVERLAY")
+    suffix:SetJustifyH("LEFT")
+    suffix:SetJustifyV("MIDDLE")
+    suffix:SetWordWrap(false)
+
+    entry = {
+        prefix = prefix,
+        decimal = decimal,
+        suffix = suffix,
+        pivotX = 0,
+        boundsLeft = 0,
+        boundsRight = 0,
+    }
+    host._ssDecimalText[key] = entry
+    return entry
+end
+
+function UI.HideDecimalAlignedText(host, key)
+    local entry = host and host._ssDecimalText and host._ssDecimalText[key]
+    if not entry then
+        return
+    end
+
+    entry.prefix:SetText("")
+    entry.decimal:SetText("")
+    entry.suffix:SetText("")
+    entry.prefix:Hide()
+    entry.decimal:Hide()
+    entry.suffix:Hide()
+end
+
+function UI.SetDecimalAlignedText(host, key, value, fontType, color, pivotX, boundsLeft, boundsRight)
+    local entry = UI.EnsureDecimalAlignedText(host, key)
+    if not entry then
+        return nil
+    end
+
+    local prefixText, decimalText, suffixText = GetDecimalAlignedParts(value)
+    local left = tonumber(boundsLeft) or 0
+    local right = tonumber(boundsRight) or 0
+    local pivot = tonumber(pivotX) or 0
+
+    entry.pivotX = pivot
+    entry.boundsLeft = left
+    entry.boundsRight = right
+
+    local prefix = entry.prefix
+    local decimal = entry.decimal
+    local suffix = entry.suffix
+
+    NS.ApplyFontToFS(prefix, fontType)
+    NS.ApplyFontToFS(decimal, fontType)
+    NS.ApplyFontToFS(suffix, fontType)
+
+    local active = color or Colors.white
+    prefix:SetTextColor(active.r or 1, active.g or 1, active.b or 1, active.a or 1)
+    decimal:SetTextColor(active.r or 1, active.g or 1, active.b or 1, active.a or 1)
+    suffix:SetTextColor(active.r or 1, active.g or 1, active.b or 1, active.a or 1)
+
+    decimal:ClearAllPoints()
+    decimal:SetPoint("CENTER", host, "LEFT", pivot, 0)
+    decimal:SetText(decimalText or "")
+
+    prefix:ClearAllPoints()
+    prefix:SetPoint("TOPLEFT", host, "TOPLEFT", left, -1)
+    if decimalText ~= "" then
+        prefix:SetPoint("BOTTOMRIGHT", decimal, "BOTTOMLEFT", 0, 0)
+    else
+        prefix:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", right, 1)
+    end
+    prefix:SetText(prefixText or "")
+
+    suffix:ClearAllPoints()
+    if decimalText ~= "" then
+        suffix:SetPoint("TOPLEFT", decimal, "TOPRIGHT", 0, 0)
+    else
+        suffix:SetPoint("TOPLEFT", host, "TOPLEFT", pivot, -1)
+    end
+    suffix:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", right, 1)
+    suffix:SetText(suffixText or "")
+
+    if prefixText == "" then
+        prefix:Hide()
+    else
+        prefix:Show()
+    end
+
+    if decimalText == "" then
+        decimal:Hide()
+    else
+        decimal:Show()
+    end
+
+    if suffixText == "" then
+        suffix:Hide()
+    else
+        suffix:Show()
+    end
+
+    return entry
+end
+
+function UI.GetDecimalAlignedParts(value)
+    return GetDecimalAlignedParts(value)
+end
+
 function UI.ApplyThinSeparator(grip)
     if grip._line then
         return

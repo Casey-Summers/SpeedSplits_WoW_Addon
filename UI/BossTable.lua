@@ -105,6 +105,9 @@ local function Num_DoCellUpdate(rowFrame, cellFrame, data, cols, row, realrow, c
         if cellFrame and cellFrame.text then
             cellFrame.text:SetText("")
         end
+        if cellFrame then
+            UI.HideDecimalAlignedText(cellFrame, "num")
+        end
         return
     end
 
@@ -115,34 +118,44 @@ local function Num_DoCellUpdate(rowFrame, cellFrame, data, cols, row, realrow, c
         return
     end
 
-    cellFrame.text:SetText(cell.value or "")
-    NS.ApplyFontToFS(cellFrame.text, "num")
-    if dataIndex == 4 then
-        cellFrame.text:SetJustifyH("CENTER")
+    local color = (cols[column].color and cols[column].color(data, cols, realrow, column, stable)) or cell.color
+    local activeColor
+    if NS.IsBossIgnored(entry.cols[1].value) then
+        activeColor = { r = 0.4, g = 0.4, b = 0.4, a = 1 }
+    elseif color then
+        activeColor = color
     else
-        cellFrame.text:SetJustifyH("RIGHT")
-    end
-    cellFrame.text:SetJustifyV("MIDDLE")
-    cellFrame.text:SetWordWrap(false)
-    if cellFrame.text.SetMaxLines then
-        cellFrame.text:SetMaxLines(1)
-    end
-    cellFrame.text:ClearAllPoints()
-    if dataIndex == 4 then
-        cellFrame.text:SetPoint("TOPLEFT", cellFrame, "TOPLEFT", 0, -1)
-        cellFrame.text:SetPoint("BOTTOMRIGHT", cellFrame, "BOTTOMRIGHT", 0, 1)
-    else
-        cellFrame.text:SetPoint("TOPLEFT", cellFrame, "TOPLEFT", 4, -1)
-        cellFrame.text:SetPoint("BOTTOMRIGHT", cellFrame, "BOTTOMRIGHT", -8, 1)
+        activeColor = { r = 1, g = 1, b = 1, a = 1 }
     end
 
-    local color = (cols[column].color and cols[column].color(data, cols, realrow, column, stable)) or cell.color
-    if NS.IsBossIgnored(entry.cols[1].value) then
-        cellFrame.text:SetTextColor(0.4, 0.4, 0.4, 1)
-    elseif color then
-        cellFrame.text:SetTextColor(color.r or 1, color.g or 1, color.b or 1, color.a or 1)
-    else
-        cellFrame.text:SetTextColor(1, 1, 1, 1)
+    if cellFrame.text then
+        cellFrame.text:SetText("")
+        cellFrame.text:Hide()
+    end
+
+    cellFrame:SetClipsChildren(false)
+    local width = cellFrame.GetWidth and cellFrame:GetWidth() or (cols[column] and cols[column].width) or 0
+    local leftPadding = 4
+    local rightPadding = -4
+    local pivotX = math.floor((width or 0) / 2 + 0.5)
+    local decimalText = UI.SetDecimalAlignedText(
+        cellFrame,
+        "num",
+        cell.value or "",
+        "num",
+        activeColor,
+        pivotX,
+        leftPadding,
+        rightPadding
+    )
+
+    if decimalText then
+        decimalText.prefix:Show()
+        if decimalText.suffix:GetText() == "" then
+            decimalText.suffix:Hide()
+        else
+            decimalText.suffix:Show()
+        end
     end
 end
 

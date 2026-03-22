@@ -553,13 +553,13 @@ local function ApplyTableLayout()
     local laneWidth = GetBossScrollBarWidth() + 6
     local needsScroll = GetBossTableDataCount() > displayRows
     UI._bossScrollLaneVisible = needsScroll
-    UI._bossScrollLaneWidth = needsScroll and laneWidth or 0
-    UI._rightInset = 0
+    UI._bossScrollLaneWidth = laneWidth
+    UI._rightInset = laneWidth
 
     if UI.st.scrollframe then
         UI.st.scrollframe:ClearAllPoints()
         UI.st.scrollframe:SetPoint("TOPLEFT", UI.st.frame, "TOPLEFT", 0, -4)
-        UI.st.scrollframe:SetPoint("BOTTOMRIGHT", UI.st.frame, "BOTTOMRIGHT", -(needsScroll and laneWidth or 0), 3)
+        UI.st.scrollframe:SetPoint("BOTTOMRIGHT", UI.st.frame, "BOTTOMRIGHT", -laneWidth, 3)
     end
 
     if UI.titleTab then
@@ -576,7 +576,7 @@ local function ApplyTableLayout()
 
     UI._modelWidth = GetModelColumnWidth()
     local width = UI.st.frame:GetWidth() or 1
-    local available = math.max(width, 1)
+    local available = math.max(width - UI._rightInset, 1)
     local splitMin = Const.SPLITS_COL_MIN
     local globalMin = splitMin.GLOBAL or 1
     local bossMin = math.max(globalMin, splitMin.BOSS or globalMin)
@@ -638,21 +638,38 @@ local function ApplyTableLayout()
         local xPBLeft = xBossRight
         local xSplitLeft = xPBLeft + UI._pbWidth
         local xDiffLeft = xSplitLeft + UI._splitWidth
+        UI._columnDecimalPivots = {
+            pb = xPBLeft + (UI._pbWidth / 2),
+            split = xSplitLeft + (UI._splitWidth / 2),
+            diff = xDiffLeft + (UI._deltaWidth / 2),
+        }
 
         UI.totalDelta:ClearAllPoints()
-        UI.totalDelta:SetPoint("CENTER", UI.totalFrame, "LEFT", xDiffLeft + (UI._deltaWidth / 2), 0)
+        UI.totalDelta:SetPoint("TOPLEFT", UI.totalFrame, "TOPLEFT", xDiffLeft, 0)
+        UI.totalDelta:SetPoint("BOTTOMLEFT", UI.totalFrame, "BOTTOMLEFT", xDiffLeft, 0)
         UI.totalDelta:SetWidth(UI._deltaWidth)
-        UI.totalDelta:SetJustifyH("CENTER")
+        UI.totalDelta._pivotX = UI._deltaWidth / 2
+        if UI.SetTotalSummaryText then
+            UI.SetTotalSummaryText(UI.totalDelta, UI.totalDelta:GetText(), UI.totalDelta._color)
+        end
 
         UI.totalSplit:ClearAllPoints()
-        UI.totalSplit:SetPoint("CENTER", UI.totalFrame, "LEFT", xSplitLeft + (UI._splitWidth / 2), 0)
+        UI.totalSplit:SetPoint("TOPLEFT", UI.totalFrame, "TOPLEFT", xSplitLeft, 0)
+        UI.totalSplit:SetPoint("BOTTOMLEFT", UI.totalFrame, "BOTTOMLEFT", xSplitLeft, 0)
         UI.totalSplit:SetWidth(UI._splitWidth)
-        UI.totalSplit:SetJustifyH("CENTER")
+        UI.totalSplit._pivotX = UI._splitWidth / 2
+        if UI.SetTotalSummaryText then
+            UI.SetTotalSummaryText(UI.totalSplit, UI.totalSplit:GetText(), UI.totalSplit._color)
+        end
 
         UI.totalPB:ClearAllPoints()
-        UI.totalPB:SetPoint("CENTER", UI.totalFrame, "LEFT", xPBLeft + (UI._pbWidth / 2), 0)
+        UI.totalPB:SetPoint("TOPLEFT", UI.totalFrame, "TOPLEFT", xPBLeft, 0)
+        UI.totalPB:SetPoint("BOTTOMLEFT", UI.totalFrame, "BOTTOMLEFT", xPBLeft, 0)
         UI.totalPB:SetWidth(UI._pbWidth)
-        UI.totalPB:SetJustifyH("CENTER")
+        UI.totalPB._pivotX = UI._pbWidth / 2
+        if UI.SetTotalSummaryText then
+            UI.SetTotalSummaryText(UI.totalPB, UI.totalPB:GetText(), UI.totalPB._color)
+        end
     end
 
     if UI._colGrips then

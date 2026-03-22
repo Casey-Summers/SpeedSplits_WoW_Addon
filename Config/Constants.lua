@@ -4,10 +4,10 @@ local Const = NS.Const
 
 Const.SPLITS_COL_MIN = {
     GLOBAL = 20,
-    BOSS = 20,
-    PB = 85,
-    SPLIT = 85,
-    DIFFERENCE = 20,
+    BOSS = 50,
+    PB = 100,
+    SPLIT = 100,
+    DIFFERENCE = 100,
 }
 
 Const.SPLITS_COL_MAX = {

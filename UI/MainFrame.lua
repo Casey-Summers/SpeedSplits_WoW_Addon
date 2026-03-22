@@ -8,6 +8,7 @@ local ScrollBarSkin = UI.Templates.ScrollBarSkin
 local IconButton = UI.Templates.IconButton
 local HoverFadeFrame = UI.Templates.HoverFadeFrame
 local HeaderCell = UI.Templates.HeaderCell
+local SECTION_TOTAL_PLACEHOLDER = "--:--.--"
 
 local BOSS_HEADER_LABELS = { "", "PB", "Split", "Diff" }
 
@@ -404,20 +405,42 @@ function UI.EnsureUI()
     historyButton:SetPoint("LEFT", logoText, "RIGHT", 8, 0)
     UI.historyButton = historyButton
 
-    local totalPB = totalFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    totalPB:SetJustifyH("RIGHT")
-    totalPB:SetText("--:--.---")
+    local function CreateTotalHost()
+        local host = CreateFrame("Frame", nil, totalFrame)
+        host:SetHeight(24)
+        host._text = ""
+        host.SetText = function(self, value)
+            self._text = tostring(value or "")
+            if UI.SetTotalSummaryText then
+                UI.SetTotalSummaryText(self, self._text, self._color)
+            end
+        end
+        host.GetText = function(self)
+            return self._text or ""
+        end
+        host.SetTextColor = function(self, r, g, b, a)
+            self._color = { r = r or 1, g = g or 1, b = b or 1, a = a or 1 }
+            if UI.SetTotalSummaryText then
+                UI.SetTotalSummaryText(self, self._text, self._color)
+            end
+        end
+        return host
+    end
+
+    local totalPB = CreateTotalHost()
     UI.totalPB = totalPB
+    totalPB:SetText(SECTION_TOTAL_PLACEHOLDER)
+    totalPB:SetTextColor(NS.Colors.gold.r, NS.Colors.gold.g, NS.Colors.gold.b, NS.Colors.gold.a or 1)
 
-    local totalSplit = totalFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    totalSplit:SetJustifyH("RIGHT")
-    totalSplit:SetText("--:--.---")
+    local totalSplit = CreateTotalHost()
     UI.totalSplit = totalSplit
+    totalSplit:SetText(SECTION_TOTAL_PLACEHOLDER)
+    totalSplit:SetTextColor(NS.Colors.white.r, NS.Colors.white.g, NS.Colors.white.b, NS.Colors.white.a or 1)
 
-    local totalDelta = totalFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    totalDelta:SetJustifyH("RIGHT")
-    totalDelta:SetText("--:--.---")
+    local totalDelta = CreateTotalHost()
     UI.totalDelta = totalDelta
+    totalDelta:SetText(SECTION_TOTAL_PLACEHOLDER)
+    totalDelta:SetTextColor(NS.Colors.white.r, NS.Colors.white.g, NS.Colors.white.b, NS.Colors.white.a or 1)
 
     local timerGrip = UI.SetupSizeGrip(timerFrame, function()
         if UI.SaveFrameLayout then
@@ -526,9 +549,9 @@ function NS.UpdateFontsOnly()
 
     if UI.killCountCounterText then NS.ApplyFontToFS(UI.killCountCounterText, "counter", 0.95) end
     if UI.killCountText then NS.ApplyFontToFS(UI.killCountText, "header", 0.9) end
-    if UI.totalPB then NS.ApplyFontToFS(UI.totalPB, "num") end
-    if UI.totalSplit then NS.ApplyFontToFS(UI.totalSplit, "num") end
-    if UI.totalDelta then NS.ApplyFontToFS(UI.totalDelta, "num") end
+    if UI.totalPB and UI.SetTotalSummaryText then UI.SetTotalSummaryText(UI.totalPB, UI.totalPB:GetText(), UI.totalPB._color) end
+    if UI.totalSplit and UI.SetTotalSummaryText then UI.SetTotalSummaryText(UI.totalSplit, UI.totalSplit:GetText(), UI.totalSplit._color) end
+    if UI.totalDelta and UI.SetTotalSummaryText then UI.SetTotalSummaryText(UI.totalDelta, UI.totalDelta:GetText(), UI.totalDelta._color) end
     if UI.timerTextMin then NS.ApplyFontToFS(UI.timerTextMin, "timer") end
     if UI.timerTextSec then NS.ApplyFontToFS(UI.timerTextSec, "timer") end
     if UI.timerTextMs then NS.ApplyFontToFS(UI.timerTextMs, "timer") end

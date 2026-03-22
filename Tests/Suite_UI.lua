@@ -28,6 +28,12 @@ System.RegisterTest({
         System.BeginSection("Write totals into the footer")
         NS.SetTotals(10, 12, 2, 1, 1, 1, "|cffffffff")
         System.AssertEqual(NS.UI.totalPB:GetText(), "10.000", "Footer PB text matches the formatted total")
+        local entry = NS.UI.totalPB._ssDecimalText and NS.UI.totalPB._ssDecimalText.summary
+        System.AssertTrue(entry ~= nil, "Footer PB uses the decimal-aligned text helper", entry ~= nil)
+        if entry then
+            System.AssertEqual(entry.prefix:GetText(), "10.", "Footer PB prefix keeps continuous text through the decimal")
+            System.AssertEqual(entry.suffix:GetText(), "000", "Footer PB suffix keeps only the fractional digits")
+        end
         System.EndSection("Write totals into the footer", "PASS")
     end,
 })
@@ -160,7 +166,13 @@ System.RegisterTest({
 
         local row = NS.UI.st.rows[1]
         System.AssertEqual(row.cols[1].text:GetText(), "Boss A", "Boss name remains in the boss-name display column")
-        System.AssertEqual(row.cols[4].text:GetText(), "+00:05.000", "Difference display column reads the difference payload")
+        local decimalEntry = row.cols[4]._ssDecimalText and row.cols[4]._ssDecimalText.num
+        System.AssertTrue(decimalEntry ~= nil, "Difference display column uses decimal-aligned text", decimalEntry ~= nil)
+        System.AssertEqual(row.cols[4].text:GetText(), "", "The stock cell font string is cleared to avoid overlap")
+        if decimalEntry then
+            System.AssertEqual(decimalEntry.prefix:GetText(), "+00:05.", "Difference prefix keeps continuous text through the decimal")
+            System.AssertEqual(decimalEntry.suffix:GetText(), "000", "Difference suffix keeps the milliseconds")
+        end
         System.EndSection("Populate a synthetic boss row", "PASS")
     end,
 })
@@ -269,14 +281,16 @@ System.RegisterTest({
             System.AssertTrue(diffCell ~= nil, "The first visible Diff cell exists", diffCell ~= nil)
 
             local beforeWidth = diffCell and diffCell:GetWidth() or 0
-            local pointA, relativeA, _, xA = diffCell.text:GetPoint(1)
-            local pointB, relativeB, _, xB = diffCell.text:GetPoint(2)
-            System.AssertEqual(pointA, "TOPLEFT", "Diff text anchors its first point to the cell's top-left corner")
-            System.AssertEqual(pointB, "BOTTOMRIGHT", "Diff text anchors its second point to the cell's bottom-right corner")
-            System.AssertTrue(relativeA == diffCell, "The first anchor is attached to the Diff cell itself", relativeA)
-            System.AssertTrue(relativeB == diffCell, "The second anchor is attached to the Diff cell itself", relativeB)
-            System.AssertEqual(xA, 4, "The first anchor uses the expected left padding")
-            System.AssertEqual(xB, -4, "The second anchor uses the expected right padding")
+            local decimalEntry = diffCell._ssDecimalText and diffCell._ssDecimalText.num
+            System.AssertTrue(decimalEntry ~= nil, "The Diff cell creates decimal-aligned font strings", decimalEntry ~= nil)
+            local pointA, relativeA, _, xA = decimalEntry.prefix:GetPoint(2)
+            local pointB, relativeB, _, xB = decimalEntry.suffix:GetPoint(1)
+            System.AssertEqual(pointA, "BOTTOMLEFT", "The prefix anchors its right edge from the cell's lower-left edge")
+            System.AssertEqual(pointB, "TOPLEFT", "The suffix anchors from the right half of the cell")
+            System.AssertTrue(relativeA == diffCell, "The prefix anchor remains attached to the Diff cell", relativeA)
+            System.AssertTrue(relativeB == diffCell, "The suffix anchor remains attached to the Diff cell", relativeB)
+            System.AssertTrue(xA < math.floor(beforeWidth / 2 + 0.5), "The prefix ends just left of the centered decimal", xA)
+            System.AssertTrue(xB > math.floor(beforeWidth / 2 + 0.5), "The suffix begins just right of the centered decimal", xB)
 
             System.EndSection("Render enough rows to force the scrollbar lane", "PASS")
 
@@ -289,12 +303,13 @@ System.RegisterTest({
             local afterWidth = diffCell and diffCell:GetWidth() or 0
             System.AssertTrue(afterWidth ~= beforeWidth, "Changing the Diff width changes the live cell width", afterWidth)
 
-            pointA, relativeA, _, xA = diffCell.text:GetPoint(1)
-            pointB, relativeB, _, xB = diffCell.text:GetPoint(2)
+            decimalEntry = diffCell._ssDecimalText and diffCell._ssDecimalText.num
+            pointA, relativeA, _, xA = decimalEntry.prefix:GetPoint(2)
+            pointB, relativeB, _, xB = decimalEntry.suffix:GetPoint(1)
             System.AssertTrue(relativeA == diffCell, "The first anchor remains attached after resizing", relativeA)
             System.AssertTrue(relativeB == diffCell, "The second anchor remains attached after resizing", relativeB)
-            System.AssertEqual(xA, 4, "The left padding remains stable after resizing")
-            System.AssertEqual(xB, -4, "The right padding remains stable after resizing")
+            System.AssertTrue(xA < math.floor(afterWidth / 2 + 0.5), "The prefix remains to the left of the centered decimal after resizing", xA)
+            System.AssertTrue(xB > math.floor(afterWidth / 2 + 0.5), "The suffix remains to the right of the centered decimal after resizing", xB)
             System.EndSection("Resize the Diff column and confirm the cell width updates", "PASS")
         end, function()
             NS.UI._deltaWidth = oldDeltaWidth
@@ -465,6 +480,90 @@ System.RegisterTest({
             NS.SaveDefaultLayout = oldSaveDefaultLayout
             NS.ResetLayout = oldResetLayout
             StaticPopup_Show = oldStaticPopupShow
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "ui_decimal_aligned_cell_splits_time_text",
+    suite = "UI",
+    subcategory = "Boss Table",
+    name = "Splits numeric cells into decimal-aligned prefix and suffix text",
+    func = function()
+        NS.Database.EnsureDB()
+        NS.UI.EnsureUI()
+
+        System.BeginSection("Render decimal-aligned numeric cells")
+        NS.UI.data = {
+            {
+                key = "boss_decimal",
+                cols = {
+                    { value = "Boss Decimal" },
+                    { value = "1:05.123", color = NS.Colors.gold },
+                    { value = "--:--.---", color = NS.Colors.white },
+                    { value = "+00:05.123", color = NS.Colors.gold },
+                },
+            },
+        }
+        NS.UI.rowByBossKey = { boss_decimal = 1 }
+        NS.UI.st:SetData(NS.UI.data, true)
+        NS.UI.st:Refresh()
+
+        local row = NS.UI.st.rows[1]
+        local pbEntry = row.cols[2]._ssDecimalText and row.cols[2]._ssDecimalText.num
+        local splitEntry = row.cols[3]._ssDecimalText and row.cols[3]._ssDecimalText.num
+        local diffEntry = row.cols[4]._ssDecimalText and row.cols[4]._ssDecimalText.num
+
+        System.AssertTrue(pbEntry ~= nil, "PB cells create a decimal-aligned entry", pbEntry ~= nil)
+        System.AssertTrue(splitEntry ~= nil, "Split cells create a decimal-aligned entry", splitEntry ~= nil)
+        System.AssertTrue(diffEntry ~= nil, "Diff cells create a decimal-aligned entry", diffEntry ~= nil)
+        System.AssertEqual(row.cols[2].text:GetText(), "", "PB stock text is cleared after custom rendering")
+        System.AssertEqual(pbEntry.prefix:GetText(), "1:05.", "PB prefix keeps continuous text through the decimal")
+        System.AssertEqual(pbEntry.suffix:GetText(), "123", "PB suffix keeps only the fractional digits")
+        System.AssertEqual(splitEntry.prefix:GetText(), "--:--.", "Placeholder values keep the placeholder prefix through the decimal")
+        System.AssertEqual(splitEntry.suffix:GetText(), "---", "Placeholder values keep the placeholder suffix")
+        System.AssertEqual(diffEntry.prefix:GetText(), "+00:05.", "Diff prefix retains the sign and decimal")
+        System.AssertEqual(diffEntry.suffix:GetText(), "123", "Diff suffix keeps the decimal part")
+        System.EndSection("Render decimal-aligned numeric cells", "PASS")
+    end,
+})
+
+System.RegisterTest({
+    id = "ui_footer_decimal_alignment_tracks_column_center",
+    suite = "UI",
+    subcategory = "Footer",
+    name = "Keeps footer totals anchored on the numeric column midpoint after resize",
+    func = function()
+        NS.Database.EnsureDB()
+        NS.UI.EnsureUI()
+
+        local oldDeltaWidth = NS.UI._deltaWidth
+
+        System.WithCleanup(function()
+            System.BeginSection("Resize the Diff column and verify the footer pivot updates")
+            NS.SetTotals(100, 120, 5, NS.Colors.white, NS.Colors.gold)
+            local beforePivot = NS.UI.totalDelta._pivotX
+            NS.UI._deltaWidth = oldDeltaWidth + 40
+            NS.UI.ApplyTableLayout()
+            local afterPivot = NS.UI.totalDelta._pivotX
+            local decimalEntry = NS.UI.totalDelta._ssDecimalText and NS.UI.totalDelta._ssDecimalText.summary
+
+            System.AssertTrue(afterPivot ~= beforePivot, "The footer diff pivot changes when the column width changes", afterPivot)
+            System.AssertEqual(afterPivot, NS.UI._deltaWidth / 2, "The footer diff pivot stays at the center of its host")
+            System.AssertTrue(decimalEntry ~= nil, "The footer diff uses decimal-aligned text", decimalEntry ~= nil)
+            if decimalEntry then
+                local pointA, relativeA, _, xA = decimalEntry.prefix:GetPoint(2)
+                local _, relativeB, _, xB = decimalEntry.suffix:GetPoint(1)
+                System.AssertEqual(pointA, "BOTTOMLEFT", "The footer prefix uses the host's lower-left edge as the decimal pivot reference")
+                System.AssertTrue(relativeA == NS.UI.totalDelta, "The footer prefix remains attached to the footer host", relativeA)
+                System.AssertTrue(relativeB == NS.UI.totalDelta, "The footer suffix remains attached to the footer host", relativeB)
+                System.AssertTrue(xA < afterPivot, "The footer prefix remains to the left of the midpoint", xA)
+                System.AssertTrue(xB > afterPivot, "The footer suffix remains to the right of the midpoint", xB)
+            end
+            System.EndSection("Resize the Diff column and verify the footer pivot updates", "PASS")
+        end, function()
+            NS.UI._deltaWidth = oldDeltaWidth
+            NS.UI.ApplyTableLayout()
         end)
     end,
 })

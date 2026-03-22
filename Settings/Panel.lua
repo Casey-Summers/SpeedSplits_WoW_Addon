@@ -187,10 +187,8 @@ function NS.CreateSettingsPanel()
     soundLabel:SetText("PB Toast Sound")
     soundLabel:SetTextColor(0.4, 0.8, 1)
 
-    local soundDD = CreateFrame("Frame", nil, rewardRow, "UIDropDownMenuTemplate")
+    local soundDD = DropDown.Create(rewardRow, 130, 0.85)
     soundDD:SetPoint("TOPLEFT", soundLabel, "BOTTOMLEFT", -15, -4)
-    UIDropDownMenu_SetWidth(soundDD, 130)
-    soundDD:SetScale(0.85)
 
     local function GetSoundNameByID(id)
         for _, info in ipairs(NS.SoundOptions or {}) do
@@ -209,29 +207,33 @@ function NS.CreateSettingsPanel()
 
     table.insert(Widgets.Registry, UpdateSoundDD)
 
-    UIDropDownMenu_Initialize(soundDD, function()
-        local current = NS.DB.Settings.toastSoundID or 0
-        for _, info in ipairs(NS.SoundOptions or {}) do
-            local item = UIDropDownMenu_CreateInfo()
-            item.text = info.name
-            item.value = info.id
-            item.func = function(self)
-                local id = self.value or 0
-                local name = (self.GetText and self:GetText()) or self.text or GetSoundNameByID(id) or "None"
-                NS.DB.Settings.toastSoundID = id
-                NS.DB.Settings.toastSoundName = name
-                UpdateSoundDD()
-                if id > 0 then
-                    local played = PlaySound(id, "SFX")
-                    if not played then
-                        PlaySoundFile(id, "SFX")
-                    end
+    DropDown.Bind(soundDD, {
+        buildItems = function()
+            local items = {}
+            for _, info in ipairs(NS.SoundOptions or {}) do
+                items[#items + 1] = { text = info.name, value = info.id }
+            end
+            return items
+        end,
+        getValue = function()
+            return NS.DB.Settings.toastSoundID or 0
+        end,
+        setValue = function(value)
+            local id = value or 0
+            local name = GetSoundNameByID(id) or NS.DB.Settings.toastSoundName or "None"
+            NS.DB.Settings.toastSoundID = id
+            NS.DB.Settings.toastSoundName = name
+        end,
+        onChanged = function(value)
+            UpdateSoundDD()
+            if value and value > 0 then
+                local played = PlaySound(value, "SFX")
+                if not played then
+                    PlaySoundFile(value, "SFX")
                 end
             end
-            item.checked = (info.id == current)
-            UIDropDownMenu_AddButton(item)
-        end
-    end)
+        end,
+    })
     UpdateSoundDD()
 
     local scaleLabel = rewardRow:CreateFontString(nil, "ARTWORK", "GameFontNormal")

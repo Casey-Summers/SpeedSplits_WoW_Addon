@@ -10,7 +10,6 @@ local ScrollBarSkin = UI.Templates.ScrollBarSkin
 local HeaderCell = UI.Templates.HeaderCell
 local HistoryRowTemplate = UI.Templates.HistoryRow
 
-local UIDropDownMenu_SetWidth = _G.UIDropDownMenu_SetWidth
 local function FormatEpochShort(epoch)
     return (not epoch or epoch <= 0) and "â€”" or date("%H:%M %d/%m/%Y", epoch)
 end
@@ -214,12 +213,6 @@ local function BuildHistoryResultItems()
         { text = "Completed",  value = "Completed" },
         { text = "Incomplete", value = "Incomplete" },
     }
-end
-
-local function InitHistoryDropDown(dropdown, buildItems, getValue, setValue)
-    DropDown.Initialize(dropdown, buildItems, getValue, setValue, function()
-        UI.RefreshHistoryTable()
-    end)
 end
 
 local function History_RestoreColWidths()
@@ -502,34 +495,42 @@ local function EnsureHistoryUI()
     end)
     UI.history.searchBox = searchBox
 
-    local tierDropDown = CreateFrame("Frame", nil, controls, "UIDropDownMenuTemplate")
+    local tierDropDown = DropDown.Create(controls, 100, 1)
     tierDropDown:SetPoint("LEFT", searchBox, "RIGHT", -12, -2)
-    UIDropDownMenu_SetWidth(tierDropDown, 100)
-    InitHistoryDropDown(tierDropDown, BuildHistoryTierItems, function()
-        return UI.history.filters and UI.history.filters.tier or 0
-    end, function(v)
-        if UI.history.filters then
-            UI.history.filters.tier = tonumber(v) or 0
-        end
-    end)
-    DropDown.Refresh(tierDropDown, BuildHistoryTierItems, function()
-        return UI.history.filters and UI.history.filters.tier or 0
-    end, "Expansion")
+    DropDown.Bind(tierDropDown, {
+        buildItems = BuildHistoryTierItems,
+        getValue = function()
+            return UI.history.filters and UI.history.filters.tier or 0
+        end,
+        setValue = function(v)
+            if UI.history.filters then
+                UI.history.filters.tier = tonumber(v) or 0
+            end
+        end,
+        onChanged = function()
+            UI.RefreshHistoryTable()
+        end,
+        fallbackText = "Expansion",
+    })
     UI.history.tierDropDown = tierDropDown
 
-    local resultDropDown = CreateFrame("Frame", nil, controls, "UIDropDownMenuTemplate")
+    local resultDropDown = DropDown.Create(controls, 90, 1)
     resultDropDown:SetPoint("LEFT", tierDropDown, "RIGHT", -24, 0)
-    UIDropDownMenu_SetWidth(resultDropDown, 90)
-    InitHistoryDropDown(resultDropDown, BuildHistoryResultItems, function()
-        return UI.history.filters and UI.history.filters.result or "Any"
-    end, function(v)
-        if UI.history.filters then
-            UI.history.filters.result = v
-        end
-    end)
-    DropDown.Refresh(resultDropDown, BuildHistoryResultItems, function()
-        return UI.history.filters and UI.history.filters.result or "Any"
-    end, "Result")
+    DropDown.Bind(resultDropDown, {
+        buildItems = BuildHistoryResultItems,
+        getValue = function()
+            return UI.history.filters and UI.history.filters.result or "Any"
+        end,
+        setValue = function(v)
+            if UI.history.filters then
+                UI.history.filters.result = v
+            end
+        end,
+        onChanged = function()
+            UI.RefreshHistoryTable()
+        end,
+        fallbackText = "Result",
+    })
 
     local listFrame = FrameFactory.CreateBorderedFrame(historyFrame, 0.4, NS.Colors.turquoise)
     listFrame:SetPoint("TOPLEFT", controls, "BOTTOMLEFT", 0, -34)

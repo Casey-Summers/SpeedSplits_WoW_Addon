@@ -4,10 +4,6 @@ local Widgets = {}
 NS.Settings = NS.Settings or {}
 NS.Settings.Widgets = Widgets
 
-local UIDropDownMenu_SetWidth = _G.UIDropDownMenu_SetWidth
-local UIDropDownMenu_Initialize = _G.UIDropDownMenu_Initialize
-local UIDropDownMenu_AddButton = _G.UIDropDownMenu_AddButton
-local UIDropDownMenu_CreateInfo = _G.UIDropDownMenu_CreateInfo
 local DropDown = NS.UI.Templates.DropDown
 
 Widgets.Registry = {}
@@ -81,34 +77,28 @@ function Widgets.VisualScalingSection(parent, label, typeKey)
         end
     end)
 
-    local dd = CreateFrame("Frame", nil, container, "UIDropDownMenuTemplate")
+    local dd = DropDown.Create(container, 80, 0.95)
     dd:SetPoint("LEFT", slider, "RIGHT", -15, -2)
-    UIDropDownMenu_SetWidth(dd, 80)
-    dd:SetScale(0.95)
-
-    local function OnClick(self)
-        DropDown.SetSelection(dd, self.value, self.text)
-        NS.DB.Settings.fonts[typeKey].font = self.value
-        NS.RefreshAllUI()
-    end
-
-    UIDropDownMenu_Initialize(dd, function()
-        local fonts = {
-            { name = "Friz", path = "Fonts\\FRIZQT__.TTF" },
-            { name = "Arial", path = "Fonts\\ARIALN.TTF" },
-            { name = "Skurri", path = "Fonts\\skurri.ttf" },
-            { name = "Morph", path = "Fonts\\MORPHEUS.ttf" },
-        }
-        local current = NS.DB.Settings.fonts[typeKey].font
-        for _, info in ipairs(fonts) do
-            local item = UIDropDownMenu_CreateInfo()
-            item.text = info.name
-            item.value = info.path
-            item.func = OnClick
-            item.checked = (info.path == current)
-            UIDropDownMenu_AddButton(item)
-        end
-    end)
+    local fonts = {
+        { text = "Friz", value = "Fonts\\FRIZQT__.TTF" },
+        { text = "Arial", value = "Fonts\\ARIALN.TTF" },
+        { text = "Skurri", value = "Fonts\\skurri.ttf" },
+        { text = "Morph", value = "Fonts\\MORPHEUS.ttf" },
+    }
+    DropDown.Bind(dd, {
+        buildItems = function()
+            return fonts
+        end,
+        getValue = function()
+            return NS.DB.Settings.fonts[typeKey].font
+        end,
+        setValue = function(value)
+            NS.DB.Settings.fonts[typeKey].font = value
+        end,
+        onChanged = function()
+            NS.RefreshAllUI()
+        end,
+    })
 
     local name = (NS.DB.Settings.fonts[typeKey].font:find("FRIZQT") and "Friz" or (NS.DB.Settings.fonts[typeKey].font:find("ARIAL") and "Arial" or (NS.DB.Settings.fonts[typeKey].font:find("skurri") and "Skurri" or "Morph")))
     DropDown.SetSelection(dd, NS.DB.Settings.fonts[typeKey].font, name)
@@ -150,35 +140,29 @@ function Widgets.VisibilityRow(parent, label, field)
     sub:SetWidth(120)
     sub:SetJustifyH("LEFT")
 
-    local dd = CreateFrame("Frame", nil, container, "UIDropDownMenuTemplate")
+    local dd = DropDown.Create(container, 120, 0.95)
     dd:SetPoint("LEFT", sub, "RIGHT", 10, -2)
-    UIDropDownMenu_SetWidth(dd, 120)
-    dd:SetScale(0.95)
-
-    local function OnClick(self)
-        DropDown.SetSelection(dd, self.value, self.text)
-        NS.DB.Settings.visibility[field] = self.value
-        if NS.RefreshVisibility then
-            NS.RefreshVisibility()
-        end
-    end
-
-    UIDropDownMenu_Initialize(dd, function()
-        local opts = {
-            { name = "Instance Only", value = "instance" },
-            { name = "Outdoor Only", value = "outdoor" },
-            { name = "Both", value = "both" },
-        }
-        local current = NS.DB.Settings.visibility[field] or "instance"
-        for _, info in ipairs(opts) do
-            local item = UIDropDownMenu_CreateInfo()
-            item.text = info.name
-            item.value = info.value
-            item.func = OnClick
-            item.checked = (info.value == current)
-            UIDropDownMenu_AddButton(item)
-        end
-    end)
+    local opts = {
+        { text = "Instance Only", value = "instance" },
+        { text = "Outdoor Only", value = "outdoor" },
+        { text = "Both", value = "both" },
+    }
+    DropDown.Bind(dd, {
+        buildItems = function()
+            return opts
+        end,
+        getValue = function()
+            return NS.DB.Settings.visibility[field] or "instance"
+        end,
+        setValue = function(value)
+            NS.DB.Settings.visibility[field] = value
+        end,
+        onChanged = function()
+            if NS.RefreshVisibility then
+                NS.RefreshVisibility()
+            end
+        end,
+    })
 
     local val = NS.DB.Settings.visibility[field] or "instance"
     DropDown.SetSelection(dd, val,
@@ -196,41 +180,46 @@ function Widgets.SettingsDropDown(parent, label, field, opts, width)
     sub:SetWidth(120)
     sub:SetJustifyH("LEFT")
 
-    local dd = CreateFrame("Frame", nil, container, "UIDropDownMenuTemplate")
+    local dd = DropDown.Create(container, width or 120, 0.95)
     dd:SetPoint("LEFT", sub, "RIGHT", 10, -2)
-    UIDropDownMenu_SetWidth(dd, width or 120)
-    dd:SetScale(0.95)
 
-    local function OnClick(self)
-        DropDown.SetSelection(dd, self.value, self.text)
-        NS.DB.Settings[field] = self.value
-        if field == "speedrunMode" then
-            NS.Run.speedrunMode = self.value
-            if NS.RunLogic and NS.RunLogic.SyncAutoIgnoredBosses then
-                NS.RunLogic.SyncAutoIgnoredBosses()
-            end
-            if NS.RunLogic and NS.RunLogic.HandleIgnoreStateChange then
-                NS.RunLogic.HandleIgnoreStateChange()
-            end
-        end
-        NS.RefreshAllUI()
+    local normalizedOpts = {}
+    for _, info in ipairs(opts or {}) do
+        normalizedOpts[#normalizedOpts + 1] = {
+            text = info.text or info.name,
+            value = info.value,
+        }
     end
 
-    UIDropDownMenu_Initialize(dd, function()
-        local current = NS.DB.Settings[field]
-        for _, info in ipairs(opts) do
-            local item = UIDropDownMenu_CreateInfo()
-            item.text = info.name
-            item.value = info.value
-            item.func = OnClick
-            item.checked = (info.value == current)
-            UIDropDownMenu_AddButton(item)
-        end
-    end)
+    DropDown.Bind(dd, {
+        buildItems = function()
+            return normalizedOpts
+        end,
+        getValue = function()
+            return NS.DB.Settings[field]
+        end,
+        setValue = function(value)
+            NS.DB.Settings[field] = value
+            if field == "speedrunMode" then
+                NS.Run.speedrunMode = value
+            end
+        end,
+        onChanged = function()
+            if field == "speedrunMode" then
+                if NS.RunLogic and NS.RunLogic.SyncAutoIgnoredBosses then
+                    NS.RunLogic.SyncAutoIgnoredBosses()
+                end
+                if NS.RunLogic and NS.RunLogic.HandleIgnoreStateChange then
+                    NS.RunLogic.HandleIgnoreStateChange()
+                end
+            end
+            NS.RefreshAllUI()
+        end,
+    })
 
     local function Refresh()
         local val = NS.DB.Settings[field]
-        DropDown.SetSelection(dd, val, DropDown.ResolveSelectedText(opts, val))
+        DropDown.SetSelection(dd, val, DropDown.ResolveSelectedText(normalizedOpts, val))
     end
 
     Refresh()

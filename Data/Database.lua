@@ -3,6 +3,24 @@ local _, NS = ...
 local Util = NS.Util
 local FORCED_DB_RESET_TOKEN = "2.0.0-major-default-reset"
 
+local function LayoutDeepCopy(source)
+    if NS.UI and NS.UI.DeepCopy then
+        return NS.UI.DeepCopy(source)
+    end
+    return Util.CopyTable(source or {})
+end
+
+local function InitializeLayoutState()
+    if NS.UI and NS.UI.InitializeDefaults then
+        return NS.UI.InitializeDefaults()
+    end
+
+    SpeedSplitsDB.ui = LayoutDeepCopy(NS.FactoryDefaults.ui)
+    SpeedSplitsDB.DefaultLayout = SpeedSplitsDB.DefaultLayout or {}
+    SpeedSplitsDB.DefaultLayout.ui = LayoutDeepCopy(NS.FactoryDefaults.ui)
+    return SpeedSplitsDB.ui
+end
+
 local function EnsurePBNodeShape(node)
     node = node or {}
     if node.Segments and node.Segments ~= node.Splits then
@@ -136,18 +154,13 @@ local function EnsureDB()
     end
 
     if not SpeedSplitsDB.ui then
-        SpeedSplitsDB.ui = Util.CopyTable(NS.FactoryDefaults.ui)
-    end
-    if NS.UI and NS.UI.NormalizeUILayoutSnapshot then
-        SpeedSplitsDB.ui = NS.UI.NormalizeUILayoutSnapshot(SpeedSplitsDB.ui)
-        if SpeedSplitsDB.DefaultLayout and SpeedSplitsDB.DefaultLayout.ui then
-            SpeedSplitsDB.DefaultLayout.ui = NS.UI.NormalizeUILayoutSnapshot(SpeedSplitsDB.DefaultLayout.ui)
-        end
+        SpeedSplitsDB.ui = LayoutDeepCopy(NS.FactoryDefaults.ui)
     end
 
     SpeedSplitsDB.__forcedResetToken = FORCED_DB_RESET_TOKEN
 
     NS.DB = SpeedSplitsDB
+    InitializeLayoutState()
 
     if NS.UI and NS.UI.history then
         NS.UI.history.filters = NS.UI.history.filters or Util.HistoryFilterDefaults()
@@ -158,15 +171,13 @@ end
 
 local function ApplyFactoryReset()
     EnsureDB()
-    SpeedSplitsDB.Settings = Util.CopyTable(NS.FactoryDefaults.Settings)
-    SpeedSplitsDB.DefaultStyle = Util.CopyTable(NS.FactoryDefaults.Settings)
-    SpeedSplitsDB.ui = Util.CopyTable(NS.FactoryDefaults.ui)
-    if NS.UI and NS.UI.NormalizeUILayoutSnapshot then
-        SpeedSplitsDB.ui = NS.UI.NormalizeUILayoutSnapshot(SpeedSplitsDB.ui)
-    end
-    SpeedSplitsDB.DefaultLayout = { ui = Util.CopyTable(NS.FactoryDefaults.ui) }
-    if NS.UI and NS.UI.NormalizeUILayoutSnapshot then
-        SpeedSplitsDB.DefaultLayout.ui = NS.UI.NormalizeUILayoutSnapshot(SpeedSplitsDB.DefaultLayout.ui)
+    SpeedSplitsDB.Settings = LayoutDeepCopy(NS.FactoryDefaults.Settings)
+    SpeedSplitsDB.DefaultStyle = LayoutDeepCopy(NS.FactoryDefaults.Settings)
+    SpeedSplitsDB.ui = LayoutDeepCopy(NS.FactoryDefaults.ui)
+    SpeedSplitsDB.DefaultLayout = { ui = LayoutDeepCopy(NS.FactoryDefaults.ui) }
+    InitializeLayoutState()
+    if NS.UI and NS.UI.ApplyAllLayouts then
+        NS.UI.ApplyAllLayouts()
     end
 end
 
@@ -208,24 +219,23 @@ local function SaveDefaultLayout()
     if NS.UI and NS.UI.CaptureCurrentLayout then
         NS.UI.CaptureCurrentLayout()
     end
-    SpeedSplitsDB.DefaultLayout = { ui = Util.CopyTable(SpeedSplitsDB.ui or {}) }
-    if NS.UI and NS.UI.NormalizeUILayoutSnapshot then
-        SpeedSplitsDB.DefaultLayout.ui = NS.UI.NormalizeUILayoutSnapshot(SpeedSplitsDB.DefaultLayout.ui)
-    end
+    SpeedSplitsDB.DefaultLayout = { ui = LayoutDeepCopy(SpeedSplitsDB.ui or {}) }
+    InitializeLayoutState()
 end
 
 local function ApplyLayoutReset()
     EnsureDB()
     local defaultUI
     if SpeedSplitsDB.DefaultLayout and SpeedSplitsDB.DefaultLayout.ui then
-        defaultUI = Util.CopyTable(SpeedSplitsDB.DefaultLayout.ui)
+        defaultUI = LayoutDeepCopy(SpeedSplitsDB.DefaultLayout.ui)
     else
-        defaultUI = Util.CopyTable(NS.FactoryDefaults.ui)
-    end
-    if NS.UI and NS.UI.NormalizeUILayoutSnapshot then
-        defaultUI = NS.UI.NormalizeUILayoutSnapshot(defaultUI)
+        defaultUI = LayoutDeepCopy(NS.FactoryDefaults.ui)
     end
     SpeedSplitsDB.ui = defaultUI
+    InitializeLayoutState()
+    if NS.UI and NS.UI.ApplyAllLayouts then
+        NS.UI.ApplyAllLayouts()
+    end
 end
 
 local function ResetLayout(simulateOnly)

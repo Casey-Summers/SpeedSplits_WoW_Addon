@@ -111,8 +111,10 @@ function UI.EnsureUI()
     timerFrame:SetBackdropColor(0, 0, 0, 0)
     timerFrame:SetBackdropBorderColor(1, 1, 1, 0)
 
-    local timerRestored = UI.RestoreFrameGeom("timer", timerFrame, 140, 50)
     UI.timerFrame = timerFrame
+    if UI.RegisterManagedFrame then
+        UI.RegisterManagedFrame("timer", timerFrame)
+    end
 
     local pbShine = timerFrame:CreateTexture(nil, "OVERLAY")
     pbShine:SetAtlas("challenges-bannershine")
@@ -139,17 +141,13 @@ function UI.EnsureUI()
     shineOut:SetOrder(3)
     UI.pbShineAG = shineAG
 
-    if not timerRestored then
-        timerFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 200)
-    end
-
     timerFrame:SetScript("OnDragStart", function(self)
         self:StartMoving()
     end)
     timerFrame:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
-        if UI.CaptureCurrentLayout then
-            UI.CaptureCurrentLayout()
+        if UI.SaveFrameLayout then
+            UI.SaveFrameLayout("timer", self)
         end
     end)
 
@@ -218,8 +216,8 @@ function UI.EnsureUI()
     end)
     bossFrame:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
-        if UI.CaptureCurrentLayout then
-            UI.CaptureCurrentLayout()
+        if UI.SaveFrameLayout then
+            UI.SaveFrameLayout("boss", self)
         end
     end)
     Util.ApplyResizeBounds(bossFrame, 450, Const.SPLITS_LAYOUT.MIN_HEIGHT, 1400, 1000)
@@ -231,11 +229,6 @@ function UI.EnsureUI()
     })
     bossFrame:SetBackdropColor(0, 0, 0, 0.9)
     bossFrame:SetBackdropBorderColor(NS.Colors.turquoise.r, NS.Colors.turquoise.g, NS.Colors.turquoise.b, 0.8)
-
-    local bossRestored = UI.RestoreFrameGeom("boss", bossFrame, 520, 320)
-    if not bossRestored then
-        bossFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-    end
 
     local ST = Util.ResolveScrollingTable()
     if not ST and NS.Print then
@@ -427,15 +420,15 @@ function UI.EnsureUI()
     UI.totalDelta = totalDelta
 
     local timerGrip = UI.SetupSizeGrip(timerFrame, function()
-        if UI.CaptureCurrentLayout then
-            UI.CaptureCurrentLayout()
+        if UI.SaveFrameLayout then
+            UI.SaveFrameLayout("timer", timerFrame)
         end
     end)
     timerGrip:SetAlpha(0)
 
     local bossGrip = UI.SetupSizeGrip(bossFrame, function()
-        if UI.CaptureCurrentLayout then
-            UI.CaptureCurrentLayout()
+        if UI.SaveFrameLayout then
+            UI.SaveFrameLayout("boss", bossFrame)
         end
         UI.ApplyTableLayout()
     end)
@@ -453,12 +446,19 @@ function UI.EnsureUI()
     UI.timerDeltaText = timerDeltaText
     UI.resizeGrip = bossGrip
     UI._timerResizeGrip = timerGrip
+    if UI.RegisterManagedFrame then
+        UI.RegisterManagedFrame("boss", bossFrame)
+    end
 
     local borderFrame = FrameFactory.CreateOverlayBorder(bossFrame, 30)
     UI.borderFrame = borderFrame
 
     UI.EnsureColGrips()
-    UI.ApplyTableLayout()
+    if UI.ApplyAllLayouts then
+        UI.ApplyAllLayouts()
+    else
+        UI.ApplyTableLayout()
+    end
     NS.RefreshAllUI()
 
     timerFrame:Hide()

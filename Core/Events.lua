@@ -125,8 +125,17 @@ App:SetScript("OnEvent", function(_, event, ...)
             return
         end
         NS.Database.EnsureDB()
+        if NS.UI and NS.UI.InitializeDefaults then
+            NS.UI.InitializeDefaults()
+        end
         NS.UpdateColorsFromSettings()
         NS.UI.EnsureUI()
+        if NS.UI and NS.UI.EnsureHistoryUI then
+            NS.UI.EnsureHistoryUI()
+        end
+        if NS.UI and NS.UI.ApplyAllLayouts then
+            NS.UI.ApplyAllLayouts()
+        end
         NS.RunLogic.ResetRun()
         if NS.UI.ResetRunPresentation then
             NS.UI.ResetRunPresentation()

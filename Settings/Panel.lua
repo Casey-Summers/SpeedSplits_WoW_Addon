@@ -19,11 +19,11 @@ function NS.CreateSettingsPanel()
 
     local colors = {
         { "Personal Best", "gold" },
-        { "On Pace", "deepGreen", "paceThreshold1" },
-        { "Behind Pace", "lightGreen", "paceThreshold2" },
-        { "Slow", "darkRed" },
-        { "UI Accents", "turquoise" },
-        { "Text", "white" },
+        { "On Pace",       "deepGreen",  "paceThreshold1" },
+        { "Behind Pace",   "lightGreen", "paceThreshold2" },
+        { "Slow",          "darkRed" },
+        { "UI Accents",    "turquoise" },
+        { "Text",          "white" },
     }
 
     local lastColorElem = themesHeader
@@ -239,11 +239,12 @@ function NS.CreateSettingsPanel()
     scaleLabel:SetText("Toast Scale")
     scaleLabel:SetTextColor(0.4, 0.8, 1)
 
-    local toastScaleSlider = Widgets.CreateSlider(rewardRow, "Scale", 0.5, 3.0, "settings", "timerToastScale", 130, function()
-        if NS.UpdateToastLayout then
-            NS.UpdateToastLayout()
-        end
-    end)
+    local toastScaleSlider = Widgets.CreateSlider(rewardRow, "Scale", 0.5, 3.0, "settings", "timerToastScale", 130,
+        function()
+            if NS.UpdateToastLayout then
+                NS.UpdateToastLayout()
+            end
+        end)
     toastScaleSlider:SetScale(0.85)
     toastScaleSlider:SetPoint("TOPLEFT", scaleLabel, "BOTTOMLEFT", 0, -18)
 
@@ -319,7 +320,7 @@ function NS.CreateSettingsPanel()
 
     local speedrunOpts = {
         { name = "All-bosses", value = "all" },
-        { name = "Last Boss", value = "last" },
+        { name = "Last Boss",  value = "last" },
     }
     local vMode = Widgets.SettingsDropDown(panel, "Speedrun Mode", "speedrunMode", speedrunOpts)
     vMode:SetPoint("TOPLEFT", vSplits, "BOTTOMLEFT", 0, -5)
@@ -335,7 +336,7 @@ function NS.CreateSettingsPanel()
         return btn
     end
 
-    local defBtn = Q("Set Default Styles", function()
+    local defBtn = Q("Save Current Styles", function()
         NS.DB.DefaultStyle = {
             colors = Widgets.CopyTable(NS.DB.Settings.colors),
             fonts = Widgets.CopyTable(NS.DB.Settings.fonts),
@@ -352,7 +353,7 @@ function NS.CreateSettingsPanel()
             visibility = Widgets.CopyTable(NS.DB.Settings.visibility),
         }
         if NS.Print then
-            NS.Print("Default styles saved.")
+            NS.Print("Current styles saved.")
         end
     end)
     defBtn:SetPoint("TOPLEFT", managementHeader, "BOTTOMLEFT", 10, -10)
@@ -389,12 +390,12 @@ function NS.CreateSettingsPanel()
     end)
     resetBtn:SetPoint("LEFT", defBtn, "RIGHT", 15, 0)
 
-    local layoutBtn = Q("Save Default Layout", function()
+    local layoutBtn = Q("Save Current Layout", function()
         if NS.SaveDefaultLayout then
             NS.SaveDefaultLayout()
         end
         if NS.Print then
-            NS.Print("Default layout saved.")
+            NS.Print("Current layout saved.")
         end
     end)
     layoutBtn:SetPoint("TOPLEFT", defBtn, "BOTTOMLEFT", 0, -6)

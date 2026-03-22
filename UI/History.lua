@@ -62,11 +62,7 @@ local function History_GetRow(parent)
         row = HistoryRowTemplate.Create(parent, NS.Database.DeleteRunRecord)
 
         row.UpdateLayout = function(self)
-            local widths = UI.history.colWidths
-            local avail = UI.history.listFrame:GetWidth() - 20
-            local used = widths.date + widths.expansion + widths.time + widths.result + widths.mode + widths.diff +
-                widths.delete
-            local dungeonWidth = math.max(avail - used, 100)
+            local widths = UI.history.resolvedColWidths or UI.history.colWidths
 
             local x = 0
             local msOff = 0
@@ -92,7 +88,7 @@ local function History_GetRow(parent)
             end
 
             SetCol(1, widths.date, "CENTER")
-            SetCol(2, dungeonWidth, "LEFT")
+            SetCol(2, widths.dungeon, "LEFT")
             SetCol(3, widths.expansion, "CENTER")
             SetCol(4, widths.result, "CENTER")
             SetCol(5, widths.mode, "CENTER")
@@ -227,13 +223,16 @@ local function InitHistoryDropDown(dropdown, buildItems, getValue, setValue)
 end
 
 local function History_RestoreColWidths()
-    UI.history.colWidths = {}
     local ui = UI.GetUISaved()
-    local saved = ui and ui.historyCols
-    local defaults = NS.FactoryDefaults.ui and NS.FactoryDefaults.ui.historyCols or {}
-    for key, def in pairs(defaults) do
-        UI.history.colWidths[key] = (saved and saved[key]) and tonumber(saved[key]) or def
-    end
+    local layout = ui and ui.frames and ui.frames.history or nil
+    local normalized = UI.NormalizeUILayoutSnapshot({
+        frames = {
+            history = {
+                columns = layout and layout.columns,
+            },
+        },
+    })
+    UI.history.colWidths = normalized.frames.history.columns
 end
 
 local function History_ApplyTableLayout()
@@ -247,11 +246,46 @@ local function History_ApplyTableLayout()
     local isShown = scrollbar and scrollbar:IsShown()
     local scrollWidth = isShown and 20 or 4
 
-    local widths = history.colWidths
-    local avail = history.listFrame:GetWidth() - scrollWidth
-    local used = widths.date + widths.expansion + widths.time + widths.result + widths.mode + widths.diff + widths
-        .delete
-    local dungeonWidth = math.max(avail - used, 100)
+    local widths = UI.NormalizeUILayoutSnapshot({
+        frames = {
+            history = {
+                columns = history.colWidths,
+            },
+        },
+    }).frames.history.columns
+    local resolved = Util.CopyTable(widths)
+    local avail = math.max(200, history.listFrame:GetWidth() - scrollWidth)
+    local total = resolved.date + resolved.dungeon + resolved.expansion + resolved.result + resolved.mode + resolved.time +
+        resolved.diff + resolved.delete
+
+    if total < avail then
+        resolved.dungeon = resolved.dungeon + (avail - total)
+    elseif total > avail then
+        local overflow = total - avail
+        local shrinkOrder = {
+            { key = "dungeon", min = 100 },
+            { key = "diff", min = 50 },
+            { key = "time", min = 50 },
+            { key = "mode", min = 50 },
+            { key = "result", min = 50 },
+            { key = "expansion", min = 50 },
+            { key = "date", min = 50 },
+        }
+
+        for _, item in ipairs(shrinkOrder) do
+            if overflow <= 0 then
+                break
+            end
+
+            local current = resolved[item.key]
+            local shrink = math.min(overflow, math.max(0, current - item.min))
+            resolved[item.key] = current - shrink
+            overflow = overflow - shrink
+        end
+    end
+
+    history.colWidths = widths
+    history.resolvedColWidths = resolved
 
     if history.rows then
         for _, row in ipairs(history.rows) do
@@ -267,14 +301,14 @@ local function History_ApplyTableLayout()
         x = x + width
     end
 
-    SetHeader(1, widths.date)
-    SetHeader(2, dungeonWidth)
-    SetHeader(3, widths.expansion)
-    SetHeader(4, widths.result)
-    SetHeader(5, widths.mode)
-    SetHeader(6, widths.time)
-    SetHeader(7, widths.diff)
-    SetHeader(8, widths.delete)
+    SetHeader(1, resolved.date)
+    SetHeader(2, resolved.dungeon)
+    SetHeader(3, resolved.expansion)
+    SetHeader(4, resolved.result)
+    SetHeader(5, resolved.mode)
+    SetHeader(6, resolved.time)
+    SetHeader(7, resolved.diff)
+    SetHeader(8, resolved.delete)
 
     if history.grips then
         local gripHeight = 24
@@ -285,13 +319,13 @@ local function History_ApplyTableLayout()
             history.grips[i]:SetPoint("TOPLEFT", history.header, "TOPLEFT", x - 5, 0)
             history.grips[i]:SetPoint("BOTTOMRIGHT", history.header, "TOPLEFT", x + 5, -gripHeight)
         end
-        SetGrip(1, widths.date)
-        SetGrip(2, dungeonWidth)
-        SetGrip(3, widths.expansion)
-        SetGrip(4, widths.result)
-        SetGrip(5, widths.mode)
-        SetGrip(6, widths.time)
-        SetGrip(7, widths.diff)
+        SetGrip(1, resolved.date)
+        SetGrip(2, resolved.dungeon)
+        SetGrip(3, resolved.expansion)
+        SetGrip(4, resolved.result)
+        SetGrip(5, resolved.mode)
+        SetGrip(6, resolved.time)
+        SetGrip(7, resolved.diff)
     end
 end
 
@@ -301,6 +335,7 @@ local function History_BeginColDrag(idx, startX)
         idx = idx,
         startX = startX,
         date = widths.date,
+        dungeon = widths.dungeon,
         expansion = widths.expansion,
         time = widths.time,
         result = widths.result,
@@ -312,8 +347,11 @@ end
 
 local function History_EndColDrag()
     UI.history.drag = nil
-    if UI.CaptureCurrentLayout then
-        UI.CaptureCurrentLayout()
+    if UI.SaveColumnWidths then
+        UI.SaveColumnWidths("history", UI.history.colWidths)
+    end
+    if UI.SaveFrameLayout and UI.history and UI.history.frame then
+        UI.SaveFrameLayout("history", UI.history.frame)
     end
 end
 
@@ -326,42 +364,31 @@ local function History_UpdateColDrag()
     local dx = curX - history.drag.startX
     local drag = history.drag
     local widths = history.colWidths
-    local avail = history.listFrame:GetWidth() - 20
-    local minDungeon = 100
+    local boundaries = {
+        [1] = { left = "date", right = "dungeon", leftMin = 50, rightMin = 100 },
+        [2] = { left = "dungeon", right = "expansion", leftMin = 100, rightMin = 50 },
+        [3] = { left = "expansion", right = "result", leftMin = 50, rightMin = 50 },
+        [4] = { left = "result", right = "mode", leftMin = 50, rightMin = 50 },
+        [5] = { left = "mode", right = "time", leftMin = 50, rightMin = 50 },
+        [6] = { left = "time", right = "diff", leftMin = 50, rightMin = 50 },
+        [7] = { left = "diff", right = "delete", leftMin = 50, rightMin = 30 },
+    }
+    local boundary = boundaries[drag.idx]
 
-    local function GetUsedExcept(idx)
-        local sum = widths.date + widths.expansion + widths.time + widths.result + widths.mode + widths.diff +
-            widths.delete
-        if idx == 1 then
-            sum = sum - widths.date
-        elseif idx == 3 then
-            sum = sum - widths.expansion
-        elseif idx == 4 then
-            sum = sum - widths.result
-        elseif idx == 5 then
-            sum = sum - widths.mode
-        elseif idx == 6 then
-            sum = sum - widths.time
-        elseif idx == 7 then
-            sum = sum - widths.diff
+    if boundary then
+        local leftStart = drag[boundary.left]
+        local rightStart = drag[boundary.right]
+        local applied = dx
+
+        if leftStart + applied < boundary.leftMin then
+            applied = boundary.leftMin - leftStart
         end
-        return sum
-    end
+        if rightStart - applied < boundary.rightMin then
+            applied = rightStart - boundary.rightMin
+        end
 
-    if drag.idx == 1 then
-        widths.date = Util.Clamp(drag.date + dx, 50, avail - GetUsedExcept(1) - minDungeon)
-    elseif drag.idx == 2 then
-        widths.expansion = Util.Clamp(drag.expansion - dx, 50, 400)
-    elseif drag.idx == 3 then
-        widths.expansion = Util.Clamp(drag.expansion + dx, 50, avail - GetUsedExcept(3) - minDungeon)
-    elseif drag.idx == 4 then
-        widths.result = Util.Clamp(drag.result + dx, 50, avail - GetUsedExcept(4) - minDungeon)
-    elseif drag.idx == 5 then
-        widths.mode = Util.Clamp(drag.mode + dx, 50, avail - GetUsedExcept(5) - minDungeon)
-    elseif drag.idx == 6 then
-        widths.time = Util.Clamp(drag.time + dx, 50, avail - GetUsedExcept(6) - minDungeon)
-    elseif drag.idx == 7 then
-        widths.diff = Util.Clamp(drag.diff + dx, 50, avail - GetUsedExcept(7) - minDungeon)
+        widths[boundary.left] = leftStart + applied
+        widths[boundary.right] = rightStart - applied
     end
     History_ApplyTableLayout()
 end
@@ -418,6 +445,7 @@ local function EnsureHistoryUI()
 
     local historyFrame = FrameFactory.CreateDialogFrame("SpeedSplitsHistoryFrame", 850, 500)
     UI.history.frame = historyFrame
+    historyFrame:SetClampedToScreen(true)
     historyFrame:EnableMouse(true)
     historyFrame:SetMovable(true)
     historyFrame:SetResizable(true)
@@ -430,14 +458,20 @@ local function EnsureHistoryUI()
     end)
     historyFrame:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
-        if UI.CaptureCurrentLayout then
-            UI.CaptureCurrentLayout()
+        if UI.SaveFrameLayout then
+            UI.SaveFrameLayout("history", self)
         end
     end)
-
-    if not UI.RestoreFrameGeom("history", historyFrame, 850, 500) then
-        historyFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-    end
+    historyFrame:SetScript("OnShow", function()
+        if UI.SaveFrameShown then
+            UI.SaveFrameShown("history", true)
+        end
+    end)
+    historyFrame:SetScript("OnHide", function()
+        if UI.SaveFrameShown then
+            UI.SaveFrameShown("history", false)
+        end
+    end)
 
     local controls = CreateFrame("Frame", nil, historyFrame)
     controls:SetPoint("TOPLEFT", 10, -10)
@@ -636,23 +670,31 @@ local function EnsureHistoryUI()
     end)
 
     local grip = UI.SetupSizeGrip(historyFrame, function()
-        if UI.CaptureCurrentLayout then
-            UI.CaptureCurrentLayout()
+        if UI.SaveFrameLayout then
+            UI.SaveFrameLayout("history", historyFrame)
         end
         History_ApplyTableLayout()
     end)
     UI.history.resizeGrip = grip
     UI.history.sort_col = 1
     UI.history.sort_asc = false
+    if UI.RegisterManagedFrame then
+        UI.RegisterManagedFrame("history", historyFrame)
+    end
+    if UI.ApplyAllLayouts then
+        UI.ApplyAllLayouts()
+    end
 
     C_Timer.After(0.1, function()
         UpdateHistoryRows()
         History_EnsureColGrips()
-        History_ApplyTableLayout()
+        if UI.ApplyAllLayouts then
+            UI.ApplyAllLayouts()
+        else
+            History_ApplyTableLayout()
+        end
         UI.RefreshHistoryTable()
     end)
-
-    historyFrame:Hide()
 end
 
 function UI.ToggleHistoryFrame()

@@ -217,13 +217,23 @@ System.RegisterTest({
         System.WithCleanup(function()
             System.BeginSection("Reset from a modified layout back to the saved default")
             NS.DB.ui = {
-                cols = { pb = 111, split = 112, delta = 113 },
-                frames = { boss = { x = 99, y = 98 } },
+                frames = {
+                    boss = {
+                        x = 99,
+                        y = 98,
+                        columns = { pb = 111, split = 112, diff = 113 },
+                    },
+                },
             }
             NS.DB.DefaultLayout = {
                 ui = {
-                    cols = { pb = 85, split = 90, delta = 95 },
-                    frames = { boss = { x = 12, y = 34 } },
+                    frames = {
+                        boss = {
+                            x = 12,
+                            y = 34,
+                            columns = { pb = 85, split = 90, diff = 95 },
+                        },
+                    },
                 },
             }
 
@@ -234,7 +244,7 @@ System.RegisterTest({
 
             NS.ResetLayout()
 
-            System.AssertEqual(NS.DB.ui.cols.pb, 85, "ResetLayout restores saved PB column width")
+            System.AssertEqual(NS.DB.ui.frames.boss.columns.pb, 85, "ResetLayout restores saved PB column width")
             System.AssertEqual(NS.DB.ui.frames.boss.x, 12, "ResetLayout restores saved boss-frame position")
             System.AssertTrue(reloaded == true, "ResetLayout still triggers a UI reload", reloaded)
             System.EndSection("Reset from a modified layout back to the saved default", "PASS")
@@ -248,10 +258,96 @@ System.RegisterTest({
 })
 
 System.RegisterTest({
+    id = "logic_layout_initialize_migrates_legacy_shape",
+    suite = "Logic",
+    subcategory = "Layout Reset",
+    name = "InitializeDefaults migrates legacy top-level layout fields into nested frame layout state",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldUI = NS.Util.CopyTable(NS.DB.ui or {})
+        local oldDefaultLayout = NS.DB.DefaultLayout and NS.Util.CopyTable(NS.DB.DefaultLayout) or nil
+
+        System.WithCleanup(function()
+            System.BeginSection("Migrate a legacy layout snapshot")
+            NS.DB.ui = {
+                cols = { pb = 101, split = 102, delta = 103 },
+                historyCols = { date = 141, dungeon = 221, expansion = 142, result = 131, mode = 81, time = 82, diff = 121, delete = 31 },
+                frames = {
+                    boss = { relPoint = "TOPLEFT", x = 11, y = 22, w = 600, h = 333 },
+                    history = { relPoint = "BOTTOM", x = 44, y = 55, w = 900, h = 444 },
+                },
+            }
+
+            NS.UI.InitializeDefaults()
+
+            System.AssertEqual(NS.DB.ui.frames.boss.relativePoint, "TOPLEFT",
+                "Legacy relPoint migrates into relativePoint")
+            System.AssertEqual(NS.DB.ui.frames.boss.width, 600, "Legacy boss width migrates into width")
+            System.AssertEqual(NS.DB.ui.frames.boss.height, 333, "Legacy boss height migrates into height")
+            System.AssertEqual(NS.DB.ui.frames.boss.columns.pb, 101, "Legacy boss columns migrate into nested columns")
+            System.AssertEqual(NS.DB.ui.frames.boss.columns.diff, 103, "Legacy delta migrates into nested diff width")
+            System.AssertEqual(NS.DB.ui.frames.history.columns.dungeon, 221,
+                "Legacy history column widths migrate into nested columns")
+            System.EndSection("Migrate a legacy layout snapshot", "PASS")
+        end, function()
+            NS.DB.ui = oldUI
+            NS.DB.DefaultLayout = oldDefaultLayout
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_apply_frame_layout_uses_wow_restore_order",
+    suite = "Logic",
+    subcategory = "Layout Reset",
+    name = "ApplyFrameLayout uses the required WoW restore order",
+    func = function()
+        local calls = {}
+        local frame = {
+            SetClampedToScreen = function() end,
+            SetScale = function()
+                calls[#calls + 1] = "SetScale"
+            end,
+            SetSize = function()
+                calls[#calls + 1] = "SetSize"
+            end,
+            ClearAllPoints = function()
+                calls[#calls + 1] = "ClearAllPoints"
+            end,
+            SetPoint = function()
+                calls[#calls + 1] = "SetPoint"
+            end,
+            SetResizeBounds = function() end,
+            SetResizable = function() end,
+        }
+
+        System.BeginSection("Apply a saved frame layout")
+        NS.UI.ApplyFrameLayout(frame, {
+            point = "CENTER",
+            relativePoint = "CENTER",
+            x = 0,
+            y = 0,
+            width = 451,
+            height = 156,
+            scale = 1,
+            shown = true,
+            columns = { pb = 85, split = 100, diff = 70 },
+        }, "boss")
+
+        System.AssertEqual(calls[1], "SetScale", "Frame scale is applied first")
+        System.AssertEqual(calls[2], "SetSize", "Frame size is applied second")
+        System.AssertEqual(calls[3], "ClearAllPoints", "Existing anchors are cleared before SetPoint")
+        System.AssertEqual(calls[4], "SetPoint", "Frame anchors are restored after ClearAllPoints")
+        System.EndSection("Apply a saved frame layout", "PASS")
+    end,
+})
+
+System.RegisterTest({
     id = "logic_capture_current_layout_writes_normalized_frame_metadata",
     suite = "Logic",
     subcategory = "Layout Reset",
-    name = "CaptureCurrentLayout stores normalized frame geometry and metadata",
+    name = "CaptureCurrentLayout stores point-based frame geometry",
     func = function()
         NS.Database.EnsureDB()
 
@@ -262,10 +358,10 @@ System.RegisterTest({
 
         System.WithCleanup(function()
             System.BeginSection("Capture live frame geometry into the saved layout snapshot")
-            local function MakeFrame(point, relPoint, x, y, w, h)
+            local function MakeFrame(point, relativePoint, x, y, w, h)
                 return {
                     GetPoint = function()
-                        return point, UIParent, relPoint, x, y
+                        return point, UIParent, relativePoint, x, y
                     end,
                     GetWidth = function()
                         return w
@@ -273,7 +369,10 @@ System.RegisterTest({
                     GetHeight = function()
                         return h
                     end,
-                    IsClampedToScreen = function()
+                    GetScale = function()
+                        return 1
+                    end,
+                    IsShown = function()
                         return true
                     end,
                 }
@@ -286,12 +385,10 @@ System.RegisterTest({
 
             NS.UI.CaptureCurrentLayout()
 
-            System.AssertEqual(NS.DB.ui.layoutSchemaVersion, 1, "Layout capture writes the layout schema version")
             System.AssertEqual(NS.DB.ui.frames.boss.point, "CENTER", "Boss frame point is captured")
-            System.AssertEqual(NS.DB.ui.frames.history.relPoint, "BOTTOMRIGHT", "History frame relPoint is captured")
-            System.AssertEqual(NS.DB.ui.frames.boss.clampedToScreen, true, "Frame clamp metadata is captured")
-            System.AssertEqual(NS.DB.ui.frames.boss.minW, 450, "Boss frame minimum width metadata is captured")
-            System.AssertNear(NS.DB.ui.frames.boss.w, 500, 0.001, "Boss frame width is normalized")
+            System.AssertEqual(NS.DB.ui.frames.history.relativePoint, "BOTTOMRIGHT",
+                "History frame relativePoint is captured")
+            System.AssertNear(NS.DB.ui.frames.boss.width, 500, 0.001, "Boss frame width is normalized")
             System.AssertNear(NS.DB.ui.frames.history.x, -20.556, 0.001, "History frame x-offset is normalized")
             System.EndSection("Capture live frame geometry into the saved layout snapshot", "PASS")
         end, function()
@@ -328,6 +425,9 @@ System.RegisterTest({
                     applied.w = w
                     applied.h = h
                 end,
+                SetScale = function(_, scale)
+                    applied.scale = scale
+                end,
                 SetClampedToScreen = function(_, value)
                     applied.clamped = value
                 end,
@@ -344,11 +444,11 @@ System.RegisterTest({
                 frames = {
                     boss = {
                         point = "NOT_A_POINT",
-                        relPoint = "ALSO_BAD",
+                        relativePoint = "ALSO_BAD",
                         x = 999999,
                         y = -999999,
-                        w = 10,
-                        h = 10,
+                        width = 10,
+                        height = 10,
                     },
                 },
             }
@@ -357,12 +457,78 @@ System.RegisterTest({
 
             System.AssertTrue(restored == true, "RestoreFrameGeom treats the saved snapshot as present")
             System.AssertEqual(applied.point, "CENTER", "Invalid point falls back to a valid anchor")
-            System.AssertEqual(applied.relPoint, "CENTER", "Invalid relPoint falls back to a valid anchor")
+            System.AssertEqual(applied.relPoint, "CENTER", "Invalid relativePoint falls back to a valid anchor")
             System.AssertEqual(applied.w, 450, "Boss width is clamped to the minimum width")
             System.AssertEqual(applied.h, NS.Const.SPLITS_LAYOUT.MIN_HEIGHT,
                 "Boss height is clamped to the minimum height")
             System.AssertEqual(applied.clamped, true, "Restore reapplies clamped-to-screen behavior")
             System.EndSection("Restore an invalid boss frame snapshot using validation rules", "PASS")
+        end, function()
+            NS.DB.ui = oldUI
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_restore_frame_geom_uses_factory_defaults_when_missing",
+    suite = "Logic",
+    subcategory = "Layout Reset",
+    name = "RestoreFrameGeom applies the Config factory layout when no saved snapshot exists",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldUI = NS.Util.CopyTable(NS.DB.ui or {})
+
+        System.WithCleanup(function()
+            System.BeginSection("Restore a missing boss snapshot from Config factory defaults")
+            local applied = {}
+            local frame = {
+                ClearAllPoints = function() end,
+                SetPoint = function(_, point, _, relPoint, x, y)
+                    applied.point = point
+                    applied.relPoint = relPoint
+                    applied.x = x
+                    applied.y = y
+                end,
+                SetSize = function(_, w, h)
+                    applied.w = w
+                    applied.h = h
+                end,
+                SetScale = function(_, scale)
+                    applied.scale = scale
+                end,
+                SetClampedToScreen = function(_, value)
+                    applied.clamped = value
+                end,
+                SetResizable = function() end,
+                SetResizeBounds = function(_, minW, minH, maxW, maxH)
+                    applied.minW = minW
+                    applied.minH = minH
+                    applied.maxW = maxW
+                    applied.maxH = maxH
+                end,
+            }
+
+            NS.DB.ui = {
+                frames = {},
+            }
+
+            local restored = NS.UI.RestoreFrameGeom("boss", frame, 520, 320)
+
+            System.AssertTrue(restored == false, "RestoreFrameGeom reports no saved snapshot was present", restored)
+            System.AssertEqual(applied.point, NS.FactoryDefaults.ui.frames.boss.point,
+                "Missing boss snapshot falls back to Config point")
+            System.AssertEqual(applied.relPoint, NS.FactoryDefaults.ui.frames.boss.relativePoint,
+                "Missing boss snapshot falls back to Config relativePoint")
+            System.AssertEqual(applied.w, NS.FactoryDefaults.ui.frames.boss.width,
+                "Missing boss snapshot falls back to Config width")
+            System.AssertEqual(applied.h, NS.FactoryDefaults.ui.frames.boss.height,
+                "Missing boss snapshot falls back to Config height")
+            System.AssertNear(applied.x, NS.FactoryDefaults.ui.frames.boss.x, 0.001,
+                "Missing boss snapshot falls back to Config x-offset")
+            System.AssertNear(applied.y, NS.FactoryDefaults.ui.frames.boss.y, 0.001,
+                "Missing boss snapshot falls back to Config y-offset")
+            System.EndSection("Restore a missing boss snapshot from Config factory defaults", "PASS")
         end, function()
             NS.DB.ui = oldUI
         end)
@@ -384,25 +550,25 @@ System.RegisterTest({
         System.WithCleanup(function()
             System.BeginSection("Save a live layout snapshot")
             NS.DB.ui = {
-                cols = { pb = 80, split = 81, delta = 82 },
-                frames = { boss = { x = 1, y = 2 }, history = { x = 3, y = 4 } },
+                frames = {
+                    boss = { x = 1, y = 2, columns = { pb = 80, split = 81, diff = 82 } },
+                    history = { x = 3, y = 4 },
+                },
             }
             NS.UI.CaptureCurrentLayout = function()
-                NS.DB.ui.cols.pb = 120
-                NS.DB.ui.cols.split = 121
+                NS.DB.ui.frames.boss.columns.pb = 120
+                NS.DB.ui.frames.boss.columns.split = 121
                 NS.DB.ui.frames.boss.x = 55
-                NS.DB.ui.frames.history.w = 900
-                NS.DB.ui.layoutSchemaVersion = 1
+                NS.DB.ui.frames.history.width = 900
             end
 
             NS.SaveDefaultLayout()
 
-            System.AssertEqual(NS.DB.DefaultLayout.ui.cols.pb, 120, "SaveDefaultLayout captures the live PB width")
+            System.AssertEqual(NS.DB.DefaultLayout.ui.frames.boss.columns.pb, 120,
+                "SaveDefaultLayout captures the live PB width")
             System.AssertEqual(NS.DB.DefaultLayout.ui.frames.boss.x, 55, "SaveDefaultLayout captures the live boss position")
-            System.AssertEqual(NS.DB.DefaultLayout.ui.frames.history.w, 900,
+            System.AssertEqual(NS.DB.DefaultLayout.ui.frames.history.width, 900,
                 "SaveDefaultLayout captures the live history dimensions")
-            System.AssertEqual(NS.DB.DefaultLayout.ui.layoutSchemaVersion, 1,
-                "SaveDefaultLayout preserves the normalized layout schema")
             System.EndSection("Save a live layout snapshot", "PASS")
         end, function()
             NS.DB.ui = oldUI
@@ -476,7 +642,24 @@ System.RegisterTest({
         System.WithCleanup(function()
             System.BeginSection("Simulate resetting to factory defaults")
             NS.DB.Settings.speedrunMode = "last"
-            NS.DB.ui.cols.pb = 123
+            NS.DB.ui.frames.boss = {
+                point = "TOPLEFT",
+                relativePoint = "TOPLEFT",
+                x = 1,
+                y = 2,
+                width = 999,
+                height = 888,
+                columns = { pb = 123, split = 321, diff = 654 },
+            }
+            NS.DB.ui.frames.history = {
+                point = "TOPLEFT",
+                relativePoint = "TOPLEFT",
+                x = 3,
+                y = 4,
+                width = 777,
+                height = 666,
+                columns = { date = 1, dungeon = 2, expansion = 3, result = 4, mode = 5, time = 6, diff = 7, delete = 8 },
+            }
             ReloadUI = function()
                 reloaded = true
             end
@@ -485,14 +668,26 @@ System.RegisterTest({
 
             System.AssertEqual(NS.DB.Settings.speedrunMode, NS.FactoryDefaults.Settings.speedrunMode,
                 "Simulated factory reset restores factory settings")
-            System.AssertEqual(NS.DB.ui.cols.pb, NS.FactoryDefaults.ui.cols.pb,
+            System.AssertEqual(NS.DB.ui.frames.boss.columns.pb, NS.FactoryDefaults.ui.frames.boss.columns.pb,
                 "Simulated factory reset restores factory layout")
-            System.AssertEqual(NS.DB.DefaultLayout.ui.cols.pb, NS.FactoryDefaults.ui.cols.pb,
+            System.AssertEqual(NS.DB.ui.frames.boss.columns.split, NS.FactoryDefaults.ui.frames.boss.columns.split,
+                "Simulated factory reset restores factory split width")
+            System.AssertEqual(NS.DB.ui.frames.boss.columns.diff, NS.FactoryDefaults.ui.frames.boss.columns.diff,
+                "Simulated factory reset restores factory diff width")
+            System.AssertEqual(NS.DB.ui.frames.history.columns.date, NS.FactoryDefaults.ui.frames.history.columns.date,
+                "Simulated factory reset restores factory history column widths")
+            System.AssertEqual(NS.DB.DefaultLayout.ui.frames.boss.columns.pb, NS.FactoryDefaults.ui.frames.boss.columns.pb,
                 "Simulated factory reset refreshes the default layout snapshot")
             System.AssertEqual(NS.DB.ui.frames.boss.point, NS.FactoryDefaults.ui.frames.boss.point,
                 "Simulated factory reset restores normalized boss frame geometry")
-            System.AssertEqual(NS.DB.DefaultLayout.ui.layoutSchemaVersion, 1,
-                "Simulated factory reset refreshes the normalized layout schema")
+            System.AssertNear(NS.DB.ui.frames.boss.x, NS.FactoryDefaults.ui.frames.boss.x, 0.001,
+                "Simulated factory reset restores boss x-offset from Config")
+            System.AssertNear(NS.DB.ui.frames.boss.y, NS.FactoryDefaults.ui.frames.boss.y, 0.001,
+                "Simulated factory reset restores boss y-offset from Config")
+            System.AssertEqual(NS.DB.ui.frames.history.width, NS.FactoryDefaults.ui.frames.history.width,
+                "Simulated factory reset restores history width from Config")
+            System.AssertEqual(NS.DB.ui.frames.history.height, NS.FactoryDefaults.ui.frames.history.height,
+                "Simulated factory reset restores history height from Config")
             System.AssertTrue(reloaded == false, "Simulated factory reset does not reload the UI", reloaded)
             System.EndSection("Simulate resetting to factory defaults", "PASS")
         end, function()

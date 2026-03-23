@@ -52,12 +52,12 @@ local DEFAULT_PBSplitsLastBoss = {
 }
 
 local DEFAULT_splitsByKey = {
-    ["E:1001"] = 622.524,
+    ["E:1001"] = 22.524,
     ["E:1002"] = 43.666,
     ["E:1003"] = 70.666,
     ["E:1004"] = 102.816,
     ["E:1005"] = 148.815,
-    ["E:1006"] = 179.816,
+    ["E:1006"] = 279.816,
 }
 
 NS.TestsSimulation = NS.TestsSimulation or {}

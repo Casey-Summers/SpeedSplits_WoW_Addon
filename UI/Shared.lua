@@ -143,29 +143,29 @@ local function PositionDeltaSign(host, entry)
 
     local signWidth = tonumber(spec.signWidth) or 0
     local signPad = tonumber(spec.signPad) or 0
+    local digitWidth = math.max(tonumber(spec.digitWidth) or 0, 1)
     if signWidth <= 0 then
         return
     end
 
     local firstVisibleSection = entry.firstVisibleSection or "second"
-    local target = firstVisibleSection == "minute" and entry.minute or entry.second
     local slotLeft
-    local slotWidth
+    local slotRight
+    local digitCount = 1
     if firstVisibleSection == "minute" then
-        local minuteBaseWidth = tonumber(spec.minuteBaseWidth) or 0
-        local overflowWidth = tonumber(entry.minuteOverflowWidth) or 0
-        local minuteWidth = minuteBaseWidth + overflowWidth
-        local minuteRight = tonumber(spec.minuteRight) or 0
-        slotLeft = minuteRight - minuteWidth
-        slotWidth = minuteWidth
+        local minuteText = tostring((entry.minute and entry.minute.GetText and entry.minute:GetText()) or "")
+        digitCount = math.max(1, #minuteText)
+        slotRight = tonumber(spec.minuteRight) or 0
+        slotLeft = slotRight - (digitCount * digitWidth)
     else
+        local secondText = tostring((entry.second and entry.second.GetText and entry.second:GetText()) or "")
+        digitCount = math.max(1, #secondText)
         slotLeft = tonumber(spec.secondLeft) or 0
-        slotWidth = tonumber(spec.secondWidth) or 0
+        slotRight = (tonumber(spec.secondLeft) or 0) + (tonumber(spec.secondWidth) or 0)
+        slotLeft = slotRight - (digitCount * digitWidth)
     end
 
-    local renderedWidth = math.ceil((target and target.GetStringWidth and target:GetStringWidth()) or 0)
-    local digitLeft = slotLeft + math.max(slotWidth - renderedWidth, 0)
-    local signLeft = digitLeft - signPad - signWidth
+    local signLeft = slotLeft - signPad - signWidth
 
     entry.sign:ClearAllPoints()
     entry.sign:SetJustifyH("RIGHT")

@@ -183,6 +183,18 @@ local function BuildRunPresentation(run, pbTable)
         end
     end
 
+    local isComplete = false
+    if NS.RunLogic and NS.RunLogic.GetRunCompletionState then
+        isComplete = select(1, NS.RunLogic.GetRunCompletionState(run))
+    end
+    if isComplete and run and run.instanceName and NS.Database and NS.Database.GetBestRouteNode then
+        local bestRoute = NS.Database.GetBestRouteNode(run.instanceName, false)
+        local bestRouteDuration = bestRoute and bestRoute.FullRun and tonumber(bestRoute.FullRun.duration) or nil
+        if bestRouteDuration and bestRouteDuration > 0 then
+            presentation.summary.footerPBTotal = bestRouteDuration
+        end
+    end
+
     if chronologicalLatestRow then
         presentation.summary.splitTotal = chronologicalLatestRow.splitTime
         presentation.summary.splitColor = chronologicalLatestRow.color
@@ -192,6 +204,13 @@ local function BuildRunPresentation(run, pbTable)
             presentation.summary.diffTotal = chronologicalLatestRow.diffTime
             presentation.summary.diffColor = chronologicalLatestRow.color
         end
+    end
+
+    if presentation.summary.footerPBTotal and presentation.summary.splitTotal then
+        local footerDiff = presentation.summary.splitTotal - presentation.summary.footerPBTotal
+        local footerIsPB = presentation.summary.splitTotal <= (presentation.summary.footerPBTotal + 0.001)
+        presentation.summary.footerDiffTotal = footerDiff
+        presentation.summary.footerDiffColor = GetRowColorState(footerDiff, footerIsPB, false)
     end
 
     return presentation

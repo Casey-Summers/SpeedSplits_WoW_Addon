@@ -3,6 +3,84 @@ local _, NS = ...
 local System = NS.TestSystem
 
 System.RegisterTest({
+    id = "logic_completed_run_footer_pb_uses_fastest_route_duration",
+    suite = "Logic",
+    subcategory = "Routes",
+    name = "Completed runs keep row PBs but switch footer PB to the fastest route duration",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldBestRoute = NS.Util.CopyTable(NS.DB.InstanceBestRoute)
+        local oldRunState = NS.Util.CopyTable(NS.Run)
+
+        System.WithCleanup(function()
+            System.BeginSection("Build a completed exploratory presentation against a faster saved route")
+            NS.DB.InstanceBestRoute["Footer PB Route Test"] = {
+                RouteKey = "2,3,1,4",
+                Splits = { [1] = 25, [2] = 8, [3] = 16, [4] = 32 },
+                FullRun = { duration = 32 },
+            }
+
+            NS.Run.instanceName = "Footer PB Route Test"
+            NS.Run.speedrunMode = "all"
+            NS.Run.entries = {
+                { key = "B1", name = "Boss 1", routeIndex = 1 },
+                { key = "B2", name = "Boss 2", routeIndex = 2 },
+                { key = "B4", name = "Boss 4", routeIndex = 4 },
+            }
+            NS.Run.kills = {
+                B1 = 10,
+                B2 = 20,
+                B4 = 30,
+            }
+            NS.Run.remainingCount = 0
+            NS.Run.startGameTime = 100
+
+            local presentation = NS.RunLogic.BuildRunPresentation(NS.Run, {
+                B1 = 25,
+                B2 = 8,
+                B4 = 40,
+            })
+
+            System.AssertEqual(presentation.rowsByKey.B1.pbTime, 25, "Row PBs continue using the active route snapshot")
+            System.AssertEqual(presentation.rowsByKey.B2.pbTime, 8, "Second row PB remains route-specific")
+            System.AssertEqual(presentation.summary.pbTotal, 40, "Summary PB stays on the active route total")
+            System.AssertEqual(presentation.summary.footerPBTotal, 32,
+                "Footer PB picks the fastest saved route duration after completion")
+            System.AssertEqual(presentation.summary.splitTotal, 30, "Footer Split stays on the completed run total")
+            System.AssertEqual(presentation.summary.diffTotal, -10, "Summary Diff stays on the route-specific comparison")
+            System.AssertEqual(presentation.summary.footerDiffTotal, -2,
+                "Footer Diff is recalculated from the overridden footer PB")
+            System.EndSection("Build a completed exploratory presentation against a faster saved route", "PASS")
+        end, function()
+            NS.DB.InstanceBestRoute = oldBestRoute
+            for key in pairs(NS.Run) do
+                NS.Run[key] = nil
+            end
+            for key, value in pairs(oldRunState) do
+                NS.Run[key] = value
+            end
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_ss_test_surface_is_loaded",
+    suite = "Logic",
+    subcategory = "Bootstrap",
+    name = "Loads the /ss test surface through the packaged test manifest",
+    func = function()
+        System.BeginSection("Verify the test adapter surface is available")
+        System.AssertTrue(NS.Tests ~= nil, "NS.Tests exists", NS.Tests)
+        System.AssertTrue(type(NS.Tests.Open) == "function", "NS.Tests.Open is loaded", NS.Tests and NS.Tests.Open)
+        System.AssertTrue(NS.TestSystem ~= nil, "NS.TestSystem is loaded", NS.TestSystem)
+        System.AssertTrue(type(NS.TestUI and NS.TestUI.CreateTestFrame) == "function", "NS.TestUI is loaded",
+            NS.TestUI and NS.TestUI.CreateTestFrame)
+        System.EndSection("Verify the test adapter surface is available", "PASS")
+    end,
+})
+
+System.RegisterTest({
     id = "logic_resolve_boss_entry_by_dungeon_encounter_id",
     suite = "Logic",
     subcategory = "Boss Resolution",

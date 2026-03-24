@@ -9,6 +9,67 @@ local function LayoutDeepCopy(source)
     return Util.CopyTable(source or {})
 end
 
+local function MergeMissing(target, defaults)
+    target = type(target) == "table" and target or {}
+    defaults = type(defaults) == "table" and defaults or {}
+
+    for key, value in pairs(defaults) do
+        if type(value) == "table" then
+            if type(target[key]) ~= "table" then
+                target[key] = LayoutDeepCopy(value)
+            else
+                MergeMissing(target[key], value)
+            end
+        elseif target[key] == nil then
+            target[key] = value
+        end
+    end
+
+    return target
+end
+
+local function ReplaceTableContents(target, source)
+    if type(target) ~= "table" then
+        target = {}
+    end
+
+    for key in pairs(target) do
+        target[key] = nil
+    end
+
+    for key, value in pairs(source or {}) do
+        if type(value) == "table" then
+            target[key] = LayoutDeepCopy(value)
+        else
+            target[key] = value
+        end
+    end
+
+    return target
+end
+
+local function NormalizeLegacyAliases(db)
+    db = type(db) == "table" and db or {}
+
+    if type(db.RunHistory) ~= "table" then
+        db.RunHistory = type(db.runs) == "table" and db.runs or {}
+    end
+    if type(db.Settings) ~= "table" then
+        db.Settings = type(db.settings) == "table" and db.settings or {}
+    end
+
+    db.runs = nil
+    db.settings = nil
+    return db
+end
+
+local function NormalizeUILayoutShape(layout)
+    if NS.UI and NS.UI.GetNormalizedUILayoutSnapshot then
+        return NS.UI.GetNormalizedUILayoutSnapshot(layout or {})
+    end
+    return MergeMissing(type(layout) == "table" and layout or {}, NS.FactoryDefaults.ui)
+end
+
 local function InitializeLayoutState()
     if NS.UI and NS.UI.InvalidateLayoutCache then
         NS.UI.InvalidateLayoutCache()
@@ -42,10 +103,108 @@ local function EnsureRouteContainerShape(node)
 end
 
 local function EnsurePBTables(db)
-    db.InstanceRoutes = db.InstanceRoutes or {}
-    db.InstanceBestRoute = db.InstanceBestRoute or {}
-    db.InstanceBestLastBoss = db.InstanceBestLastBoss or {}
-    db.InstanceBestIgnored = db.InstanceBestIgnored or {}
+    db.InstanceRoutes = type(db.InstanceRoutes) == "table" and db.InstanceRoutes or {}
+    db.InstanceBestRoute = type(db.InstanceBestRoute) == "table" and db.InstanceBestRoute or {}
+    db.InstanceBestLastBoss = type(db.InstanceBestLastBoss) == "table" and db.InstanceBestLastBoss or {}
+    db.InstanceBestIgnored = type(db.InstanceBestIgnored) == "table" and db.InstanceBestIgnored or {}
+end
+
+local function EnsureSavedVariableShape(db)
+    db = type(db) == "table" and db or {}
+
+    NormalizeLegacyAliases(db)
+
+    db.RunHistory = type(db.RunHistory) == "table" and db.RunHistory or {}
+    db.Settings = MergeMissing(db.Settings, NS.FactoryDefaults.Settings)
+    db.Settings.ignoredBosses = type(db.Settings.ignoredBosses) == "table" and db.Settings.ignoredBosses or {}
+    db.Settings.autoIgnoredBosses = type(db.Settings.autoIgnoredBosses) == "table" and db.Settings.autoIgnoredBosses or
+        {}
+
+    db.ui = NormalizeUILayoutShape(db.ui)
+    db.DefaultLayout = type(db.DefaultLayout) == "table" and db.DefaultLayout or {}
+    db.DefaultLayout.ui = NormalizeUILayoutShape(db.DefaultLayout.ui)
+    db.DefaultStyle = MergeMissing(type(db.DefaultStyle) == "table" and db.DefaultStyle or {},
+        NS.FactoryDefaults.Settings)
+
+    EnsurePBTables(db)
+
+    local wipeFlag = NS.Migrations and NS.Migrations.GetFirstLoginWipeFlag and NS.Migrations.GetFirstLoginWipeFlag()
+    if wipeFlag then
+        if db[wipeFlag] == nil then
+            db[wipeFlag] = false
+        else
+            db[wipeFlag] = db[wipeFlag] == true
+        end
+    end
+
+    db.SchemaVersion = tonumber(db.SchemaVersion or 0) or 0
+
+    return db
+end
+
+local function RebuildSavedVariableShape(db)
+    local rebuilt = type(db) == "table" and db or {}
+    ReplaceTableContents(rebuilt, {})
+    return EnsureSavedVariableShape(rebuilt)
+end
+
+local function ValidateSavedVariableShape(db)
+    if type(db) ~= "table" then
+        return false, "db"
+    end
+
+    local requiredTables = {
+        "RunHistory",
+        "Settings",
+        "ui",
+        "DefaultLayout",
+        "DefaultStyle",
+        "InstanceRoutes",
+        "InstanceBestRoute",
+        "InstanceBestLastBoss",
+        "InstanceBestIgnored",
+    }
+
+    for _, key in ipairs(requiredTables) do
+        if type(db[key]) ~= "table" then
+            return false, key
+        end
+    end
+
+    if type(db.DefaultLayout.ui) ~= "table" then
+        return false, "DefaultLayout.ui"
+    end
+
+    if type(db.Settings.ignoredBosses) ~= "table" then
+        return false, "Settings.ignoredBosses"
+    end
+
+    if type(db.Settings.autoIgnoredBosses) ~= "table" then
+        return false, "Settings.autoIgnoredBosses"
+    end
+
+    return true
+end
+
+local function ApplyFirstLoginSchemaWipe(db)
+    local shouldWipe = NS.Migrations and NS.Migrations.ShouldWipeDataOnFirstLogin
+    if not shouldWipe or not shouldWipe(db) then
+        return false
+    end
+
+    local rebuilt
+    if NS.Migrations and NS.Migrations.BuildFreshDatabase then
+        rebuilt = NS.Migrations.BuildFreshDatabase(db)
+    end
+
+    ReplaceTableContents(db, type(rebuilt) == "table" and rebuilt or {})
+
+    local wipeFlag = NS.Migrations and NS.Migrations.GetFirstLoginWipeFlag and NS.Migrations.GetFirstLoginWipeFlag()
+    if wipeFlag then
+        db[wipeFlag] = true
+    end
+
+    return true
 end
 
 local function ApplySavedVariablesMigrations(db)
@@ -91,64 +250,23 @@ local function PurgeTestRunHistory(db)
 end
 
 local function EnsureDB()
-    if SpeedSplitsDB == nil then
+    if type(SpeedSplitsDB) ~= "table" then
         SpeedSplitsDB = {}
     end
 
-
-
-    SpeedSplitsDB.RunHistory = SpeedSplitsDB.RunHistory or SpeedSplitsDB.runs or {}
-    SpeedSplitsDB.Settings = SpeedSplitsDB.Settings or SpeedSplitsDB.settings or {}
-
-    SpeedSplitsDB.runs = nil
-    SpeedSplitsDB.settings = nil
+    ApplyFirstLoginSchemaWipe(SpeedSplitsDB)
+    EnsureSavedVariableShape(SpeedSplitsDB)
 
     ApplySavedVariablesMigrations(SpeedSplitsDB)
+    EnsureSavedVariableShape(SpeedSplitsDB)
     PurgeTestRunHistory(SpeedSplitsDB)
 
-    local fallbacks = NS.FactoryDefaults.Settings
-    local settings = SpeedSplitsDB.Settings
-    settings.colors = settings.colors or Util.CopyTable(fallbacks.colors)
-    settings.fonts = settings.fonts or Util.CopyTable(fallbacks.fonts)
-    settings.fonts.boss = settings.fonts.boss or Util.CopyTable(fallbacks.fonts.boss)
-    settings.fonts.num = settings.fonts.num or Util.CopyTable(fallbacks.fonts.num)
-    settings.fonts.timer = settings.fonts.timer or Util.CopyTable(fallbacks.fonts.timer)
-    settings.fonts.header = settings.fonts.header or Util.CopyTable(fallbacks.fonts.header)
-    settings.fonts.counter = settings.fonts.counter or Util.CopyTable(fallbacks.fonts.counter)
-    settings.fonts.history = settings.fonts.history or Util.CopyTable(fallbacks.fonts.history)
-    settings.history = settings.history or Util.CopyTable(fallbacks.history)
-    settings.historyScale = settings.historyScale or fallbacks.historyScale
-    settings.titleTexture = settings.titleTexture or fallbacks.titleTexture
-    settings.timerToastTexture = settings.timerToastTexture or fallbacks.timerToastTexture
-    settings.timerToastScale = settings.timerToastScale or fallbacks.timerToastScale
-    settings.paceThreshold1 = settings.paceThreshold1 or fallbacks.paceThreshold1
-    settings.paceThreshold2 = settings.paceThreshold2 or fallbacks.paceThreshold2
-    if settings.showTimerToast == nil then
-        settings.showTimerToast = fallbacks.showTimerToast
-    end
-    if settings.toastAllBosses == nil then
-        settings.toastAllBosses = fallbacks.toastAllBosses
-    end
-    settings.toastSoundID = settings.toastSoundID or fallbacks.toastSoundID
-    settings.toastSoundName = settings.toastSoundName or fallbacks.toastSoundName
-    settings.toastVolume = settings.toastVolume or fallbacks.toastVolume
-    settings.visibility = settings.visibility or Util.CopyTable(fallbacks.visibility)
-    if settings.reloadAwarenessEnabled == nil then
-        settings.reloadAwarenessEnabled = fallbacks.reloadAwarenessEnabled
-    end
-    settings.speedrunMode = settings.speedrunMode or fallbacks.speedrunMode
-    if settings.showNPCViewModels == nil then
-        settings.showNPCViewModels = fallbacks.showNPCViewModels
-    end
-    settings.ignoredBosses = settings.ignoredBosses or {}
-    settings.autoIgnoredBosses = settings.autoIgnoredBosses or {}
-
-    if not SpeedSplitsDB.DefaultStyle then
-        SpeedSplitsDB.DefaultStyle = Util.CopyTable(NS.FactoryDefaults.Settings)
-    end
-
-    if not SpeedSplitsDB.ui then
-        SpeedSplitsDB.ui = LayoutDeepCopy(NS.FactoryDefaults.ui)
+    local valid, missingKey = ValidateSavedVariableShape(SpeedSplitsDB)
+    if not valid then
+        if NS.Print then
+            NS.Print("Saved variables were incomplete. Rebuilding missing database tables for " .. tostring(missingKey) .. ".")
+        end
+        EnsureSavedVariableShape(SpeedSplitsDB)
     end
 
     NS.DB = SpeedSplitsDB
@@ -612,7 +730,16 @@ local function GetHistoryPBNode(record)
     return GetBestRouteNode(record.instanceName, false)
 end
 
+if NS.Migrations then
+    NS.Migrations.BuildFreshDatabase = function()
+        return RebuildSavedVariableShape({})
+    end
+end
+
 NS.Database.EnsureDB = EnsureDB
+NS.Database.EnsureSavedVariableShape = EnsureSavedVariableShape
+NS.Database.RebuildSavedVariableShape = RebuildSavedVariableShape
+NS.Database.ValidateSavedVariableShape = ValidateSavedVariableShape
 NS.Database.DeleteRunRecord = DeleteRunRecord
 NS.Database.IsTestRunRecord = IsTestRunRecord
 NS.Database.PurgeTestRunHistory = PurgeTestRunHistory

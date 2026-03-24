@@ -361,22 +361,111 @@ System.RegisterTest({
             end
 
             local db = NS.Database.EnsureDB()
+            local wipeFlag = NS.Migrations.GetFirstLoginWipeFlag()
 
             System.AssertTrue(type(db.RunHistory) == "table" and #db.RunHistory == 0,
                 "EnsureDB rebuilds an empty latest-shape RunHistory after the wipe")
             System.AssertTrue(type(db.Settings) == "table", "EnsureDB rebuilds the Settings table after the wipe")
-            System.AssertTrue(db.__firstLoginWipeApplied == true,
-                "EnsureDB persists a one-time marker after the first-login wipe", db.__firstLoginWipeApplied)
+            System.AssertTrue(type(db.ui) == "table", "EnsureDB rebuilds the UI layout table after the wipe")
+            System.AssertTrue(type(db.DefaultLayout) == "table" and type(db.DefaultLayout.ui) == "table",
+                "EnsureDB rebuilds the default layout snapshot after the wipe")
+            System.AssertTrue(type(db.DefaultStyle) == "table",
+                "EnsureDB rebuilds the default style snapshot after the wipe")
+            System.AssertTrue(db[wipeFlag] == true,
+                "EnsureDB persists the one-time schema wipe flag after the first-login wipe", db[wipeFlag])
             System.AssertEqual(db.SchemaVersion, NS.Migrations.CurrentSchemaVersion,
                 "EnsureDB reapplies the latest schema after the wipe")
             System.AssertTrue(type(db.InstanceBestRoute) == "table",
                 "EnsureDB rebuilds the PB containers after the wipe", type(db.InstanceBestRoute))
+            System.AssertEqual(db.__firstLoginWipeToken, "test-token",
+                "EnsureDB keeps custom fresh-build seed data before applying defaults")
             System.EndSection("Force a first-login wipe during EnsureDB", "PASS")
         end, function()
             SpeedSplitsDB = oldSpeedSplitsDB
             NS.DB = oldDB
             NS.Migrations.ShouldWipeDataOnFirstLogin = oldShouldWipe
             NS.Migrations.BuildFreshDatabase = oldBuildFresh
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_partial_saved_variables_are_repaired_during_bootstrap",
+    suite = "Logic",
+    subcategory = "Migration",
+    name = "Repairs a partial saved variables table into the full runtime schema",
+    func = function()
+        local oldSpeedSplitsDB = SpeedSplitsDB
+        local oldDB = NS.DB
+
+        System.WithCleanup(function()
+            System.BeginSection("Seed the incomplete post-wipe shape shown in the addon failure case")
+            SpeedSplitsDB = {
+                SchemaVersion = NS.Migrations.CurrentSchemaVersion,
+                InstanceRoutes = {},
+                InstanceBestRoute = {},
+                InstanceBestLastBoss = {},
+                InstanceBestIgnored = {},
+                FirstLoginSchemaWipeCompleted = true,
+            }
+
+            local db = NS.Database.EnsureDB()
+
+            System.AssertTrue(type(db.RunHistory) == "table", "EnsureDB recreates RunHistory from a partial DB")
+            System.AssertTrue(type(db.Settings) == "table", "EnsureDB recreates Settings from a partial DB")
+            System.AssertTrue(type(db.ui) == "table", "EnsureDB recreates ui from a partial DB")
+            System.AssertTrue(type(db.DefaultLayout) == "table" and type(db.DefaultLayout.ui) == "table",
+                "EnsureDB recreates DefaultLayout.ui from a partial DB")
+            System.AssertTrue(type(db.DefaultStyle) == "table", "EnsureDB recreates DefaultStyle from a partial DB")
+            System.AssertEqual(db.SchemaVersion, NS.Migrations.CurrentSchemaVersion,
+                "EnsureDB keeps the latest schema version while repairing the DB")
+            System.EndSection("Seed the incomplete post-wipe shape shown in the addon failure case", "PASS")
+        end, function()
+            SpeedSplitsDB = oldSpeedSplitsDB
+            NS.DB = oldDB
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_legacy_saved_variable_aliases_are_normalized",
+    suite = "Logic",
+    subcategory = "Migration",
+    name = "Normalizes legacy runs/settings aliases into the latest saved variable keys",
+    func = function()
+        local oldSpeedSplitsDB = SpeedSplitsDB
+        local oldDB = NS.DB
+
+        System.WithCleanup(function()
+            System.BeginSection("Seed legacy alias keys without the modern top-level tables")
+            SpeedSplitsDB = {
+                runs = {
+                    { instanceName = "Legacy Alias Run", duration = 12 },
+                },
+                settings = {
+                    speedrunMode = "last",
+                },
+                InstanceRoutes = {},
+                InstanceBestRoute = {},
+                InstanceBestLastBoss = {},
+                InstanceBestIgnored = {},
+                FirstLoginSchemaWipeCompleted = true,
+                SchemaVersion = NS.Migrations.CurrentSchemaVersion,
+            }
+
+            local db = NS.Database.EnsureDB()
+
+            System.AssertEqual(#db.RunHistory, 1, "EnsureDB migrates runs into RunHistory")
+            System.AssertEqual(db.RunHistory[1].instanceName, "Legacy Alias Run",
+                "EnsureDB preserves legacy run history entries")
+            System.AssertEqual(db.Settings.speedrunMode, "last",
+                "EnsureDB migrates settings into the modern Settings table")
+            System.AssertTrue(db.runs == nil, "EnsureDB removes the legacy runs alias", db.runs)
+            System.AssertTrue(db.settings == nil, "EnsureDB removes the legacy settings alias", db.settings)
+            System.EndSection("Seed legacy alias keys without the modern top-level tables", "PASS")
+        end, function()
+            SpeedSplitsDB = oldSpeedSplitsDB
+            NS.DB = oldDB
         end)
     end,
 })

@@ -59,6 +59,9 @@ System.RegisterTest({
             System.AssertEqual(type(db.InstanceBestRoute), "table", "InstanceBestRoute is created")
             System.AssertEqual(type(db.InstanceBestLastBoss), "table", "InstanceBestLastBoss is created")
             System.AssertEqual(type(db.InstanceBestIgnored), "table", "InstanceBestIgnored is created")
+            System.AssertEqual(type(db.ui), "table", "UI layout storage is created during migration bootstrap")
+            System.AssertEqual(type(db.DefaultLayout), "table", "Default layout storage is created during migration bootstrap")
+            System.AssertEqual(type(db.DefaultStyle), "table", "Default style storage is created during migration bootstrap")
             System.AssertEqual(db.InstanceRoutes["Legacy Dungeon"].BossIndex[1], "Alpha",
                 "BossIndex is migrated to use route indices as keys")
             System.AssertEqual(db.InstanceRoutes["Legacy Dungeon"].BossIndex[2], "Beta",

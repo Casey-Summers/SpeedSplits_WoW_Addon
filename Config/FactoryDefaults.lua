@@ -53,9 +53,9 @@ NS.FactoryDefaults = {
                 scale = 1,
                 shown = true,
                 columns = {
-                    pb = 85,
+                    pb = 95,
                     split = 100,
-                    diff = 70,
+                    diff = 115,
                 },
             },
             history = {

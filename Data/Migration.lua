@@ -4,13 +4,27 @@ NS.Migrations = NS.Migrations or {}
 
 local Util = NS.Util
 
+local WipeDatabaseOnFirstLogin = true
 local CURRENT_SCHEMA_VERSION = 3
+local FIRST_LOGIN_WIPE_FLAG = "FirstLoginSchemaWipeCompleted"
+
+local function GetFirstLoginWipeFlag()
+    return FIRST_LOGIN_WIPE_FLAG
+end
+
+local function ShouldWipeDataOnFirstLogin(db)
+    return WipeDatabaseOnFirstLogin and type(db) == "table" and db[FIRST_LOGIN_WIPE_FLAG] ~= true
+end
+
+local function BuildFreshDatabase()
+    return {}
+end
 
 local function EnsurePBTables(db)
-    db.InstanceRoutes = db.InstanceRoutes or {}
-    db.InstanceBestRoute = db.InstanceBestRoute or {}
-    db.InstanceBestLastBoss = db.InstanceBestLastBoss or {}
-    db.InstanceBestIgnored = db.InstanceBestIgnored or {}
+    db.InstanceRoutes = type(db.InstanceRoutes) == "table" and db.InstanceRoutes or {}
+    db.InstanceBestRoute = type(db.InstanceBestRoute) == "table" and db.InstanceBestRoute or {}
+    db.InstanceBestLastBoss = type(db.InstanceBestLastBoss) == "table" and db.InstanceBestLastBoss or {}
+    db.InstanceBestIgnored = type(db.InstanceBestIgnored) == "table" and db.InstanceBestIgnored or {}
 end
 
 local function NormalizePBNodeShape(node)
@@ -141,3 +155,7 @@ end
 NS.Migrations.CurrentSchemaVersion = CURRENT_SCHEMA_VERSION
 NS.Migrations.ApplySavedVariablesMigrations = ApplySavedVariablesMigrations
 NS.Migrations.NormalizeBossIndexTable = NormalizeBossIndexTable
+NS.Migrations.WipeDatabaseOnFirstLogin = WipeDatabaseOnFirstLogin
+NS.Migrations.GetFirstLoginWipeFlag = GetFirstLoginWipeFlag
+NS.Migrations.ShouldWipeDataOnFirstLogin = ShouldWipeDataOnFirstLogin
+NS.Migrations.BuildFreshDatabase = BuildFreshDatabase

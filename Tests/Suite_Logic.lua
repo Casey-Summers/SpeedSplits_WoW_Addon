@@ -3,6 +3,84 @@ local _, NS = ...
 local System = NS.TestSystem
 
 System.RegisterTest({
+    id = "logic_completed_run_footer_pb_uses_fastest_route_duration",
+    suite = "Logic",
+    subcategory = "Routes",
+    name = "Completed runs keep row PBs but switch footer PB to the fastest route duration",
+    func = function()
+        NS.Database.EnsureDB()
+
+        local oldBestRoute = NS.Util.CopyTable(NS.DB.InstanceBestRoute)
+        local oldRunState = NS.Util.CopyTable(NS.Run)
+
+        System.WithCleanup(function()
+            System.BeginSection("Build a completed exploratory presentation against a faster saved route")
+            NS.DB.InstanceBestRoute["Footer PB Route Test"] = {
+                RouteKey = "2,3,1,4",
+                Splits = { [1] = 25, [2] = 8, [3] = 16, [4] = 32 },
+                FullRun = { duration = 32 },
+            }
+
+            NS.Run.instanceName = "Footer PB Route Test"
+            NS.Run.speedrunMode = "all"
+            NS.Run.entries = {
+                { key = "B1", name = "Boss 1", routeIndex = 1 },
+                { key = "B2", name = "Boss 2", routeIndex = 2 },
+                { key = "B4", name = "Boss 4", routeIndex = 4 },
+            }
+            NS.Run.kills = {
+                B1 = 10,
+                B2 = 20,
+                B4 = 30,
+            }
+            NS.Run.remainingCount = 0
+            NS.Run.startGameTime = 100
+
+            local presentation = NS.RunLogic.BuildRunPresentation(NS.Run, {
+                B1 = 25,
+                B2 = 8,
+                B4 = 40,
+            })
+
+            System.AssertEqual(presentation.rowsByKey.B1.pbTime, 25, "Row PBs continue using the active route snapshot")
+            System.AssertEqual(presentation.rowsByKey.B2.pbTime, 8, "Second row PB remains route-specific")
+            System.AssertEqual(presentation.summary.pbTotal, 40, "Summary PB stays on the active route total")
+            System.AssertEqual(presentation.summary.footerPBTotal, 32,
+                "Footer PB picks the fastest saved route duration after completion")
+            System.AssertEqual(presentation.summary.splitTotal, 30, "Footer Split stays on the completed run total")
+            System.AssertEqual(presentation.summary.diffTotal, -10, "Summary Diff stays on the route-specific comparison")
+            System.AssertEqual(presentation.summary.footerDiffTotal, -2,
+                "Footer Diff is recalculated from the overridden footer PB")
+            System.EndSection("Build a completed exploratory presentation against a faster saved route", "PASS")
+        end, function()
+            NS.DB.InstanceBestRoute = oldBestRoute
+            for key in pairs(NS.Run) do
+                NS.Run[key] = nil
+            end
+            for key, value in pairs(oldRunState) do
+                NS.Run[key] = value
+            end
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_ss_test_surface_is_loaded",
+    suite = "Logic",
+    subcategory = "Bootstrap",
+    name = "Loads the /ss test surface through the packaged test manifest",
+    func = function()
+        System.BeginSection("Verify the test adapter surface is available")
+        System.AssertTrue(NS.Tests ~= nil, "NS.Tests exists", NS.Tests)
+        System.AssertTrue(type(NS.Tests.Open) == "function", "NS.Tests.Open is loaded", NS.Tests and NS.Tests.Open)
+        System.AssertTrue(NS.TestSystem ~= nil, "NS.TestSystem is loaded", NS.TestSystem)
+        System.AssertTrue(type(NS.TestUI and NS.TestUI.CreateTestFrame) == "function", "NS.TestUI is loaded",
+            NS.TestUI and NS.TestUI.CreateTestFrame)
+        System.EndSection("Verify the test adapter surface is available", "PASS")
+    end,
+})
+
+System.RegisterTest({
     id = "logic_resolve_boss_entry_by_dungeon_encounter_id",
     suite = "Logic",
     subcategory = "Boss Resolution",
@@ -283,22 +361,111 @@ System.RegisterTest({
             end
 
             local db = NS.Database.EnsureDB()
+            local wipeFlag = NS.Migrations.GetFirstLoginWipeFlag()
 
             System.AssertTrue(type(db.RunHistory) == "table" and #db.RunHistory == 0,
                 "EnsureDB rebuilds an empty latest-shape RunHistory after the wipe")
             System.AssertTrue(type(db.Settings) == "table", "EnsureDB rebuilds the Settings table after the wipe")
-            System.AssertTrue(db.__firstLoginWipeApplied == true,
-                "EnsureDB persists a one-time marker after the first-login wipe", db.__firstLoginWipeApplied)
+            System.AssertTrue(type(db.ui) == "table", "EnsureDB rebuilds the UI layout table after the wipe")
+            System.AssertTrue(type(db.DefaultLayout) == "table" and type(db.DefaultLayout.ui) == "table",
+                "EnsureDB rebuilds the default layout snapshot after the wipe")
+            System.AssertTrue(type(db.DefaultStyle) == "table",
+                "EnsureDB rebuilds the default style snapshot after the wipe")
+            System.AssertTrue(db[wipeFlag] == true,
+                "EnsureDB persists the one-time schema wipe flag after the first-login wipe", db[wipeFlag])
             System.AssertEqual(db.SchemaVersion, NS.Migrations.CurrentSchemaVersion,
                 "EnsureDB reapplies the latest schema after the wipe")
             System.AssertTrue(type(db.InstanceBestRoute) == "table",
                 "EnsureDB rebuilds the PB containers after the wipe", type(db.InstanceBestRoute))
+            System.AssertEqual(db.__firstLoginWipeToken, "test-token",
+                "EnsureDB keeps custom fresh-build seed data before applying defaults")
             System.EndSection("Force a first-login wipe during EnsureDB", "PASS")
         end, function()
             SpeedSplitsDB = oldSpeedSplitsDB
             NS.DB = oldDB
             NS.Migrations.ShouldWipeDataOnFirstLogin = oldShouldWipe
             NS.Migrations.BuildFreshDatabase = oldBuildFresh
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_partial_saved_variables_are_repaired_during_bootstrap",
+    suite = "Logic",
+    subcategory = "Migration",
+    name = "Repairs a partial saved variables table into the full runtime schema",
+    func = function()
+        local oldSpeedSplitsDB = SpeedSplitsDB
+        local oldDB = NS.DB
+
+        System.WithCleanup(function()
+            System.BeginSection("Seed the incomplete post-wipe shape shown in the addon failure case")
+            SpeedSplitsDB = {
+                SchemaVersion = NS.Migrations.CurrentSchemaVersion,
+                InstanceRoutes = {},
+                InstanceBestRoute = {},
+                InstanceBestLastBoss = {},
+                InstanceBestIgnored = {},
+                FirstLoginSchemaWipeCompleted = true,
+            }
+
+            local db = NS.Database.EnsureDB()
+
+            System.AssertTrue(type(db.RunHistory) == "table", "EnsureDB recreates RunHistory from a partial DB")
+            System.AssertTrue(type(db.Settings) == "table", "EnsureDB recreates Settings from a partial DB")
+            System.AssertTrue(type(db.ui) == "table", "EnsureDB recreates ui from a partial DB")
+            System.AssertTrue(type(db.DefaultLayout) == "table" and type(db.DefaultLayout.ui) == "table",
+                "EnsureDB recreates DefaultLayout.ui from a partial DB")
+            System.AssertTrue(type(db.DefaultStyle) == "table", "EnsureDB recreates DefaultStyle from a partial DB")
+            System.AssertEqual(db.SchemaVersion, NS.Migrations.CurrentSchemaVersion,
+                "EnsureDB keeps the latest schema version while repairing the DB")
+            System.EndSection("Seed the incomplete post-wipe shape shown in the addon failure case", "PASS")
+        end, function()
+            SpeedSplitsDB = oldSpeedSplitsDB
+            NS.DB = oldDB
+        end)
+    end,
+})
+
+System.RegisterTest({
+    id = "logic_legacy_saved_variable_aliases_are_normalized",
+    suite = "Logic",
+    subcategory = "Migration",
+    name = "Normalizes legacy runs/settings aliases into the latest saved variable keys",
+    func = function()
+        local oldSpeedSplitsDB = SpeedSplitsDB
+        local oldDB = NS.DB
+
+        System.WithCleanup(function()
+            System.BeginSection("Seed legacy alias keys without the modern top-level tables")
+            SpeedSplitsDB = {
+                runs = {
+                    { instanceName = "Legacy Alias Run", duration = 12 },
+                },
+                settings = {
+                    speedrunMode = "last",
+                },
+                InstanceRoutes = {},
+                InstanceBestRoute = {},
+                InstanceBestLastBoss = {},
+                InstanceBestIgnored = {},
+                FirstLoginSchemaWipeCompleted = true,
+                SchemaVersion = NS.Migrations.CurrentSchemaVersion,
+            }
+
+            local db = NS.Database.EnsureDB()
+
+            System.AssertEqual(#db.RunHistory, 1, "EnsureDB migrates runs into RunHistory")
+            System.AssertEqual(db.RunHistory[1].instanceName, "Legacy Alias Run",
+                "EnsureDB preserves legacy run history entries")
+            System.AssertEqual(db.Settings.speedrunMode, "last",
+                "EnsureDB migrates settings into the modern Settings table")
+            System.AssertTrue(db.runs == nil, "EnsureDB removes the legacy runs alias", db.runs)
+            System.AssertTrue(db.settings == nil, "EnsureDB removes the legacy settings alias", db.settings)
+            System.EndSection("Seed legacy alias keys without the modern top-level tables", "PASS")
+        end, function()
+            SpeedSplitsDB = oldSpeedSplitsDB
+            NS.DB = oldDB
         end)
     end,
 })

@@ -52,6 +52,45 @@ local function SetPartColor(entry, color)
     entry.millis:SetTextColor(r, g, b, a)
 end
 
+local function GetAlignedTimeMeasureFontString(host)
+    if not host then
+        return nil
+    end
+
+    host._ssAlignedTimeMeasureFrame = host._ssAlignedTimeMeasureFrame or CreateFrame("Frame", nil, host)
+    if not host._ssAlignedTimeMeasureFrame.fs then
+        host._ssAlignedTimeMeasureFrame.fs = host._ssAlignedTimeMeasureFrame:CreateFontString(nil, "OVERLAY")
+    end
+    return host._ssAlignedTimeMeasureFrame.fs
+end
+
+local function MeasureReferenceDigitsWidth(host, sourceFS, digitCount)
+    digitCount = math.max(1, tonumber(digitCount) or 1)
+    local measureFS = GetAlignedTimeMeasureFontString(host)
+    if not measureFS then
+        return 0
+    end
+
+    if sourceFS and sourceFS.GetFont then
+        local fontPath, fontSize, fontFlags = sourceFS:GetFont()
+        if fontPath then
+            local ok = measureFS:SetFont(fontPath, fontSize or 12, fontFlags)
+            if not ok then
+                measureFS:SetFontObject("GameFontHighlight")
+            end
+        elseif sourceFS.GetFontObject and sourceFS:GetFontObject() then
+            measureFS:SetFontObject(sourceFS:GetFontObject())
+        else
+            measureFS:SetFontObject("GameFontHighlight")
+        end
+    else
+        measureFS:SetFontObject("GameFontHighlight")
+    end
+
+    measureFS:SetText(string.rep("8", digitCount))
+    return math.ceil((measureFS.GetStringWidth and measureFS:GetStringWidth()) or 0)
+end
+
 local function ClearAlignedTimeGroup(entry)
     entry.sign:SetText("")
     entry.minute:SetText("")
@@ -148,24 +187,23 @@ local function PositionDeltaSign(host, entry)
     end
 
     local firstVisibleSection = entry.firstVisibleSection or "second"
-    local target = firstVisibleSection == "minute" and entry.minute or entry.second
     local slotLeft
-    local slotWidth
+    local slotRight
+    local digitCount = 1
     if firstVisibleSection == "minute" then
-        local minuteBaseWidth = tonumber(spec.minuteBaseWidth) or 0
-        local overflowWidth = tonumber(entry.minuteOverflowWidth) or 0
-        local minuteWidth = minuteBaseWidth + overflowWidth
-        local minuteRight = tonumber(spec.minuteRight) or 0
-        slotLeft = minuteRight - minuteWidth
-        slotWidth = minuteWidth
+        local minuteText = tostring((entry.minute and entry.minute.GetText and entry.minute:GetText()) or "")
+        digitCount = math.max(1, #minuteText)
+        slotRight = tonumber(spec.minuteRight) or 0
+        slotLeft = slotRight - MeasureReferenceDigitsWidth(host, entry.minute, digitCount)
     else
+        local secondText = tostring((entry.second and entry.second.GetText and entry.second:GetText()) or "")
+        digitCount = math.max(1, #secondText)
         slotLeft = tonumber(spec.secondLeft) or 0
-        slotWidth = tonumber(spec.secondWidth) or 0
+        slotRight = (tonumber(spec.secondLeft) or 0) + (tonumber(spec.secondWidth) or 0)
+        slotLeft = slotRight - MeasureReferenceDigitsWidth(host, entry.second, digitCount)
     end
 
-    local renderedWidth = math.ceil((target and target.GetStringWidth and target:GetStringWidth()) or 0)
-    local digitLeft = slotLeft + math.max(slotWidth - renderedWidth, 0)
-    local signLeft = digitLeft - signPad - signWidth
+    local signLeft = slotLeft - signPad - signWidth
 
     entry.sign:ClearAllPoints()
     entry.sign:SetJustifyH("RIGHT")

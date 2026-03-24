@@ -114,8 +114,12 @@ local function RefreshTotals(isFinal)
         return
     end
 
-    SetTotals(summary.pbTotal, summary.splitTotal, summary.diffTotal, summary.splitColor, summary.diffColor)
-    UI.SetTimerDelta(summary.diffTotal, summary.diffColor)
+    local footerPBTotal = summary.footerPBTotal or summary.pbTotal
+    local footerDiffTotal = summary.footerDiffTotal or summary.diffTotal
+    local footerDiffColor = summary.footerDiffColor or summary.diffColor
+
+    SetTotals(footerPBTotal, summary.splitTotal, footerDiffTotal, summary.splitColor, footerDiffColor)
+    UI.SetTimerDelta(footerDiffTotal, footerDiffColor)
 
     if isFinal then
         local duration = (NS.Run.endGameTime > 0 and NS.Run.startGameTime > 0) and

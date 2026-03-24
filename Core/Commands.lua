@@ -11,6 +11,8 @@ SlashCmdList.SPEEDSPLITS = function(msg)
     elseif cmd == "test" then
         if NS.Tests and NS.Tests.Open then
             NS.Tests.Open()
+        elseif NS.Print then
+            NS.Print("Test tools are unavailable. Ensure the test package is loaded.")
         end
     elseif cmd == "dev" then
         if NS.DevTools and NS.DevTools.IsAvailable and NS.DevTools.IsAvailable() and NS.DevTools.HandleSlashCommand then

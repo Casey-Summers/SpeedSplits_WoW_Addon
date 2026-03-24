@@ -27,9 +27,9 @@ Const.SPLITS_LAYOUT = {
 
 Const.SPLITS_DEFAULTS = {
     BOSS_COLUMNS = {
-        pb = 85,
+        pb = 95,
         split = 100,
-        diff = 70,
+        diff = 115,
     },
     HISTORY_COLUMNS = {
         date = 140,

@@ -20,14 +20,14 @@ local DEFAULT_PBSplitsRoutes = {
     },
     {
         routeKey = "2,3,1,4,5,6",
-        duration = 116.500,
+        duration = 126.500, -- This should be equal to the time of the final boss split
         PBSplitsRoutes = {
             [1] = 58.500,
             [2] = 18.000,
             [3] = 36.000,
             [4] = 74.000,
             [5] = 93.000,
-            [6] = 116.500,
+            [6] = 126.500, -- Make this quicker again
         },
     },
 }
@@ -53,11 +53,11 @@ local DEFAULT_PBSplitsLastBoss = {
 
 local DEFAULT_splitsByKey = {
     ["E:1001"] = 22.524,
-    ["E:1002"] = 43.666,
+    ["E:1002"] = 50.666,
     ["E:1003"] = 70.666,
-    ["E:1004"] = 102.816,
-    ["E:1005"] = 148.815,
-    ["E:1006"] = 279.816,
+    ["E:1004"] = 92.816,
+    ["E:1005"] = 102.815,
+    ["E:1006"] = 116.816,
 }
 
 NS.TestsSimulation = NS.TestsSimulation or {}
